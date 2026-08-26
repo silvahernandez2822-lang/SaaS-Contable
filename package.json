@@ -1,0 +1,30 @@
+{
+  "name": "contable-co",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "SaaS contable multi-tenant para Colombia — motor de causacion automatica de facturas DIAN",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "migrate": "tsx src/db/migrate-cli.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:gates": "vitest run tests/gates",
+    "test:golden": "vitest run tests/golden",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.5.7",
+    "fast-xml-parser": "^5.2.5",
+    "postgres": "^3.4.7",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "tsx": "^4.20.4",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}
