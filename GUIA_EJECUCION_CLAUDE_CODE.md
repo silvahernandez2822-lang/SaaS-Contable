@@ -9,16 +9,12 @@ Este documento complementa a `MEGA_PROMPT_SOFTWARE_CONTABLE_CO.md`. Ese archivo 
 ## 0. Reglas operativas de ritmo (léelas antes de escribir código)
 
 1. **No uses Dynamic Workflows (cientos de agentes en paralelo) como modo por defecto.** Consume el cupo semanal de Pro en horas. Resérvalo solo para lotes masivos y acotados: poblar tarifas de ICA de decenas de municipios, o generar los ~69 formatos de exógena. Para todo lo demás, despacha entre 3 y 6 subagentes a la vez, que es lo que las olas del mega-prompt realmente necesitan.
-2. **No hay reanudación automática nativa cuando se agota el cupo.** La sesión se detiene y espera a que escribas "continue" tras el reset. Como trabajas 8 horas diarias activo, esto rara vez es un problema real — solo instala el wrapper de comunidad `claude-auto-retry` (npm) si vas a dejar algo corriendo de madrugada sin supervisión.
+
 3. **Un módulo se cierra, pasa su compuerta de aceptación (sección 4 del mega-prompt) y se comitea a git antes de cambiar de tema.** Nunca cortes un módulo a la mitad porque se acabó el cupo — espera el reset y retómalo donde quedó, usando `ESTADO_PROYECTO.md` (sección 2 de este documento) como memoria entre sesiones.
 4. **`/clear` entre módulos no relacionados.** Cada módulo nuevo arranca con contexto limpio; el historial acumulado de un módulo anterior no debe ir en el prompt del siguiente. Ahorra 30-50% de tokens por turno.
 5. **Efecto de razonamiento:** alto para Ola 0 (esquema/ledger/RLS) y para A3 (motor de reglas); medio para el resto. Bájalo si notas que un módulo mecánico está gastando cupo de más.
 6. **Activa "extra usage" (modo extra) solo como válvula puntual**, nunca como modo permanente — combinarlo con una corrida grande de subagentes en paralelo puede acercarte al tope diario de $2.000 en una sola sesión.
 7. **Este chat y Claude Code comparten la misma bolsa semanal.** Para trabajo de construcción real, muévete a la terminal.
-8. **Compuerta de validación obligatoria por QA (A14):**
-   - El agente principal NO PUEDE declarar un módulo finalizado, ni actualizar `ESTADO_PROYECTO.md`, ni realizar `git commit` sin haber invocado previamente a `a14-qa-adversarial`.
-   - Ante cualquier edición de código, refactorización o cambio de parámetro, `a14-qa-adversarial` debe ejecutar las comprobaciones correspondientes (casos dorados de la sección 12 del mega-prompt, verificación de RLS, ausencia de valores quemados y pruebas de inmutabilidad del ledger).
-   - Si `a14-qa-adversarial` encuentra fallos, el módulo se considera bloqueado hasta que el subagente responsable (o A14 directamente) aplique la corrección.
 
 ---
 
