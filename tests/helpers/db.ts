@@ -114,6 +114,12 @@ async function asegurarRolesAplicacion(db: DbHandle): Promise<void> {
 
     -- A12: el rol de las peticiones no emite sesiones ni lee credenciales.
     REVOKE INSERT, UPDATE, DELETE ON user_session FROM ${ROL_APLICACION};
+
+    -- A2 (018): el guardia de alcance es SECURITY DEFINER. El privilegio
+    -- EXECUTE de una función de trigger se comprueba al CREAR el trigger, no al
+    -- dispararlo, así que revocarlo no lo desactiva y sí lo saca de la
+    -- superficie de funciones DEFINER invocables por la aplicación.
+    REVOKE ALL ON FUNCTION app.trg_fk_alcance() FROM PUBLIC, ${ROL_APLICACION};
     REVOKE ALL ON ALL TABLES IN SCHEMA app FROM ${ROL_APLICACION}, app_auth;
     REVOKE ALL ON FUNCTION app.abrir_sesion(uuid, text, inet, text, boolean, integer)
       FROM PUBLIC, ${ROL_APLICACION};

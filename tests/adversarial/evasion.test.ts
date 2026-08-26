@@ -198,9 +198,15 @@ describe('A14 · D-031 — el rol de autenticación no puede envenenar el audit_
   });
 
   it('no puede escribir en la firma de Alfa señalando a un usuario de Beta', async () => {
+    // Desde la migración 018 hay DOS capas sobre esta misma forja y la de
+    // dentro contesta primero: el guardia de alcance de A2 es un trigger
+    // BEFORE, y los triggers BEFORE se ejecutan antes del WITH CHECK de la
+    // política. Sigue siendo un rechazo del motor; solo cambia a un código más
+    // específico. Si algún día se quitara el guardia, la política de 017
+    // volvería a contestar 42501 y esta prueba seguiría siendo válida.
     await rechazoConCodigo(
       () => comoAppAuth([alfa.tenantId, beta.userId, 'LOGIN', 'user_session', 'forja-2']),
-      ['42501'],
+      [SQLSTATE.FK_ALCANCE_AJENO, '42501'],
       'forjar un LOGIN con la pareja (firma, usuario) incoherente',
     );
   });
@@ -629,24 +635,42 @@ describe('A14 · barrido estructural de puertas laterales', () => {
     );
   });
 
-  it('PENDIENTE D-033 (A2): no hay trigger ON TRUNCATE en el ledger ni en el audit_log', async () => {
-    // Un `BEFORE DELETE FOR EACH ROW` NO se dispara con TRUNCATE. Hoy la única
-    // defensa es que ningún rol de aplicación tenga el privilegio, cosa que sí
-    // se verifica. El dueño de las tablas, en cambio, vaciaría el ledger sin
-    // que LG001 ni AU001 se enterasen. La invariante «append-only» es del motor
-    // solo mientras nadie se conecte como dueño (D-024).
+  it('D-033 CERRADA (A2, migración 018): el TRUNCATE del ledger y del audit_log lo bloquea el motor', async () => {
+    // Un `BEFORE DELETE FOR EACH ROW` NO se dispara con TRUNCATE. Antes de la
+    // migración 018 la única defensa era que ningún rol de aplicación tuviera
+    // el privilegio: mitigación por GRANT. El dueño de las tablas vaciaba el
+    // ledger sin que LG001 ni AU001 se enterasen. Ahora hay un trigger
+    // BEFORE TRUNCATE FOR EACH STATEMENT y la invariante ya no depende de que
+    // nadie conceda el privilegio por error.
     const conTrigger = await db.asAdmin(async (tx) => {
       const { rows } = await tx.query<{ relname: string }>(
         `SELECT DISTINCT c.relname
            FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
           WHERE NOT t.tgisinternal AND (t.tgtype & 32) <> 0
-            AND c.relname IN ('journal_entry','journal_line','audit_log')`,
+            AND c.relname IN ('journal_entry','journal_line','audit_log')
+          ORDER BY 1`,
       );
       return rows.map((r) => r.relname);
     });
-    // Se deja MEDIDO, no silenciado: hoy son cero. Cuando A2 instale el
-    // trigger de statement, esta prueba hay que actualizarla en positivo.
-    expect(conTrigger).toEqual([]);
+    expect(conTrigger).toEqual(['audit_log', 'journal_entry', 'journal_line']);
+
+    // Y se comprueba de verdad, no solo en el catálogo: ni el SUPERUSUARIO,
+    // que se salta RLS y GRANTs, puede vaciarlas.
+    await rechazoConCodigo(
+      () => db.asAdmin((tx) => tx.query('TRUNCATE journal_line')),
+      [SQLSTATE.LEDGER_INMUTABLE],
+      'TRUNCATE de journal_line como superusuario',
+    );
+    await rechazoConCodigo(
+      () => db.asAdmin((tx) => tx.query('TRUNCATE audit_log')),
+      [SQLSTATE.AUDITORIA_INMUTABLE],
+      'TRUNCATE del audit_log como superusuario',
+    );
+    await rechazoConCodigo(
+      () => db.asAdmin((tx) => tx.query('TRUNCATE journal_entry CASCADE')),
+      [SQLSTATE.LEDGER_INMUTABLE],
+      'TRUNCATE en cascada del ledger como superusuario',
+    );
 
     // Lo que sí es exigible hoy y se exige: la aplicación no tiene el privilegio.
     const conPrivilegio = await db.asAdmin(async (tx) => {
@@ -661,20 +685,20 @@ describe('A14 · barrido estructural de puertas laterales', () => {
     expect(conPrivilegio).toBe(0);
   });
 
-  it.fails(
-    'PENDIENTE D-032 (A2): journal_line.account_id admite una cuenta de OTRA firma — cuando A2 lo cierre, esta prueba pasará a fallar y hay que invertirla',
+  it(
+    'D-032 CERRADA (A2, migración 018): journal_line.account_id ya no admite una cuenta de OTRA firma',
     async () => {
-      // `journal_line.account_id` lleva una FK SIMPLE a `account(id)`, no la FK
-      // compuesta que llevan el resto de sus referencias. Como `account` es un
-      // catálogo híbrido (tenant_id puede ser NULL), la FK compuesta no es
-      // expresable y hace falta un trigger. Hoy no lo hay: una partida de la
-      // firma A puede imputarse contra una cuenta de la firma B, y esa partida,
+      // `journal_line.account_id` llevaba una FK SIMPLE a `account(id)`, no la
+      // FK compuesta que llevan el resto de sus referencias. Como `account` es
+      // un catálogo híbrido (tenant_id puede ser NULL), la FK compuesta no es
+      // expresable y hacía falta un trigger. No lo había: una partida de la
+      // firma A podía imputarse contra una cuenta de la firma B, y esa partida,
       // una vez publicada, es inmutable. La RLS después esconde la cuenta, así
       // que el auxiliar y el balance la perderían en silencio.
       //
-      // No es fuga de confidencialidad (hace falta acertar un UUID), es un
-      // agujero de INTEGRIDAD, y le corresponde a A2 antes de que A3/A6
-      // empiecen a escribir partidas en la Ola 1.
+      // No era fuga de confidencialidad (hace falta acertar un UUID), era un
+      // agujero de INTEGRIDAD. La migración 018 lo cierra con el guardia
+      // genérico `app.trg_fk_alcance` (SQLSTATE AL001).
       await rechazoConCodigo(
         () =>
           db.asTenant(alfa.tenantId, alfa.companyId, async (tx) => {
@@ -699,9 +723,69 @@ describe('A14 · barrido estructural de puertas laterales', () => {
               [alfa.tenantId, alfa.companyId, rows[0]!.id, beta.cuentas.gasto],
             );
           }),
-        [SQLSTATE.FOREIGN_KEY_VIOLATION, SQLSTATE.CHECK_VIOLATION, SQLSTATE.RLS_VIOLATION],
+        [
+          SQLSTATE.FK_ALCANCE_AJENO,
+          SQLSTATE.FOREIGN_KEY_VIOLATION,
+          SQLSTATE.CHECK_VIOLATION,
+          SQLSTATE.RLS_VIOLATION,
+        ],
         'imputar una partida contra la cuenta de otra firma',
       );
     },
   );
+
+  it('D-032: el barrido completo de claves foráneas no dejó ningún hueco de alcance', async () => {
+    // A14 encontró UNA columna. A2 recorrió `pg_constraint` entero y encontró
+    // 71 del mismo patrón. Esta prueba vuelve a hacer el barrido contra el
+    // catálogo vivo: si alguien añade mañana una FK hacia una tabla con
+    // `tenant_id` sin acotar el alcance, aquí se ve.
+    const huecos = await db.asAdmin(async (tx) => {
+      const { rows } = await tx.query<{ hallazgo: string }>(
+        `WITH fk AS (
+           SELECT hijo.relname AS hija, padre.relname AS padre,
+                  (SELECT array_agg(a.attname ORDER BY x.ord)
+                     FROM unnest(con.conkey) WITH ORDINALITY AS x(attnum, ord)
+                     JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = x.attnum) AS cols
+             FROM pg_constraint con
+             JOIN pg_class hijo  ON hijo.oid  = con.conrelid
+             JOIN pg_class padre ON padre.oid = con.confrelid
+             JOIN pg_namespace nn ON nn.oid = hijo.relnamespace
+            WHERE con.contype = 'f' AND nn.nspname = 'public'
+         ),
+         scope AS (
+           SELECT c.relname AS tabla, bool_or(a.attname = 'tenant_id') AS t
+             FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+             LEFT JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
+            WHERE n.nspname = 'public' AND c.relkind = 'r'
+            GROUP BY c.relname
+         ),
+         guardadas AS (
+           SELECT c.relname AS tabla, unnest(a.args) AS col
+             FROM pg_trigger tg
+             JOIN pg_class c ON c.oid = tg.tgrelid
+             CROSS JOIN LATERAL (
+               SELECT string_to_array(encode(tg.tgargs, 'escape'), '\\000') AS args
+             ) AS a
+            WHERE NOT tg.tgisinternal AND tg.tgname LIKE '%\\_fk\\_alcance'
+         )
+         SELECT s.hija || '.' || s.cols[1] || ' -> ' || s.padre AS hallazgo
+           FROM fk s
+           JOIN scope sh ON sh.tabla = s.hija
+           JOIN scope sp ON sp.tabla = s.padre
+          WHERE sh.t AND sp.t AND s.padre <> 'tenant'
+            AND NOT ('tenant_id' = ANY(s.cols))
+            AND NOT EXISTS (
+                  SELECT 1 FROM fk o
+                   WHERE o.hija = s.hija AND o.padre = s.padre
+                     AND o.cols[1] = s.cols[1] AND 'tenant_id' = ANY(o.cols))
+            AND NOT EXISTS (
+                  SELECT 1 FROM guardadas g
+                   WHERE g.tabla = s.hija AND g.col = s.cols[1])
+          ORDER BY 1`,
+      );
+      return rows.map((r) => r.hallazgo);
+    });
+
+    expect(huecos).toEqual([]);
+  });
 });

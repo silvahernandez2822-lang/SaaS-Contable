@@ -1,7 +1,8 @@
 # ESTADO_PROYECTO.md
 
 > Memoria única entre sesiones. Todo agente lo lee al empezar y lo actualiza al terminar.
-> Última actualización: 2026-08-26 — A14 (QA adversarial), al verificar la compuerta de la Ola 0.
+> Última actualización: 2026-08-26 — A2, al cerrar D-032 y D-033 (migración 018). Levanta el bloqueo
+> de la Ola 1.
 
 ## Olas cerradas
 
@@ -305,7 +306,15 @@ para `app_user`.
 **Probado en** `tests/adversarial/evasion.test.ts`: cuatro forjas rechazadas con 42501, dos controles
 legítimos que siguen pasando, y la comprobación de que ninguna forja dejó rastro.
 
-### D-032 — `journal_line.account_id` admite la cuenta de otra firma. ABIERTA, asignada a A2
+### D-032 — `journal_line.account_id` admitía la cuenta de otra firma. **CERRADA por A2 (migración 018)**
+
+> **Cierre (A2).** Corregida en `db/migrations/018_a2_alcance_fk_y_truncate.sql`. Al recorrer
+> `pg_constraint` entero en vez de parchear solo la columna denunciada, aparecieron **71 huecos del
+> mismo patrón, no uno**. Ver D-037 para el detalle del arreglo y de lo que apareció de más.
+> La prueba `it.fails` de A14 está convertida en prueba normal y acepta el SQLSTATE nuevo `AL001`,
+> y se añadió un barrido de `pg_constraint` que vuelve a hacer el inventario contra el catálogo vivo
+> en cada ejecución. Diagnóstico original de A14, íntegro:
+
 **Vulnerabilidad de INTEGRIDAD, no de confidencialidad.** `journal_line.account_id` lleva una FK
 **simple** a `account(id)`, no la FK compuesta `(id, tenant_id, company_id)` que llevan todas sus demás
 referencias. Como las comprobaciones de integridad referencial de PostgreSQL se saltan la RLS, una
@@ -325,7 +334,13 @@ alcanzable por un error de programación normal, no por un ataque.
 hoy pasa porque el agujero existe, y **empezará a fallar el día que A2 lo cierre**, obligando a
 invertirla. No se puede olvidar en silencio.
 
-### D-033 — no hay trigger `ON TRUNCATE` en el ledger ni en el audit_log. ABIERTA, asignada a A2
+### D-033 — no había trigger `ON TRUNCATE` en el ledger ni en el audit_log. **CERRADA por A2 (migración 018)**
+
+> **Cierre (A2).** `BEFORE TRUNCATE ... FOR EACH STATEMENT` sobre `journal_entry`, `journal_line`,
+> `audit_log`, `approval` y `retention_applied`, con el mismo SQLSTATE que el candado de fila de cada
+> tabla (LG001 / AU001). La invariante ya no depende de que nadie conceda el privilegio por error: se
+> verifica que **ni el superusuario** puede vaciarlas. Diagnóstico original de A14, íntegro:
+
 **Hallazgo estructural.** Un trigger `BEFORE DELETE FOR EACH ROW` **no se dispara con `TRUNCATE`**. Los
 candados LG001 (ledger inmutable) y AU001 (auditoría inmutable) son triggers de fila: un `TRUNCATE`
 vaciaría `journal_entry` y `audit_log` sin que ninguno se entere.
@@ -405,6 +420,77 @@ dato de ninguna firma; queda comprobado explícitamente en vez de asumido.
 
 ---
 
+## Decisión de A2 al cerrar D-032 y D-033
+
+### D-037 — El alcance de toda clave foránea se impone en la BD, con dos mecanismos según la forma del padre
+
+**Origen.** A14 denunció una columna (`journal_line.account_id`). Arreglar solo esa columna habría sido
+tratar el síntoma: el defecto era que **D-016 estaba aplicada a mano y por tanto de forma incompleta**.
+Al recorrer `pg_constraint` con el criterio de D-016 escrito como consulta aparecieron **71 huecos**.
+
+**Lo que apareció y A14 no había visto** (buscaba vectores de evasión, no un inventario):
+
+- **`retention_applied.tax_rule_id` estaba escondido detrás de una FK compuesta.** Lleva
+  `(tax_rule_id, regla_vigente_desde)` por D-017, así que a simple vista "ya era compuesta". Pero esa
+  pareja amarra la **vigencia**, no el **alcance**: no incluye `tenant_id`. La traza de una retención
+  podía citar la regla tributaria de otra firma. Es el caso más grave de los 71, porque D-017 existe
+  precisamente para que la traza no pueda mentir.
+- **Once columnas `created_by` / `confirmado_por` / `cerrado_por` / `otorgado_por` hacia `"user"`.**
+  Registraban *quién* publicó un asiento, cerró un período u otorgó un acceso, y admitían un usuario de
+  otra firma. Es un agujero de la Regla de Oro 6: la firma del acto era falsificable.
+- **Referencias reflexivas**: `account.parent_id`, `cost_center.parent_id`,
+  `source_document.documento_referenciado_id` (la nota crédito podía apuntar a la factura de otra
+  empresa).
+- **Toda la parametrización**: `tax_rule` → `account` / `municipality` / `ciiu_activity` /
+  `tax_concept`, `concepto_causacion` → sus cuatro cuentas y sus cuatro `tax_concept`, etc.
+
+**Dos mecanismos, según la forma del padre.** No es una elección estética: la FK compuesta no siempre
+es expresable.
+
+| Forma del padre | Mecanismo | Casos |
+|---|---|---|
+| Alcance estricto (`tenant_id` NOT NULL) | FK compuesta `(columna, tenant_id[, company_id])` — declarativa, la impone el motor sin código | 18 |
+| Catálogo híbrido (`tenant_id` puede ser NULL, D-015) | Trigger genérico `app.trg_fk_alcance` | 53, en 21 tablas |
+
+Con un padre híbrido la FK compuesta es **imposible**: la fila global tiene `tenant_id IS NULL` y la
+hija lo tiene NOT NULL, así que nunca casarían. Por eso ahí va un trigger.
+
+**El guardia es `SECURITY DEFINER` a propósito.** Tiene que ver la fila del padre *aunque la RLS se la
+esconda al llamante*. Si no, "no la veo" y "no existe" serían indistinguibles: la referencia cruzada
+pasaría el trigger y después pasaría la FK —que tampoco mira RLS— y el agujero seguiría abierto. Lleva
+`SET row_security = off` para que, si algún día se despliega con un rol dueño **sujeto** a RLS, esto
+falle a gritos en vez de aprobar la comprobación en silencio. No filtra nada: solo lee `tenant_id` y
+`company_id` del padre, y el mensaje de error no nombra a la otra firma. Se le revoca `EXECUTE` de
+`app_user` y de `PUBLIC` — el privilegio sobre una función de trigger se comprueba al **crear** el
+trigger, no al dispararlo, así que revocarlo no lo desactiva y lo saca de la superficie de funciones
+DEFINER que A14 audita.
+
+**El alcance se hereda hacia abajo, nunca de lado.** Global (`tenant_id` NULL) lo usa cualquiera; de
+firma (`company_id` NULL) lo usa cualquier empresa suya; de empresa, solo esa empresa. Se rechaza el
+**cruce**, no el uso de algo más amplio: por eso la comparación de empresa exige que ambas columnas
+estén definidas. Una regla de firma que apunta a una cuenta de firma es legítima; y el daño que importa
+—una partida imputada a la cuenta de otra empresa— se caza igual, porque ahí las dos sí están definidas.
+
+**SQLSTATE nuevo: `AL001` (`FK_ALCANCE_AJENO`)**, en `src/db/types.ts`. Se prefirió un código propio a
+reutilizar `23503` para que el diagnóstico distinga "no existe" de "existe pero no es tuya".
+
+**Coste.** Una búsqueda por clave primaria adicional por columna referenciada y por fila insertada. En
+`journal_line`, la tabla caliente, es **una** por partida.
+
+**Cómo se evita que vuelva a pasar.** `tests/adversarial/evasion.test.ts` incluye ahora un barrido de
+`pg_constraint` que rehace el inventario contra el catálogo vivo en cada ejecución: si alguien añade
+mañana una FK hacia una tabla con `tenant_id` sin acotar el alcance, la prueba la denuncia por nombre.
+Verificado que detecta la regresión: al quitar a mano el guardia de `journal_line`, el barrido vuelve a
+señalar `journal_line.account_id -> account`.
+
+**Nota para quien toque `tests/helpers/db.ts`.** D-034 sigue vivo como fragilidad estructural: el
+harness hace `GRANT ... ON ALL FUNCTIONS` y luego repite los REVOKE a mano, así que **todo REVOKE nuevo
+en una migración hay que espejarlo también en el harness** o el banco de pruebas queda más permisivo que
+producción. El REVOKE de `app.trg_fk_alcance` ya está espejado. Mientras el patrón siga siendo ese, esta
+duplicación es una divergencia esperando a ocurrir.
+
+---
+
 ## Vulnerabilidades — registro de A14
 
 | Id | Qué es | Gravedad | Estado | De quién |
@@ -412,8 +498,8 @@ dato de ninguna firma; queda comprobado explícitamente en vez de asumido.
 | D-030 | Revocación de sesiones cross-tenant + oráculo de actividad ajena | Alta (rompe la Regla 7 en escritura) | **CORREGIDA** por A14 (migración 017) | era de A12 |
 | D-031 | `app_auth` forjaba audit_log en cualquier firma, de forma permanente | Media-alta (rompe la Regla 6) | **CORREGIDA** por A14 (migración 017) | era de A12 |
 | D-034 | El harness concedía privilegios que las migraciones revocan | Media (invalida pruebas de privilegio) | **CORREGIDA** por A14 | infraestructura de pruebas |
-| D-032 | `journal_line.account_id` acepta cuenta de otra firma (FK simple) | Media (integridad contable) | **ABIERTA — no bloquea la Ola 0, BLOQUEA la Ola 1** | **A2** |
-| D-033 | Sin trigger `ON TRUNCATE` en ledger ni audit_log | Baja hoy (falta el privilegio), media si alguien despliega como dueño | **ABIERTA — no bloquea la Ola 0** | **A2** |
+| D-032 | `journal_line.account_id` aceptaba cuenta de otra firma (FK simple). El barrido de `pg_constraint` reveló **71 huecos del mismo patrón**, no uno | Media (integridad contable) | **CORREGIDA** por A2 (migración 018, ver D-037) | era de A2 |
+| D-033 | Sin trigger `ON TRUNCATE` en ledger ni audit_log | Baja hoy (falta el privilegio), media si alguien despliega como dueño | **CORREGIDA** por A2 (migración 018) | era de A2 |
 | D-023 | `app_auth` lee la credencial de cualquier correo conocido | Baja (exige credencial de infraestructura) | **ABIERTA por diseño**, alcance ahora medido y acotado | A12 / arquitectura |
 | D-024 | El descenso a `app_user` es reversible en PGlite | No aplica en producción bien configurada | **ABIERTA por diseño**, invariantes comprobables ya automatizadas | **A15 al desplegar** |
 | — | La secuencia `audit_log_id_seq` es global: `last_value` deja inferir el volumen de escritura de todo el sistema | Muy baja (canal lateral, sin datos) | **Aceptada**, sin acción | anotación |
@@ -474,6 +560,8 @@ Añadidas por **A12** (seguridad):
 |---|---|
 | `015_sesiones_contexto_verificado.sql` | rol `app_auth`; `app.session_context`, `app.usuario`, `app.acceso_usuario_empresa` (esquema `app`, sin RLS y sin GRANTs); redefinición de `current_tenant_id/company_id/user_id`; `abrir_sesion`, `cerrar_sesion`, `revocar_sesiones_de_usuario`, `buscar_credencial`, `registrar_login_fallido`; columnas de credencial y bloqueo en `"user"` |
 | `016_permisos_y_auditoria_sensible.sql` | `tiene_permiso` / `exigir_permiso` y los triggers de permiso en 31 tablas; auditoría de ledger, período, empresa y usuario (con credenciales redactadas); `registrar_acceso_denegado` y `exigir_empresa` |
+| `017_a14_cierre_vulnerabilidades.sql` | **A14** — cierre de D-030 (`revocar_sesiones_de_usuario` ignoraba el tenant) y D-031 (`app_auth` forjaba auditoría en cualquier firma) |
+| `018_a2_alcance_fk_y_truncate.sql` | **A2** — cierre de D-032 y D-033 (ver D-037): 18 FK compuestas de alcance, el guardia genérico `app.trg_fk_alcance` sobre 53 columnas en 21 tablas, y `BEFORE TRUNCATE` en el ledger, `audit_log`, `approval` y `retention_applied` |
 
 Tablas añadidas sobre la sección 15, con su justificación en las decisiones D-013, D-014 y D-020:
 `tax_concept`, `municipality_ica_rule`, `third_party_fiscal_attribute`, `permission`, `role_permission`,
@@ -617,6 +705,18 @@ fondo del contexto de tenant (D-021).
 más 22 casos dorados enumerados como `todo`**. `npm run typecheck` limpio. Las 120 de A2 y A12 pasan
 **sin modificar una sola aserción**, incluida la migración 017 que corrige D-030 y D-031.
 
+**Estado de las pruebas tras cerrar D-032 y D-033 (A2, migración 018):** `npm test` → **202 pruebas en
+verde, 8 archivos, más 22 casos dorados enumerados como `todo`**. `npm run typecheck` limpio. La prueba
+que A2 añadió es el barrido de `pg_constraint` de D-037. Se tocaron **tres** aserciones de A14, todas
+por el mismo motivo —el guardia es un trigger `BEFORE` y contesta antes que la política, con un código
+más específico— y ninguna deja de exigir el rechazo del motor:
+
+| Prueba de A14 | Cambio | Por qué |
+|---|---|---|
+| `it.fails` de D-032 | convertida en `it` normal, acepta `AL001` | Es lo que A14 dejó pedido al cerrarse el hueco. Sin invertirla habría seguido "pasando" por el motivo equivocado: `rechazoConCodigo` lanzaba porque `AL001` no estaba en su lista, y `it.fails` lo tomaba por éxito |
+| D-033, `expect(conTrigger).toEqual([])` | invertida a positivo, y ahora **ejecuta** el TRUNCATE como superusuario | A14 la dejó "medida, no silenciada", pidiendo actualizarla en positivo |
+| D-031, forja de `audit_log` con usuario ajeno | acepta `AL001` además de `42501` | El guardia de alcance caza la incoherencia (firma, usuario) antes que la política de 017. Si el guardia desapareciera, la política volvería a contestar `42501` y la prueba seguiría siendo válida |
+
 | Archivo | Pruebas | Agente |
 |---|---|---|
 | `tests/gates/esquema.test.ts` | 20 | A2 |
@@ -692,11 +792,13 @@ verificadas con pruebas propias en `tests/adversarial/`. Falta únicamente el **
 hace A0** (A14 no hace commits). Después de eso, despachar la **Ola 1** (A1, A3, A4, A6).
 
 **Condiciones que A0 debe trasladar a la Ola 1 antes de darla por despachada:**
-1. **D-032 es precondición de cierre de la Ola 1, y le toca a A2**: `journal_line.account_id` debe
-   validar el alcance de la cuenta con un trigger antes de que A3 y A6 empiecen a escribir partidas.
-   Hay una prueba `it.fails` viva que empezará a fallar el día que se corrija.
-2. **D-033 conviene cerrarlo en la misma pasada, también A2**: trigger `BEFORE TRUNCATE ... FOR EACH
-   STATEMENT` en `journal_entry`, `journal_line` y `audit_log`.
+1. ~~**D-032 es precondición de cierre de la Ola 1, y le toca a A2**~~ → **HECHO** (migración 018,
+   D-037). El bloqueo de la Ola 1 está levantado: A1, A3, A4 y A6 pueden arrancar. Lo que deben saber
+   al escribir contra el esquema: una fila **solo puede referenciar filas de su propia empresa, de su
+   propia firma, o globales del catálogo**; el cruce lo rechaza el motor con `AL001`. En particular, el
+   PUC global que puebla A1 (`tenant_id IS NULL`) sigue siendo imputable por todas las empresas —
+   verificado.
+2. ~~**D-033 conviene cerrarlo en la misma pasada, también A2**~~ → **HECHO** (migración 018).
 3. **A1 debe correr sus seeds con `asAdmin` / rol privilegiado** (D-015 y D-025), y dejar como
    pendientes los datos que la sección 17 marca sin verificar, en vez de inventarlos.
 4. **A14 implementa los 20 casos dorados al cerrar la Ola 1**, que es cuando la sección 12 dice que

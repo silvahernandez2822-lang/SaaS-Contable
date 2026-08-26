@@ -64,6 +64,12 @@ export const SQLSTATE = {
   VIGENCIA_SOLAPADA: 'PR002',
   VIGENCIA_NO_BORRABLE: 'PR003',
   AUDITORIA_INMUTABLE: 'AU001',
+  /**
+   * La fila referenciada existe, pero pertenece a otra firma o a otra empresa
+   * (018). Las comprobaciones de clave foránea no pasan por RLS, así que sin
+   * este guardia el ledger podría referenciar un plan de cuentas ajeno (D-032).
+   */
+  FK_ALCANCE_AJENO: 'AL001',
   /** Seguridad (A12, migraciones 015 y 016). */
   SESION_INVALIDA: 'SE001',
   PERMISO_INSUFICIENTE: 'SE002',
