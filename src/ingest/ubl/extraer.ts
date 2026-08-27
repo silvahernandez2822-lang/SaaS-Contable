@@ -161,3 +161,94 @@ export function extraerDocumentoReferenciado(
 }
 
 export { extraerCufe };
+
+// -----------------------------------------------------------------------------
+// Composición: de la raíz YA desempaquetada al documento normalizado completo.
+// -----------------------------------------------------------------------------
+
+/** Elemento que envuelve al emisor, según el tipo de documento. */
+const ELEMENTO_EMISOR: Partial<Record<TipoDocumentoUbl, string>> = {
+  Invoice: 'AccountingSupplierParty',
+  CreditNote: 'AccountingSupplierParty',
+  DebitNote: 'AccountingSupplierParty',
+  ApplicationResponse: 'SenderParty',
+};
+
+/** Elemento que envuelve al adquirente, según el tipo de documento. */
+const ELEMENTO_ADQUIRENTE: Partial<Record<TipoDocumentoUbl, string>> = {
+  Invoice: 'AccountingCustomerParty',
+  CreditNote: 'AccountingCustomerParty',
+  DebitNote: 'AccountingCustomerParty',
+  ApplicationResponse: 'ReceiverParty',
+};
+
+function extraerMoneda(raiz: NodoXml): string {
+  const totales = hijo(raiz, 'LegalMonetaryTotal');
+  const monto = totales ? hijo(totales, 'PayableAmount') : undefined;
+  return atributo(monto, 'currencyID') ?? 'COP';
+}
+
+/**
+ * `ApplicationResponse` referencia el documento que acusa/responde en
+ * `cac:DocumentResponse/cac:DocumentReference` (ID y, cuando el proveedor lo
+ * incluye, el CUFE en `cbc:UUID`). Es la contraparte de `BillingReference`
+ * para los eventos, en vez de para las notas.
+ */
+function extraerDocumentoReferenciadoApplicationResponse(
+  raiz: NodoXml,
+): { cufe: string | null; numero: string | null } | null {
+  const documentResponse = hijo(raiz, 'DocumentResponse');
+  if (!documentResponse) return null;
+  const docRef = hijo(documentResponse, 'DocumentReference');
+  if (!docRef) return null;
+  const numero = textoHijo(docRef, 'ID');
+  const cufe = textoHijo(docRef, 'UUID');
+  if (numero === null && cufe === null) return null;
+  return { numero, cufe };
+}
+
+/**
+ * Extrae TODO lo que `extraction.datos_extraidos` necesita a partir de la raíz
+ * de un documento UBL ya desempaquetado (si venía en un `AttachedDocument`,
+ * aquí ya se recibe el `Invoice`/`CreditNote`/`DebitNote`/`ApplicationResponse`
+ * interno, no el contenedor). No decide cuarentena ni valida: eso es de
+ * `validar.ts` y de la orquestación en `procesar.ts`.
+ */
+export function extraerDocumento(
+  tipo: TipoDocumentoUbl,
+  raiz: NodoXml,
+): Omit<DocumentoNormalizado, 'veniaEnAttachedDocument' | 'xmlCrudo' | 'hashContenido' | 'nombreArchivo'> {
+  const { prefijo, numero } = extraerNumeroDocumento(raiz);
+  const fechaEmision = textoHijo(raiz, 'IssueDate');
+  const { cufe } = extraerCufe(raiz);
+
+  const elementoEmisor = ELEMENTO_EMISOR[tipo];
+  const elementoAdquirente = ELEMENTO_ADQUIRENTE[tipo];
+  const emisor = extraerParte(elementoEmisor ? hijo(raiz, elementoEmisor) : undefined);
+  const adquirente = extraerParte(elementoAdquirente ? hijo(raiz, elementoAdquirente) : undefined);
+
+  const documentoReferenciado =
+    tipo === 'ApplicationResponse'
+      ? extraerDocumentoReferenciadoApplicationResponse(raiz)
+      : extraerDocumentoReferenciado(raiz);
+
+  return {
+    tipoDocumento: tipo,
+    cufe,
+    prefijo,
+    numeroDocumento: numero,
+    emisor: { nit: emisor.nit ?? '', nombre: emisor.nombre },
+    adquirente: { nit: adquirente.nit, nombre: adquirente.nombre },
+    // Regla de Oro 3: la fecha del hecho económico es la de emisión del
+    // documento, nunca la de procesamiento (que decide quien persiste, no el
+    // parser: el parser ni siquiera conoce la hora en que corre).
+    fechaHechoEconomico: fechaEmision ?? '',
+    fechaEmision,
+    moneda: extraerMoneda(raiz),
+    tasaCambio: null,
+    totales: extraerTotales(raiz),
+    lineas: extraerLineas(raiz, tipo),
+    impuestosDocumento: extraerImpuestosDocumento(raiz),
+    documentoReferenciado,
+  };
+}
