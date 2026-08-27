@@ -7,8 +7,8 @@
  * multi-empresa de A7. Esta ruta sí puede responder con una sesión "de
  * firma" (sin empresa): `company` tiene RLS de tenant, no de tenant+empresa.
  */
-import { listarEmpresasActivasDeLaFirma, TokenIntegracionInvalidoError } from '../../../../src/integraciones/index.js';
-import { AutenticacionIntegracionAusenteError, conSesionSistema, respuestaError } from '../../../lib/integraciones-auth.js';
+import { listarEmpresasActivasDeLaFirma, TokenIntegracionInvalidoError } from '../../../../src/integraciones/index';
+import { AutenticacionIntegracionAusenteError, conSesionSistema, respuestaError } from '../../../lib/integraciones-auth';
 
 export async function GET(request: Request): Promise<Response> {
   try {

@@ -12,44 +12,44 @@ export {
   listarTokensIntegracion,
   autenticarTokenIntegracion,
   hashTokenIntegracion,
-} from './token.js';
+} from './token';
 export type {
   CanalIntegracion,
   TokenIntegracionEmitido,
   TokenIntegracionResumen,
   IdentidadIntegracion,
-} from './token.js';
+} from './token';
 
 export {
   crearUsuarioSistemaIngesta,
   sincronizarAccesoEmpresaIngesta,
   listarEmpresasActivasDeLaFirma,
   provisionarCanalIngestaCorreo,
-} from './aprovisionamiento.js';
-export type { CanalIngestaProvisionado } from './aprovisionamiento.js';
+} from './aprovisionamiento';
+export type { CanalIngestaProvisionado } from './aprovisionamiento';
 
 export {
   abrirSesionSistema,
   cerrarSesionSistema,
   TokenIntegracionInvalidoError,
   MINUTOS_SESION_INTEGRACION,
-} from './sesion-sistema.js';
-export type { SesionSistema, OpcionesSesionSistema } from './sesion-sistema.js';
+} from './sesion-sistema';
+export type { SesionSistema, OpcionesSesionSistema } from './sesion-sistema';
 
-export { registrarLlamada, registrarLlamadaNoAutenticada } from './llamadas.js';
-export type { DatosLlamada, CanalLlamada, ResultadoLlamada } from './llamadas.js';
+export { registrarLlamada, registrarLlamadaNoAutenticada } from './llamadas';
+export type { DatosLlamada, CanalLlamada, ResultadoLlamada } from './llamadas';
 
-export { procesarWebhookCorreo, ENDPOINT_INGEST_CORREO } from './ingest-correo.js';
+export { procesarWebhookCorreo, ENDPOINT_INGEST_CORREO } from './ingest-correo';
 export type {
   ResultadoWebhookCorreo,
   ResultadoAdjuntoWebhook,
   MotivoRechazoWebhook,
   OpcionesWebhookCorreo,
-} from './ingest-correo.js';
+} from './ingest-correo';
 
 export {
   listarFacturasPendientesParaNotificar,
   listarBuzonesConFallas,
   listarVencimientosProximos,
-} from './notificaciones.js';
-export type { FacturaPendiente, BuzonConFallas, VencimientoProximo } from './notificaciones.js';
+} from './notificaciones';
+export type { FacturaPendiente, BuzonConFallas, VencimientoProximo } from './notificaciones';

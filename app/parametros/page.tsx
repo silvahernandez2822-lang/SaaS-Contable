@@ -8,9 +8,9 @@
  * que todo está terminado.
  */
 import Link from 'next/link';
-import { conSesion } from '../lib/sesion.js';
-import { detectarAlertasParametrizacion } from '../../src/services/parametrizacion.js';
-import { BannerAlertas } from './_componentes.js';
+import { conSesion } from '../lib/sesion';
+import { detectarAlertasParametrizacion } from '../../src/services/parametrizacion';
+import { BannerAlertas } from './_componentes';
 
 export const dynamic = 'force-dynamic';
 

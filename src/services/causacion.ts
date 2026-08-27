@@ -34,22 +34,22 @@ import {
   type ResultadoResolucion,
   type RetencionAgregada,
   type RetencionResuelta,
-} from '../domain/index.js';
-import { isPostgresError, SQLSTATE } from '../db/types.js';
-import type { SqlClient } from '../db/types.js';
-import { exigirPermiso, PERMISOS } from '../auth/permisos.js';
+} from '../domain/index';
+import { isPostgresError, SQLSTATE } from '../db/types';
+import type { SqlClient } from '../db/types';
+import { exigirPermiso, PERMISOS } from '../auth/permisos';
 // Solo la normalización de A5, que es una función pura y sin I/O. La
 // clasificación por IA no se llama desde aquí: el worker de causación resuelve
 // contra la memoria y nada más (Regla de Oro 4 y caso dorado 19).
-import { patronesDeMemoria } from '../ai/normalizar.js';
-import { proyectarLineasParaCausacion, type DatosExtraidos, type LineaExtraida } from './ingest.js';
-import { completarJob, type DocumentProcessingJob } from './cola.js';
+import { patronesDeMemoria } from '../ai/normalizar';
+import { proyectarLineasParaCausacion, type DatosExtraidos, type LineaExtraida } from './ingest';
+import { completarJob, type DocumentProcessingJob } from './cola';
 // V-7/V-8 (Ola 1), cerradas por A7 en la Ola 2: correcciones humanas de AIU
 // por línea y de municipio de la operación, capturadas en la bandeja de
 // revisión ANTES de que este archivo vuelva a intentar la causación
 // (`document_correction`, migración 070). A6 no cambia: sigue sin calcular
 // nada; esto solo alimenta la entrada con datos que un humano ya confirmó.
-import { obtenerCorreccionesVigentes } from './bandeja.js';
+import { obtenerCorreccionesVigentes } from './bandeja';
 
 // =============================================================================
 // TIPOS DE RESULTADO

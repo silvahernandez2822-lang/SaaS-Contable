@@ -11,7 +11,7 @@
  * esto es lo que ese endpoint invoca antes de encolar nada.
  */
 import { z } from 'zod';
-import type { CorreoEntrante, ProveedorCorreoEntrante } from './tipos.js';
+import type { CorreoEntrante, ProveedorCorreoEntrante } from './tipos';
 
 const AdjuntoSchema = z.object({
   nombreArchivo: z.string().nullable().optional().default(null),

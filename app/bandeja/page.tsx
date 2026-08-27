@@ -13,8 +13,8 @@
  * sección de "pendientes de revisión" es donde el humano las corrige y pide
  * el reproceso — antes de que exista ningún asiento que aprobar.
  */
-import { obtenerBandejaConsolidada } from '../lib/bandeja.js';
-import { aprobarSeleccionAction, corregirYReprocesarAction, rechazarSeleccionAction } from './acciones.js';
+import { obtenerBandejaConsolidada } from '../lib/bandeja';
+import { aprobarSeleccionAction, corregirYReprocesarAction, rechazarSeleccionAction } from './acciones';
 import {
   LineasConAiu,
   MensajeError,
@@ -22,7 +22,7 @@ import {
   PartidasAsiento,
   SelectorMunicipio,
   TrazaRetenciones,
-} from './_componentes.js';
+} from './_componentes';
 
 export const dynamic = 'force-dynamic';
 

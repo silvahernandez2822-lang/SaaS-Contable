@@ -6,9 +6,9 @@
  * RLS, con una columna `float` o con vigencias sin proteger, aquí se ve.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createTestDb } from '../helpers/db.js';
-import type { TestDb } from '../helpers/db.js';
-import { migrate } from '../../src/db/migrate.js';
+import { createTestDb } from '../helpers/db';
+import type { TestDb } from '../helpers/db';
+import { migrate } from '../../src/db/migrate';
 
 let db: TestDb;
 

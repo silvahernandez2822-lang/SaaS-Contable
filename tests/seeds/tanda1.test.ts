@@ -16,8 +16,8 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createTestDb, type TestDb } from '../helpers/db.js';
-import { seed } from '../../src/db/seed.js';
+import { createTestDb, type TestDb } from '../helpers/db';
+import { seed } from '../../src/db/seed';
 
 const TANDA1_DIR = fileURLToPath(new URL('../../db/seeds/tanda1', import.meta.url));
 

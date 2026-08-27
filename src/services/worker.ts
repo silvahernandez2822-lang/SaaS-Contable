@@ -13,10 +13,10 @@
  * de n8n de A13...). Cualquiera de esos mecanismos llama
  * `ejecutarCicloCola` repetidamente; este módulo no asume ninguno.
  */
-import type { DbHandle, SqlClient } from '../db/types.js';
-import { withAdminContext } from '../db/tenant-context.js';
-import { reclamarSiguienteJob, fallarJob, type DocumentProcessingJob } from './cola.js';
-import { procesarJobCausacion } from './causacion.js';
+import type { DbHandle, SqlClient } from '../db/types';
+import { withAdminContext } from '../db/tenant-context';
+import { reclamarSiguienteJob, fallarJob, type DocumentProcessingJob } from './cola';
+import { procesarJobCausacion } from './causacion';
 
 export type ResultadoCiclo =
   | { hizoAlgo: false }

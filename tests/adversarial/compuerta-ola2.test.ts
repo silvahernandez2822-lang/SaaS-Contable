@@ -24,23 +24,23 @@
  * quedaron probados solo en la suite de A3 y son exactamente el mandato de A14.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { createTestDb, uuid, type TestDb } from '../helpers/db.js';
+import { createTestDb, uuid, type TestDb } from '../helpers/db';
 import {
   crearAsientoBorrador,
   crearEscenario,
   publicarAsiento,
   type Escenario,
-} from '../helpers/fixtures.js';
-import { isPostgresError, SQLSTATE, type SqlClient } from '../../src/db/types.js';
-import { clasificarDocumento, confirmarClasificacion } from '../../src/ai/index.js';
-import type { PeticionLlm, ProveedorLlm, RespuestaLlm } from '../../src/ai/tipos.js';
+} from '../helpers/fixtures';
+import { isPostgresError, SQLSTATE, type SqlClient } from '../../src/db/types';
+import { clasificarDocumento, confirmarClasificacion } from '../../src/ai/index';
+import type { PeticionLlm, ProveedorLlm, RespuestaLlm } from '../../src/ai/tipos';
 import {
   crearConceptos,
   crearDocumentoConLineas,
   type ConceptosPrueba,
-} from '../ai/_escenario.js';
-import { encolarCausacion } from '../../src/services/cola.js';
-import { aprobarAsiento, procesarJobCausacion } from '../../src/services/causacion.js';
+} from '../ai/_escenario';
+import { encolarCausacion } from '../../src/services/cola';
+import { aprobarAsiento, procesarJobCausacion } from '../../src/services/causacion';
 
 let db: TestDb;
 

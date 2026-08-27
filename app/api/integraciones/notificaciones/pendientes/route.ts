@@ -3,8 +3,8 @@
  * `src/integraciones/notificaciones.ts`. n8n decide cómo avisar; esta ruta
  * solo contesta qué hay que avisar, para UNA empresa (`?companyId=`).
  */
-import { listarFacturasPendientesParaNotificar, TokenIntegracionInvalidoError } from '../../../../../src/integraciones/index.js';
-import { AutenticacionIntegracionAusenteError, conSesionSistema, respuestaError } from '../../../../lib/integraciones-auth.js';
+import { listarFacturasPendientesParaNotificar, TokenIntegracionInvalidoError } from '../../../../../src/integraciones/index';
+import { AutenticacionIntegracionAusenteError, conSesionSistema, respuestaError } from '../../../../lib/integraciones-auth';
 
 export async function GET(request: Request): Promise<Response> {
   const url = new URL(request.url);

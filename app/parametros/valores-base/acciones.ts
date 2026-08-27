@@ -14,7 +14,7 @@
  * porque el número no cambia según lo que el usuario escriba.
  */
 import { redirect } from 'next/navigation';
-import { conSesion } from '../../lib/sesion.js';
+import { conSesion } from '../../lib/sesion';
 import {
   editarRoundingRule,
   editarSmmlvValue,
@@ -23,8 +23,8 @@ import {
   NormaDeRespaldoRequeridaError,
   ParametroNoEncontradoError,
   VigenciaInvalidaError,
-} from '../../../src/services/parametrizacion.js';
-import { isPostgresError, SQLSTATE } from '../../../src/db/types.js';
+} from '../../../src/services/parametrizacion';
+import { isPostgresError, SQLSTATE } from '../../../src/db/types';
 
 function leer(fd: FormData, campo: string): string {
   const v = fd.get(campo);

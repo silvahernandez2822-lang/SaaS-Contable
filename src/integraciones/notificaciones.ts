@@ -12,8 +12,8 @@
  * QUÉ hay que avisar, con `tx` ya situado en su empresa (D-021), igual que
  * cualquier otro servicio de `src/services`.
  */
-import type { SqlClient } from '../db/types.js';
-import { exigirPermiso, PERMISOS } from '../auth/permisos.js';
+import type { SqlClient } from '../db/types';
+import { exigirPermiso, PERMISOS } from '../auth/permisos';
 
 export interface FacturaPendiente {
   sourceDocumentId: string;

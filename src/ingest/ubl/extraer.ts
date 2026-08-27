@@ -3,9 +3,9 @@
  * impuestos discriminados y totales. La IA no participa aquí (Regla de Oro
  * 4): todo sale literalmente del XML, sin inferencia.
  */
-import { atributo, hijo, hijos, texto, textoHijo, type NodoXml } from './xml.js';
-import { parseEntero, parseMontoACentavos, parsePorcentaje } from './dinero.js';
-import { extraerCufe } from './cufe.js';
+import { atributo, hijo, hijos, texto, textoHijo, type NodoXml } from './xml';
+import { parseEntero, parseMontoACentavos, parsePorcentaje } from './dinero';
+import { extraerCufe } from './cufe';
 import type {
   Adquirente,
   DocumentoNormalizado,
@@ -14,7 +14,7 @@ import type {
   LineaDocumento,
   TipoDocumentoUbl,
   TotalesDocumento,
-} from '../tipos.js';
+} from '../tipos';
 
 const NOMBRE_LINEA: Partial<Record<TipoDocumentoUbl, string>> = {
   Invoice: 'InvoiceLine',

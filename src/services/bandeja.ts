@@ -40,10 +40,10 @@
  * un "recall" de un borrador ya construido es una decisión de ledger que le
  * corresponde a A6/A2, no a A7 en solitario — ver `docs/reportes/ola2-a7.md`.
  */
-import type { SqlClient } from '../db/types.js';
-import { exigirPermiso, PERMISOS } from '../auth/permisos.js';
-import { proyectarLineasParaCausacion, type LineaExtraida } from './ingest.js';
-import { reencolarJob, type DocumentProcessingJob } from './cola.js';
+import type { SqlClient } from '../db/types';
+import { exigirPermiso, PERMISOS } from '../auth/permisos';
+import { proyectarLineasParaCausacion, type LineaExtraida } from './ingest';
+import { reencolarJob, type DocumentProcessingJob } from './cola';
 
 // =============================================================================
 // 1. EMPRESAS ACCESIBLES (insumo de la bandeja multi-empresa)

@@ -34,8 +34,8 @@ import {
   type EntradaResolucion,
   type ResultadoResolucion,
   type RetencionResuelta,
-} from '../../src/domain/index.js';
-import { uuid } from '../helpers/db.js';
+} from '../../src/domain/index';
+import { uuid } from '../helpers/db';
 import {
   crearDocumento,
   crearTercero,
@@ -44,7 +44,7 @@ import {
   pesos,
   registrarActividad,
   type EscenarioDorado,
-} from './_escenario.js';
+} from './_escenario';
 
 /** Fecha de hecho económico con el Decreto 572 ya vigente según los datos de A1. */
 const CON_DECRETO_572 = '2026-07-15';

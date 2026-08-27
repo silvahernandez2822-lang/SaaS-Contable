@@ -23,11 +23,11 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createTestDb, type TestDb } from '../helpers/db.js';
-import { crearEscenario, type Escenario } from '../helpers/fixtures.js';
-import { provisionarCanalIngestaCorreo } from '../../src/integraciones/aprovisionamiento.js';
-import { procesarWebhookCorreo, ENDPOINT_INGEST_CORREO } from '../../src/integraciones/ingest-correo.js';
-import type { CorreoEntrante } from '../../src/ingest/correo/tipos.js';
+import { createTestDb, type TestDb } from '../helpers/db';
+import { crearEscenario, type Escenario } from '../helpers/fixtures';
+import { provisionarCanalIngestaCorreo } from '../../src/integraciones/aprovisionamiento';
+import { procesarWebhookCorreo, ENDPOINT_INGEST_CORREO } from '../../src/integraciones/ingest-correo';
+import type { CorreoEntrante } from '../../src/ingest/correo/tipos';
 
 const DIR_FIXTURES = fileURLToPath(new URL('../fixtures/ubl/', import.meta.url));
 function base64Fixture(nombre: string): string {

@@ -11,22 +11,22 @@
  *  4. Revocar un token invalida el canal de inmediato.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createTestDb, esperarErrorPg, type TestDb } from '../helpers/db.js';
-import { crearEscenario, type Escenario } from '../helpers/fixtures.js';
-import { SQLSTATE } from '../../src/db/types.js';
-import { PermisoInsuficienteError } from '../../src/auth/permisos.js';
-import { EmpresaNoAutorizadaError, withSessionContext } from '../../src/db/tenant-context.js';
+import { createTestDb, esperarErrorPg, type TestDb } from '../helpers/db';
+import { crearEscenario, type Escenario } from '../helpers/fixtures';
+import { SQLSTATE } from '../../src/db/types';
+import { PermisoInsuficienteError } from '../../src/auth/permisos';
+import { EmpresaNoAutorizadaError, withSessionContext } from '../../src/db/tenant-context';
 import {
   provisionarCanalIngestaCorreo,
   sincronizarAccesoEmpresaIngesta,
-} from '../../src/integraciones/aprovisionamiento.js';
+} from '../../src/integraciones/aprovisionamiento';
 import {
   autenticarTokenIntegracion,
   crearTokenIntegracion,
   listarTokensIntegracion,
   revocarTokenIntegracion,
-} from '../../src/integraciones/token.js';
-import { abrirSesionSistema, cerrarSesionSistema, TokenIntegracionInvalidoError } from '../../src/integraciones/sesion-sistema.js';
+} from '../../src/integraciones/token';
+import { abrirSesionSistema, cerrarSesionSistema, TokenIntegracionInvalidoError } from '../../src/integraciones/sesion-sistema';
 
 let db: TestDb;
 let alfa: Escenario;

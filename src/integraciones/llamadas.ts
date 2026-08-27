@@ -13,8 +13,8 @@
  *    factor, así que tenant_id/company_id quedan NULL — la política de la
  *    migración 091 no deja insertar nada más ancho desde `app_auth`.
  */
-import type { SqlClient } from '../db/types.js';
-import { withAuthContext } from '../db/tenant-context.js';
+import type { SqlClient } from '../db/types';
+import { withAuthContext } from '../db/tenant-context';
 
 export type CanalLlamada = 'correo' | 'notificaciones' | 'mantenimiento';
 export type ResultadoLlamada = 'ok' | 'rechazado' | 'no_autenticado' | 'error' | 'buzon_no_reconocido';

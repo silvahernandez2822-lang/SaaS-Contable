@@ -22,7 +22,7 @@
  * una vez y no para cada factura. Si el volumen creciera, la optimización
  * natural es un pool de conexiones en `src/db/client.ts`, no tocar RLS.
  */
-import { conSesionEmpresa } from './sesion.js';
+import { conSesionEmpresa } from './sesion';
 import {
   listarEmpresasAccesibles,
   listarMunicipiosParaCorreccion,
@@ -32,9 +32,9 @@ import {
   type EmpresaAccesible,
   type MotivoRevision,
   type MunicipioOpcion,
-} from '../../src/services/bandeja.js';
-import { listarPendientesDeAprobacion, type EstadoDocumento } from '../../src/services/consulta.js';
-import type { LineaExtraida } from '../../src/services/ingest.js';
+} from '../../src/services/bandeja';
+import { listarPendientesDeAprobacion, type EstadoDocumento } from '../../src/services/consulta';
+import type { LineaExtraida } from '../../src/services/ingest';
 
 export interface FilaAprobacion extends EstadoDocumento {
   companyId: string;

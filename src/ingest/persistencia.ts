@@ -18,8 +18,8 @@
  * `23505`: el que pierda la carrera debe reintentar en una transacción nueva,
  * tal como exige D-003 ("si la garantía no la impone la BD, no cuenta").
  */
-import type { SqlClient } from '../db/types.js';
-import type { DocumentoNormalizado } from './tipos.js';
+import type { SqlClient } from '../db/types';
+import type { DocumentoNormalizado } from './tipos';
 
 // -----------------------------------------------------------------------------
 // Serialización segura de bigint a jsonb (Postgres no tiene bigint en JSON).

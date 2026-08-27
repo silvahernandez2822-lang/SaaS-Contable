@@ -6,8 +6,8 @@
  * este agente usa para probar el pipeline completo y lo que A6 puede
  * reutilizar si quiere, pero no es parte del contrato mínimo.
  */
-export { procesarAdjuntoXml } from './procesar.js';
-export type { OpcionesProcesarAdjunto } from './procesar.js';
+export { procesarAdjuntoXml } from './procesar';
+export type { OpcionesProcesarAdjunto } from './procesar';
 export type {
   Adquirente,
   DocumentoNormalizado,
@@ -20,29 +20,29 @@ export type {
   TipoDocumentoCausable,
   TipoDocumentoUbl,
   TotalesDocumento,
-} from './tipos.js';
-export { TIPOS_DOCUMENTO_UBL } from './tipos.js';
+} from './tipos';
+export { TIPOS_DOCUMENTO_UBL } from './tipos';
 
-export { sha256Hex } from './hash.js';
+export { sha256Hex } from './hash';
 
 export {
   desempaquetarAttachedDocument,
   esAttachedDocument,
-} from './ubl/desempaquetar.js';
-export { extraerCufe } from './ubl/cufe.js';
-export { extraerDocumento } from './ubl/extraer.js';
-export { parsearXml } from './ubl/xml.js';
-export { validarEstructuraUbl } from './ubl/validar.js';
+} from './ubl/desempaquetar';
+export { extraerCufe } from './ubl/cufe';
+export { extraerDocumento } from './ubl/extraer';
+export { parsearXml } from './ubl/xml';
+export { validarEstructuraUbl } from './ubl/validar';
 
 export {
   manejarWebhookCorreo,
   manejarWebhookConAdaptador,
   elegirBuzonDestino,
-} from './correo/webhook.js';
-export type { ResultadoWebhook } from './correo/webhook.js';
-export type { AdjuntoCorreo, CorreoEntrante, ProveedorCorreoEntrante } from './correo/tipos.js';
-export { evaluarAutenticacion, autenticacionFalla } from './correo/spf-dkim.js';
-export type { AutenticacionCorreo, ResultadoDkim, ResultadoSpf } from './correo/spf-dkim.js';
+} from './correo/webhook';
+export type { ResultadoWebhook } from './correo/webhook';
+export type { AdjuntoCorreo, CorreoEntrante, ProveedorCorreoEntrante } from './correo/tipos';
+export { evaluarAutenticacion, autenticacionFalla } from './correo/spf-dkim';
+export type { AutenticacionCorreo, ResultadoDkim, ResultadoSpf } from './correo/spf-dkim';
 export {
   TAMANO_MAXIMO_ADJUNTO_BYTES,
   TAMANO_MAXIMO_CORREO_BYTES,
@@ -51,7 +51,7 @@ export {
   excedeTamanoAdjunto,
   excedeTamanoCorreo,
   excedeLimiteTasa,
-} from './correo/limites.js';
+} from './correo/limites';
 
 export {
   contarCorreosRecientes,
@@ -60,7 +60,7 @@ export {
   registrarAdjunto,
   registrarCorreo,
   resolverEmpresaPorBuzon,
-} from './persistencia.js';
+} from './persistencia';
 export type {
   AdaptadorArchivoFrio,
   ContextoGuardado,
@@ -69,4 +69,4 @@ export type {
   EmpresaResuelta,
   FilaXmlAlmacenamiento,
   ResultadoGuardado,
-} from './persistencia.js';
+} from './persistencia';

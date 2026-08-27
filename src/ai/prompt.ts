@@ -24,8 +24,8 @@
  *     `huellaPeticion` lo demuestra en una prueba.
  */
 import { createHash } from 'node:crypto';
-import type { SqlClient } from '../db/types.js';
-import type { ConceptoCatalogo, PeticionLlm } from './tipos.js';
+import type { SqlClient } from '../db/types';
+import type { ConceptoCatalogo, PeticionLlm } from './tipos';
 
 export interface PromptVersionado {
   id: string;

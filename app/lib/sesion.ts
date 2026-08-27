@@ -16,9 +16,9 @@
  * la cookie por sí solo (D-020/D-021).
  */
 import { cookies, headers } from 'next/headers';
-import { obtenerDb } from './db.js';
-import { withSessionContext, type SessionContext } from '../../src/db/tenant-context.js';
-import type { SqlClient } from '../../src/db/types.js';
+import { obtenerDb } from './db';
+import { withSessionContext, type SessionContext } from '../../src/db/tenant-context';
+import type { SqlClient } from '../../src/db/types';
 
 export const COOKIE_SESSION_TOKEN = 'session_token';
 /** Empresa que el usuario eligió en el selector de la interfaz. Vacía u

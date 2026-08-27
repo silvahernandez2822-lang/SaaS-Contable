@@ -13,7 +13,7 @@ import {
   normalizarDescripcion,
   patronCanonico,
   patronesDeMemoria,
-} from '../../src/ai/normalizar.js';
+} from '../../src/ai/normalizar';
 
 describe('A5 · normalización de la descripción', () => {
   it('minúsculas y sin tildes', () => {

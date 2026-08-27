@@ -12,7 +12,7 @@
  * cuando le falta una regla de redondeo (V-6). Un umbral inventado en el
  * código sería un umbral que nadie puede auditar ni cambiar.
  */
-import type { SqlClient } from '../db/types.js';
+import type { SqlClient } from '../db/types';
 
 export const CLAVE = {
   UMBRAL_AUTO_APROBACION: 'umbral_auto_aprobacion_milesimas',

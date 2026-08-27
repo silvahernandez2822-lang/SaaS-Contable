@@ -1,5 +1,5 @@
 import { PGlite } from '@electric-sql/pglite';
-import type { DbHandle, QueryResult, SqlClient } from './types.js';
+import type { DbHandle, QueryResult, SqlClient } from './types';
 
 /**
  * Crea el cliente de base de datos.

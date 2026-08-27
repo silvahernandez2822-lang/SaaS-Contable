@@ -5,9 +5,9 @@
  * RLS decide qué documento es visible, esta función no filtra por tenant ni
  * por empresa a mano (D-021).
  */
-import type { SqlClient } from '../db/types.js';
-import { exigirPermiso, PERMISOS } from '../auth/permisos.js';
-import { estadoJobDeDocumento, type DocumentProcessingJob } from './cola.js';
+import type { SqlClient } from '../db/types';
+import { exigirPermiso, PERMISOS } from '../auth/permisos';
+import { estadoJobDeDocumento, type DocumentProcessingJob } from './cola';
 
 export interface RetencionResumen {
   id: string;

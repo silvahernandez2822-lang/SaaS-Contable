@@ -32,8 +32,8 @@
 import { describe, expect, it } from 'vitest';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { createTestDb } from '../helpers/db.js';
-import { ESCALA_TARIFA, ESCALA_UVT } from '../../src/domain/dinero.js';
+import { createTestDb } from '../helpers/db';
+import { ESCALA_TARIFA, ESCALA_UVT } from '../../src/domain/dinero';
 
 const RAIZ = new URL('../../', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
 const DIRECTORIOS = ['src', 'app', 'db/migrations'];

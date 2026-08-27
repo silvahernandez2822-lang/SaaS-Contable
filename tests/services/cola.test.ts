@@ -3,8 +3,8 @@
  * cola de fallidos y visibilidad de estado.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createTestDb, uuid, type TestDb } from '../helpers/db.js';
-import { crearEscenario, type Escenario } from '../helpers/fixtures.js';
+import { createTestDb, uuid, type TestDb } from '../helpers/db';
+import { crearEscenario, type Escenario } from '../helpers/fixtures';
 import {
   calcularBackoffSegundos,
   completarJob,
@@ -13,7 +13,7 @@ import {
   fallarJob,
   reclamarSiguienteJob,
   reencolarJob,
-} from '../../src/services/cola.js';
+} from '../../src/services/cola';
 
 let db: TestDb;
 let e: Escenario;

@@ -17,11 +17,11 @@ import {
   ProveedorLlmFalso,
   clasificarDocumento,
   confirmarClasificacion,
-} from '../../src/ai/index.js';
-import { encolarCausacion, procesarJobCausacion } from '../../src/services/index.js';
-import { createTestDb, type TestDb } from '../helpers/db.js';
-import { crearEscenario, type Escenario } from '../helpers/fixtures.js';
-import { crearConceptos, crearDocumentoConLineas, type ConceptosPrueba } from '../ai/_escenario.js';
+} from '../../src/ai/index';
+import { encolarCausacion, procesarJobCausacion } from '../../src/services/index';
+import { createTestDb, type TestDb } from '../helpers/db';
+import { crearEscenario, type Escenario } from '../helpers/fixtures';
+import { crearConceptos, crearDocumentoConLineas, type ConceptosPrueba } from '../ai/_escenario';
 
 let db: TestDb;
 let e: Escenario;

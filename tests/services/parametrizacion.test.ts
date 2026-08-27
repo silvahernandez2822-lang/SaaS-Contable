@@ -11,10 +11,10 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { fileURLToPath } from 'node:url';
-import { createTestDb, esperarErrorPg, uuid, type TestDb } from '../helpers/db.js';
-import { crearEscenario, crearAsientoBorrador, publicarAsiento, type Escenario } from '../helpers/fixtures.js';
-import { seed } from '../../src/db/seed.js';
-import { SQLSTATE } from '../../src/db/types.js';
+import { createTestDb, esperarErrorPg, uuid, type TestDb } from '../helpers/db';
+import { crearEscenario, crearAsientoBorrador, publicarAsiento, type Escenario } from '../helpers/fixtures';
+import { seed } from '../../src/db/seed';
+import { SQLSTATE } from '../../src/db/types';
 import {
   detectarAlertasParametrizacion,
   editarTarifaTaxRule,
@@ -27,7 +27,7 @@ import {
   EdicionRetroactivaError,
   NormaDeRespaldoRequeridaError,
   VigenciaInvalidaError,
-} from '../../src/services/parametrizacion.js';
+} from '../../src/services/parametrizacion';
 
 const SEEDS_DIR = fileURLToPath(new URL('../../db/seeds', import.meta.url));
 

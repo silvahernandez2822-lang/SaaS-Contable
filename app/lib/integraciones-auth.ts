@@ -8,15 +8,15 @@
  * ninguna autenticación propia — es la MISMA capa que `app/lib/sesion.ts` de
  * A8 para el login humano, pero para el canal de correo.
  */
-import { obtenerDb } from './db.js';
-import { withSessionContext } from '../../src/db/tenant-context.js';
-import type { SqlClient } from '../../src/db/types.js';
+import { obtenerDb } from './db';
+import { withSessionContext } from '../../src/db/tenant-context';
+import type { SqlClient } from '../../src/db/types';
 import {
   abrirSesionSistema,
   cerrarSesionSistema,
   TokenIntegracionInvalidoError,
   type CanalIntegracion,
-} from '../../src/integraciones/index.js';
+} from '../../src/integraciones/index';
 
 export class AutenticacionIntegracionAusenteError extends Error {
   constructor() {

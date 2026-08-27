@@ -34,7 +34,7 @@ import {
   calcularRetencion,
   esModoRedondeo,
   type ModoRedondeo,
-} from './dinero.js';
+} from './dinero';
 import type {
   FilaAtributosFiscales,
   FilaConcepto,
@@ -44,7 +44,7 @@ import type {
   FilaTercero,
   FilaUvt,
   RepositorioTributario,
-} from './repositorio.js';
+} from './repositorio';
 import {
   MOTIVO,
   type EntradaFactura,
@@ -57,7 +57,7 @@ import {
   type RetencionResuelta,
   type TipoOperacionIca,
   type TipoRetencion,
-} from './tipos.js';
+} from './tipos';
 
 /** Claves de `company_setting` que parametrizan el tratamiento diferenciado. */
 export const AJUSTE = {

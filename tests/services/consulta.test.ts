@@ -2,11 +2,11 @@
  * A6 — Servicio de dominio: consulta de estado (entregable 2).
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createTestDb, uuid, type TestDb } from '../helpers/db.js';
-import { crearEscenario, type Escenario } from '../helpers/fixtures.js';
-import { PermisoInsuficienteError } from '../../src/auth/permisos.js';
-import { consultarEstadoDocumento, listarPendientesDeAprobacion } from '../../src/services/consulta.js';
-import { encolarCausacion } from '../../src/services/cola.js';
+import { createTestDb, uuid, type TestDb } from '../helpers/db';
+import { crearEscenario, type Escenario } from '../helpers/fixtures';
+import { PermisoInsuficienteError } from '../../src/auth/permisos';
+import { consultarEstadoDocumento, listarPendientesDeAprobacion } from '../../src/services/consulta';
+import { encolarCausacion } from '../../src/services/cola';
 
 let db: TestDb;
 let e: Escenario;

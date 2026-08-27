@@ -10,8 +10,8 @@
  * Cuando haya un XSD real disponible, `validarEstructuraUbl` es el único
  * punto que hay que reforzar — el resto del pipeline no cambia.
  */
-import { hijo, hijos, textoHijo, type NodoXml } from './xml.js';
-import type { TipoDocumentoUbl } from '../tipos.js';
+import { hijo, hijos, textoHijo, type NodoXml } from './xml';
+import type { TipoDocumentoUbl } from '../tipos';
 
 export interface ResultadoValidacion {
   valido: boolean;

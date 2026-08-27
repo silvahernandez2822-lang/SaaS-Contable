@@ -14,16 +14,16 @@
  * lo que invalida la Ola 0 (D-003).
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createTestDb, esperarErrorPg, uuid } from '../helpers/db.js';
-import type { TestDb } from '../helpers/db.js';
+import { createTestDb, esperarErrorPg, uuid } from '../helpers/db';
+import type { TestDb } from '../helpers/db';
 import {
   crearAsientoBorrador,
   crearEscenario,
   partidasEquilibradas,
   publicarAsiento,
-} from '../helpers/fixtures.js';
-import type { Escenario } from '../helpers/fixtures.js';
-import { SQLSTATE } from '../../src/db/types.js';
+} from '../helpers/fixtures';
+import type { Escenario } from '../helpers/fixtures';
+import { SQLSTATE } from '../../src/db/types';
 
 let db: TestDb;
 

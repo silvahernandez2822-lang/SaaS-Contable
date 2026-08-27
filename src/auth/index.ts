@@ -20,8 +20,8 @@ export {
   hashearPassword,
   necesitaRehash,
   verificarPassword,
-} from './password.js';
-export type { ParametrosScrypt } from './password.js';
+} from './password';
+export type { ParametrosScrypt } from './password';
 
 export {
   OPCIONES_POR_DEFECTO,
@@ -33,8 +33,8 @@ export {
   hotp,
   uriOtpauth,
   verificarCodigoTotp,
-} from './totp.js';
-export type { AlgoritmoTotp, OpcionesTotp } from './totp.js';
+} from './totp';
+export type { AlgoritmoTotp, OpcionesTotp } from './totp';
 
 export {
   CifradoInvalidoError,
@@ -46,7 +46,7 @@ export {
   claveDesdeBase64,
   descifrar,
   generarClave,
-} from './cifrado.js';
+} from './cifrado';
 
 export {
   MINUTOS_SESION_MAXIMO,
@@ -56,11 +56,11 @@ export {
   generarTokenSesion,
   hashTokenSesion,
   revocarSesionesDeUsuario,
-} from './sesion.js';
-export type { DatosSesion, OpcionesAbrirSesion } from './sesion.js';
+} from './sesion';
+export type { DatosSesion, OpcionesAbrirSesion } from './sesion';
 
-export { CredencialInvalidaError, MfaRequeridoError, iniciarSesion } from './autenticacion.js';
-export type { MotivoFallo, OpcionesInicioSesion } from './autenticacion.js';
+export { CredencialInvalidaError, MfaRequeridoError, iniciarSesion } from './autenticacion';
+export type { MotivoFallo, OpcionesInicioSesion } from './autenticacion';
 
 export {
   CODIGO_ROL,
@@ -70,5 +70,5 @@ export {
   exigirPermiso,
   permisosDeLaSesion,
   tienePermiso,
-} from './permisos.js';
-export type { CodigoRol, Permiso } from './permisos.js';
+} from './permisos';
+export type { CodigoRol, Permiso } from './permisos';

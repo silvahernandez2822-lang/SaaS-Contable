@@ -48,7 +48,7 @@
  * falta ningún cambio de A2 para esto, ver `tests/services/parametrizacion.test.ts`,
  * caso "administrador de firma edita un parámetro compartido".
  */
-import type { SqlClient } from '../db/types.js';
+import type { SqlClient } from '../db/types';
 
 // =============================================================================
 // ERRORES DE DOMINIO (no SQLSTATE: son validaciones tempranas para no gastar

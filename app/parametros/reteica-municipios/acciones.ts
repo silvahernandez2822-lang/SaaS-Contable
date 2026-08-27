@@ -9,7 +9,7 @@
  * calcula impacto, `confirmarAction` es la única que escribe.
  */
 import { redirect } from 'next/navigation';
-import { conSesion } from '../../lib/sesion.js';
+import { conSesion } from '../../lib/sesion';
 import {
   editarMunicipioIcaRule,
   simularImpactoMunicipioIca,
@@ -17,8 +17,8 @@ import {
   NormaDeRespaldoRequeridaError,
   ParametroNoEncontradoError,
   VigenciaInvalidaError,
-} from '../../../src/services/parametrizacion.js';
-import { isPostgresError, SQLSTATE } from '../../../src/db/types.js';
+} from '../../../src/services/parametrizacion';
+import { isPostgresError, SQLSTATE } from '../../../src/db/types';
 
 function leer(fd: FormData, campo: string): string {
   const v = fd.get(campo);

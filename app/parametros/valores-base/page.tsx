@@ -9,10 +9,10 @@
  * que es donde viven las seis conductas obligatorias y donde A14 las verifica.
  */
 import Link from 'next/link';
-import { conSesion } from '../../lib/sesion.js';
-import { puedeEditarParametros, simularImpactoValorBase, hoyIso } from '../../../src/services/parametrizacion.js';
-import { MensajeError } from '../_componentes.js';
-import { guardarRedondeoAction, guardarSmmlvAction, guardarUvtAction } from './acciones.js';
+import { conSesion } from '../../lib/sesion';
+import { puedeEditarParametros, simularImpactoValorBase, hoyIso } from '../../../src/services/parametrizacion';
+import { MensajeError } from '../_componentes';
+import { guardarRedondeoAction, guardarSmmlvAction, guardarUvtAction } from './acciones';
 
 export const dynamic = 'force-dynamic';
 

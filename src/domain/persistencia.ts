@@ -11,8 +11,8 @@
  * vigencia cubría la fecha del hecho (D-017). La traza no puede mentir aunque
  * este archivo se equivoque.
  */
-import type { SqlClient } from '../db/types.js';
-import type { FechaIso, ResultadoResolucion, RetencionResuelta } from './tipos.js';
+import type { SqlClient } from '../db/types';
+import type { FechaIso, ResultadoResolucion, RetencionResuelta } from './tipos';
 
 export interface ContextoPersistencia {
   tenantId: string;

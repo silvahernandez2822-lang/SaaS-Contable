@@ -17,20 +17,27 @@
  * un campo de formulario que el cliente pudiera fijar (D-020/D-021): un
  * `<input type="hidden" name="userId">` sería, literalmente, dejar que el
  * cliente elija a nombre de quién aprueba.
+ *
+ * V-11 (Ola 2, cierre correctivo antes de la Ola 3): la resolución de la IP
+ * de origen (`resolverIpDeOrigen`) y su error de dominio
+ * (`IpNoDisponibleError`) viven en `./ip`, NO aquí. Este archivo lleva
+ * `"use server"`, y Next.js exige que TODO lo que exporte un módulo
+ * `"use server"` sea una función `async` — una clase y una función síncrona
+ * exportadas desde aquí invalidan el módulo entero (así se rompió
+ * `npx next build` la primera vez). Este archivo solo IMPORTA esas dos
+ * piezas y las usa; no las exporta.
  */
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { conSesionEmpresa } from '../lib/sesion.js';
-import { aprobarAsientosEnLote, type ItemLoteAprobacion } from '../../src/services/causacion.js';
-import { guardarCorreccionAiu, guardarCorreccionMunicipio, reprocesarDocumento } from '../../src/services/bandeja.js';
-import type { SqlClient } from '../../src/db/types.js';
+import { conSesionEmpresa } from '../lib/sesion';
+import { aprobarAsientosEnLote, type ItemLoteAprobacion } from '../../src/services/causacion';
+import { guardarCorreccionAiu, guardarCorreccionMunicipio, reprocesarDocumento } from '../../src/services/bandeja';
+import type { SqlClient } from '../../src/db/types';
+import { resolverIpDeOrigen } from './ip';
 
-async function ipYUserAgent(): Promise<{ ip: string | null; userAgent: string | null }> {
+async function ipYUserAgent(): Promise<{ ip: string; userAgent: string | null }> {
   const cabeceras = await headers();
-  return {
-    ip: (cabeceras.get('x-forwarded-for') ?? '').split(',')[0]?.trim() || null,
-    userAgent: cabeceras.get('user-agent'),
-  };
+  return { ip: resolverIpDeOrigen(cabeceras), userAgent: cabeceras.get('user-agent') };
 }
 
 async function userIdDeSesion(tx: SqlClient): Promise<string> {
@@ -57,8 +64,19 @@ function agruparPorEmpresa(formData: FormData): Map<string, string[]> {
 
 async function aprobarOResolverLote(formData: FormData, decision: ItemLoteAprobacion['decision']): Promise<void> {
   const porEmpresa = agruparPorEmpresa(formData);
-  const { ip, userAgent } = await ipYUserAgent();
   const motivo = decision === 'aprobado' ? null : 'Rechazado en bandeja de aprobación en lote.';
+
+  // V-11: se resuelve la IP ANTES de abrir ninguna sesión de empresa. Si
+  // falta, se corta aquí con el mensaje de negocio — ninguna empresa del
+  // lote llega a intentar un INSERT en `approval` sin IP.
+  let ip: string;
+  let userAgent: string | null;
+  try {
+    ({ ip, userAgent } = await ipYUserAgent());
+  } catch (error) {
+    const mensaje = error instanceof Error ? error.message : String(error);
+    redirect(`/bandeja?error=${encodeURIComponent(mensaje)}`);
+  }
 
   const errores: string[] = [];
   for (const [companyId, journalEntryIds] of porEmpresa) {

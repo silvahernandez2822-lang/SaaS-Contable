@@ -18,13 +18,13 @@
  * El motivo del fallo NUNCA se le devuelve al cliente con detalle: hacia afuera
  * siempre es "credenciales inválidas". El detalle queda en la auditoría.
  */
-import type { SqlClient } from '../db/types.js';
-import { withAuthContext } from '../db/tenant-context.js';
-import { hashearPassword, verificarPassword } from './password.js';
-import { verificarCodigoTotp } from './totp.js';
-import { descifrar } from './cifrado.js';
-import { abrirSesion, MINUTOS_SESION_POR_DEFECTO } from './sesion.js';
-import type { DatosSesion } from './sesion.js';
+import type { SqlClient } from '../db/types';
+import { withAuthContext } from '../db/tenant-context';
+import { hashearPassword, verificarPassword } from './password';
+import { verificarCodigoTotp } from './totp';
+import { descifrar } from './cifrado';
+import { abrirSesion, MINUTOS_SESION_POR_DEFECTO } from './sesion';
+import type { DatosSesion } from './sesion';
 
 export type MotivoFallo =
   | 'usuario_inexistente'

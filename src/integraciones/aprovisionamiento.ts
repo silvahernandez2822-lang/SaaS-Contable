@@ -33,9 +33,9 @@
  * humano con `usuario.administrar`, nunca el propio canal de correo se
  * aprovisiona a sí mismo.
  */
-import type { SqlClient } from '../db/types.js';
-import { exigirPermiso, PERMISOS } from '../auth/permisos.js';
-import { crearTokenIntegracion, type CanalIntegracion, type TokenIntegracionEmitido } from './token.js';
+import type { SqlClient } from '../db/types';
+import { exigirPermiso, PERMISOS } from '../auth/permisos';
+import { crearTokenIntegracion, type CanalIntegracion, type TokenIntegracionEmitido } from './token';
 
 const ROL_SISTEMA_INGESTA_CODIGO = 'sistema_ingesta';
 

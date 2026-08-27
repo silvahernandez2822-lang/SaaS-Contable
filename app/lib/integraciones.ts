@@ -16,10 +16,10 @@
  * acción de administración que se ejecuta una vez al activar el canal, no
  * para cada correo.
  */
-import { conSesionEmpresa } from './sesion.js';
-import { listarEmpresasActivasDeLaFirma, sincronizarAccesoEmpresaIngesta } from '../../src/integraciones/aprovisionamiento.js';
-import { crearUsuarioSistemaIngesta } from '../../src/integraciones/aprovisionamiento.js';
-import type { CanalIntegracion } from '../../src/integraciones/token.js';
+import { conSesionEmpresa } from './sesion';
+import { listarEmpresasActivasDeLaFirma, sincronizarAccesoEmpresaIngesta } from '../../src/integraciones/aprovisionamiento';
+import { crearUsuarioSistemaIngesta } from '../../src/integraciones/aprovisionamiento';
+import type { CanalIntegracion } from '../../src/integraciones/token';
 
 export interface ResultadoSincronizacionFirma {
   companyId: string;

@@ -30,9 +30,9 @@
  *    que exige la FK compuesta de D-017. También queda anotado como pendiente.
  */
 import { fileURLToPath } from 'node:url';
-import { createTestDb, uuid, type TestDb } from '../helpers/db.js';
-import { seed } from '../../src/db/seed.js';
-import type { SqlClient } from '../../src/db/types.js';
+import { createTestDb, uuid, type TestDb } from '../helpers/db';
+import { seed } from '../../src/db/seed';
+import type { SqlClient } from '../../src/db/types';
 
 const SEEDS_DIR = fileURLToPath(new URL('../../db/seeds', import.meta.url));
 

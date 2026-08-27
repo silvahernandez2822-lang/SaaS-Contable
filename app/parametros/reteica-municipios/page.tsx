@@ -7,10 +7,10 @@
  * — "Sin regla de ReteICA" en vez de un cero silencioso (advertencia 17.5).
  */
 import Link from 'next/link';
-import { conSesion } from '../../lib/sesion.js';
-import { listarMunicipiosIca, puedeEditarParametros, hoyIso } from '../../../src/services/parametrizacion.js';
-import { BadgeAlcance, MensajeError } from '../_componentes.js';
-import { confirmarAction, simularAction } from './acciones.js';
+import { conSesion } from '../../lib/sesion';
+import { listarMunicipiosIca, puedeEditarParametros, hoyIso } from '../../../src/services/parametrizacion';
+import { BadgeAlcance, MensajeError } from '../_componentes';
+import { confirmarAction, simularAction } from './acciones';
 
 export const dynamic = 'force-dynamic';
 

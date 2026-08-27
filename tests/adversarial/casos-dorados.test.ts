@@ -45,7 +45,7 @@ import {
   type EntradaResolucion,
   type ResultadoResolucion,
   type RetencionResuelta,
-} from '../../src/domain/index.js';
+} from '../../src/domain/index';
 import {
   crearDocumento,
   crearTercero,
@@ -53,8 +53,8 @@ import {
   pesos,
   registrarActividad,
   type EscenarioDorado,
-} from '../golden/_escenario.js';
-import { createTestDb, esperarErrorPg, uuid } from '../helpers/db.js';
+} from '../golden/_escenario';
+import { createTestDb, esperarErrorPg, uuid } from '../helpers/db';
 
 /** 15-jul-2026: el Decreto 572 ya tiene efectos operativos según los datos de A1. */
 const FECHA = '2026-07-15';
@@ -833,7 +833,7 @@ describe('A14 · el andamiaje declarado no puede estar fabricando ningún PASS',
     // que volver a actualizarla — que es exactamente el punto.
     const db = await createTestDb();
     try {
-      const { seed } = await import('../../src/db/seed.js');
+      const { seed } = await import('../../src/db/seed');
       const { fileURLToPath } = await import('node:url');
       const dir = fileURLToPath(new URL('../../db/seeds', import.meta.url));
       const resultado = await db.asAdmin(async (tx) => {

@@ -1,12 +1,12 @@
-export { createDb, createPgliteDb, createPostgresDb } from './client.js';
-export type { CreateDbOptions } from './client.js';
+export { createDb, createPgliteDb, createPostgresDb } from './client';
+export type { CreateDbOptions } from './client';
 export {
   DEFAULT_MIGRATIONS_DIR,
   cargarMigraciones,
   migracionesPendientes,
   migrate,
-} from './migrate.js';
-export type { MigrateOptions, MigrateResult, MigrationFile } from './migrate.js';
+} from './migrate';
+export type { MigrateOptions, MigrateResult, MigrationFile } from './migrate';
 export {
   EmpresaNoAutorizadaError,
   ROL_APLICACION,
@@ -16,7 +16,7 @@ export {
   withAuthContext,
   withSessionContext,
   withTenantContext,
-} from './tenant-context.js';
-export type { SessionContext, TenantContext } from './tenant-context.js';
-export { SQLSTATE, isPostgresError } from './types.js';
-export type { DbHandle, PostgresError, QueryResult, SqlClient, SqlState } from './types.js';
+} from './tenant-context';
+export type { SessionContext, TenantContext } from './tenant-context';
+export { SQLSTATE, isPostgresError } from './types';
+export type { DbHandle, PostgresError, QueryResult, SqlClient, SqlState } from './types';

@@ -10,8 +10,8 @@
  *   --dry     solo lista las migraciones pendientes
  *   --dir=X   directorio de migraciones alterno
  */
-import { createDb } from './client.js';
-import { DEFAULT_MIGRATIONS_DIR, migracionesPendientes, migrate } from './migrate.js';
+import { createDb } from './client';
+import { DEFAULT_MIGRATIONS_DIR, migracionesPendientes, migrate } from './migrate';
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);

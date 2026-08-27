@@ -15,13 +15,13 @@
  * fallaban.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createTestDb, uuid } from '../helpers/db.js';
-import type { TestDb } from '../helpers/db.js';
-import { crearEscenario } from '../helpers/fixtures.js';
-import type { Escenario } from '../helpers/fixtures.js';
-import { SQLSTATE } from '../../src/db/types.js';
-import { ROLES } from '../../src/auth/permisos.js';
-import { rechazoConCodigo } from './_arsenal.js';
+import { createTestDb, uuid } from '../helpers/db';
+import type { TestDb } from '../helpers/db';
+import { crearEscenario } from '../helpers/fixtures';
+import type { Escenario } from '../helpers/fixtures';
+import { SQLSTATE } from '../../src/db/types';
+import { ROLES } from '../../src/auth/permisos';
+import { rechazoConCodigo } from './_arsenal';
 
 let db: TestDb;
 let alfa: Escenario;

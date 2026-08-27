@@ -4,13 +4,13 @@
  * inserta, no calcula, no decide una retención.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createTestDb, type TestDb } from '../helpers/db.js';
-import { crearEscenario, type Escenario } from '../helpers/fixtures.js';
+import { createTestDb, type TestDb } from '../helpers/db';
+import { crearEscenario, type Escenario } from '../helpers/fixtures';
 import {
   listarBuzonesConFallas,
   listarFacturasPendientesParaNotificar,
   listarVencimientosProximos,
-} from '../../src/integraciones/notificaciones.js';
+} from '../../src/integraciones/notificaciones';
 
 let db: TestDb;
 let e: Escenario;

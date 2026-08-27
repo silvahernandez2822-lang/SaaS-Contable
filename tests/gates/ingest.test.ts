@@ -21,19 +21,19 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createTestDb, esperarErrorPg, uuid } from '../helpers/db.js';
-import type { TestDb } from '../helpers/db.js';
-import { crearEscenario } from '../helpers/fixtures.js';
-import type { Escenario } from '../helpers/fixtures.js';
-import { SQLSTATE } from '../../src/db/types.js';
-import { procesarAdjuntoXml } from '../../src/ingest/procesar.js';
+import { createTestDb, esperarErrorPg, uuid } from '../helpers/db';
+import type { TestDb } from '../helpers/db';
+import { crearEscenario } from '../helpers/fixtures';
+import type { Escenario } from '../helpers/fixtures';
+import { SQLSTATE } from '../../src/db/types';
+import { procesarAdjuntoXml } from '../../src/ingest/procesar';
 import {
   contarCorreosRecientes,
   guardarDocumentoProcesado,
   registrarAdjunto,
   registrarCorreo,
   resolverEmpresaPorBuzon,
-} from '../../src/ingest/persistencia.js';
+} from '../../src/ingest/persistencia';
 
 const DIR_FIXTURES = fileURLToPath(new URL('../fixtures/ubl/', import.meta.url));
 function leerFixture(nombre: string): Buffer {

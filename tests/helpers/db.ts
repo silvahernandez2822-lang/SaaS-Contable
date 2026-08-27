@@ -32,13 +32,13 @@
  * aplicación se conecta con un rol de login que ES `app_user`, y ahí
  * `RESET ROLE` no lleva a ninguna parte.
  */
-import { createDb } from '../../src/db/client.js';
-import { migrate } from '../../src/db/migrate.js';
-import { ROL_APLICACION, withSessionContext } from '../../src/db/tenant-context.js';
-import { isPostgresError } from '../../src/db/types.js';
-import type { DbHandle, PostgresError, SqlClient } from '../../src/db/types.js';
-import { generarTokenSesion } from '../../src/auth/sesion.js';
-import { ROLES } from '../../src/auth/permisos.js';
+import { createDb } from '../../src/db/client';
+import { migrate } from '../../src/db/migrate';
+import { ROL_APLICACION, withSessionContext } from '../../src/db/tenant-context';
+import { isPostgresError } from '../../src/db/types';
+import type { DbHandle, PostgresError, SqlClient } from '../../src/db/types';
+import { generarTokenSesion } from '../../src/auth/sesion';
+import { ROLES } from '../../src/auth/permisos';
 
 /** Opciones de una sesión de prueba. */
 export interface OpcionesTenant {

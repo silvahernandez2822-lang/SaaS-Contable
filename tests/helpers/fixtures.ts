@@ -9,9 +9,9 @@
  * son inventadas para probar mecánica de vigencias, y llevan `norma_respaldo`
  * que lo dice. Los datos normativos los puebla A1 en la Ola 1.
  */
-import type { SqlClient } from '../../src/db/types.js';
-import type { TestDb } from './db.js';
-import { uuid } from './db.js';
+import type { SqlClient } from '../../src/db/types';
+import type { TestDb } from './db';
+import { uuid } from './db';
 
 export interface CuentasEscenario {
   /** Clase 5 — no imputable, sirve para probar LG004. */
@@ -299,9 +299,9 @@ export async function crearUsuarioConCredencial(
   tenantId: string,
   opciones: OpcionesUsuario = {},
 ): Promise<UsuarioConCredencial> {
-  const { hashearPassword, ALGORITMO_PASSWORD } = await import('../../src/auth/password.js');
-  const { generarSecretoTotp } = await import('../../src/auth/totp.js');
-  const { cifrar, ESQUEMA_CIFRADO } = await import('../../src/auth/cifrado.js');
+  const { hashearPassword, ALGORITMO_PASSWORD } = await import('../../src/auth/password');
+  const { generarSecretoTotp } = await import('../../src/auth/totp');
+  const { cifrar, ESQUEMA_CIFRADO } = await import('../../src/auth/cifrado');
 
   const s = sufijo();
   const email = `usuario-${s}@ejemplo.co`;

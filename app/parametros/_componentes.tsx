@@ -3,7 +3,7 @@
  * Sin librería de estilos (fuera de alcance de este módulo): HTML semántico
  * con `style` inline mínimo, para que A7 lo pueda reemplazar sin fricción.
  */
-import type { AlertaParametro } from '../../src/services/parametrizacion.js';
+import type { AlertaParametro } from '../../src/services/parametrizacion';
 
 export function BannerAlertas({ alertas }: { alertas: AlertaParametro[] }) {
   if (alertas.length === 0) return null;

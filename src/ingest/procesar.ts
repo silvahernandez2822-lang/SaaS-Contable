@@ -13,18 +13,18 @@
  * estructura; estructura antes de extraer; CUFE y fecha al final, porque
  * necesitan la extracción ya hecha.
  */
-import { parsearXml, type NodoXml } from './ubl/xml.js';
-import { desempaquetarAttachedDocument, esAttachedDocument } from './ubl/desempaquetar.js';
-import { validarEstructuraUbl } from './ubl/validar.js';
-import { extraerDocumento } from './ubl/extraer.js';
-import { sha256Hex } from './hash.js';
-import { TIPOS_DOCUMENTO_UBL } from './tipos.js';
+import { parsearXml, type NodoXml } from './ubl/xml';
+import { desempaquetarAttachedDocument, esAttachedDocument } from './ubl/desempaquetar';
+import { validarEstructuraUbl } from './ubl/validar';
+import { extraerDocumento } from './ubl/extraer';
+import { sha256Hex } from './hash';
+import { TIPOS_DOCUMENTO_UBL } from './tipos';
 import type {
   DocumentoNormalizado,
   MotivoCuarentena,
   ResultadoProcesarAdjunto,
   TipoDocumentoUbl,
-} from './tipos.js';
+} from './tipos';
 
 export interface OpcionesProcesarAdjunto {
   nombreArchivo?: string | null;

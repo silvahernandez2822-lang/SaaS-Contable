@@ -3,8 +3,8 @@
  * montos. Nada aquí toca red ni base de datos.
  */
 import { describe, expect, it } from 'vitest';
-import { manejarWebhookCorreo, elegirBuzonDestino } from '../../src/ingest/correo/webhook.js';
-import { evaluarAutenticacion, autenticacionFalla } from '../../src/ingest/correo/spf-dkim.js';
+import { manejarWebhookCorreo, elegirBuzonDestino } from '../../src/ingest/correo/webhook';
+import { evaluarAutenticacion, autenticacionFalla } from '../../src/ingest/correo/spf-dkim';
 import {
   excedeLimiteTasa,
   excedeTamanoAdjunto,
@@ -12,8 +12,8 @@ import {
   LIMITE_CORREOS_POR_VENTANA,
   TAMANO_MAXIMO_ADJUNTO_BYTES,
   TAMANO_MAXIMO_CORREO_BYTES,
-} from '../../src/ingest/correo/limites.js';
-import { parseMontoACentavos, parsePorcentaje } from '../../src/ingest/ubl/dinero.js';
+} from '../../src/ingest/correo/limites';
+import { parseMontoACentavos, parsePorcentaje } from '../../src/ingest/ubl/dinero';
 
 describe('manejarWebhookCorreo', () => {
   it('acepta un payload bien formado y normaliza valores por defecto', () => {

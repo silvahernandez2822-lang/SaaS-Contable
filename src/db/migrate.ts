@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import type { SqlClient } from './types.js';
+import type { SqlClient } from './types';
 
 /**
  * Runner de migraciones (D-002: SQL plano, sin ORM).

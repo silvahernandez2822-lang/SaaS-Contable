@@ -5,10 +5,10 @@
  * UVT viven aquí dentro: todo se resuelve consultando las tablas paramétricas
  * de A1 por la fecha del hecho económico.
  */
-export { AJUSTE, agregar, huellaDe, resolverFactura, resolverRetenciones } from './motor.js';
-export type { PoliticaRegimenSimple } from './motor.js';
+export { AJUSTE, agregar, huellaDe, resolverFactura, resolverRetenciones } from './motor';
+export type { PoliticaRegimenSimple } from './motor';
 
-export { RepositorioTributarioSql } from './repositorio.js';
+export { RepositorioTributarioSql } from './repositorio';
 export type {
   CriterioReglaRetefuente,
   FilaActividadTercero,
@@ -21,13 +21,13 @@ export type {
   FilaTercero,
   FilaUvt,
   RepositorioTributario,
-} from './repositorio.js';
+} from './repositorio';
 
-export { resolverReversaNotaCredito } from './nota-credito.js';
-export type { EntradaNotaCredito, ResultadoReversa } from './nota-credito.js';
+export { resolverReversaNotaCredito } from './nota-credito';
+export type { EntradaNotaCredito, ResultadoReversa } from './nota-credito';
 
-export { leerRetenciones, persistirLista, persistirRetenciones } from './persistencia.js';
-export type { ContextoPersistencia, FilaRetencionPersistida } from './persistencia.js';
+export { leerRetenciones, persistirLista, persistirRetenciones } from './persistencia';
+export type { ContextoPersistencia, FilaRetencionPersistida } from './persistencia';
 
 export {
   ESCALA_TARIFA,
@@ -42,10 +42,10 @@ export {
   proporcion,
   redondearA,
   uvtACentavos,
-} from './dinero.js';
-export type { CalculoRetencion, ModoRedondeo } from './dinero.js';
+} from './dinero';
+export type { CalculoRetencion, ModoRedondeo } from './dinero';
 
-export { MOTIVO } from './tipos.js';
+export { MOTIVO } from './tipos';
 export type {
   CodigoMotivo,
   EntradaFactura,
@@ -59,4 +59,4 @@ export type {
   RetencionResuelta,
   TipoOperacionIca,
   TipoRetencion,
-} from './tipos.js';
+} from './tipos';

@@ -19,9 +19,9 @@
  * el CHECK de la base de datos (D-017) lo exige. La nota crédito queda
  * identificada por `source_document_id`.
  */
-import type { SqlClient } from '../db/types.js';
-import { aEntero, esModoRedondeo, proporcion } from './dinero.js';
-import type { FechaIso, RetencionResuelta, TipoRetencion } from './tipos.js';
+import type { SqlClient } from '../db/types';
+import { aEntero, esModoRedondeo, proporcion } from './dinero';
+import type { FechaIso, RetencionResuelta, TipoRetencion } from './tipos';
 
 export interface EntradaNotaCredito {
   /** Documento original ya causado, cuyas retenciones se reversan. */

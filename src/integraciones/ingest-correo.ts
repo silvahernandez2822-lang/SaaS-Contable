@@ -30,21 +30,21 @@
  * A6). El worker que sí causa (`ejecutarCicloCola`) es un proceso aparte que
  * A15 programa; este archivo no lo importa ni lo llama.
  */
-import type { SqlClient } from '../db/types.js';
-import { withSessionContext, EmpresaNoAutorizadaError, SesionInvalidaError } from '../db/tenant-context.js';
-import { recibirDocumento } from '../services/ingest.js';
-import { sha256Hex } from '../ingest/hash.js';
+import type { SqlClient } from '../db/types';
+import { withSessionContext, EmpresaNoAutorizadaError, SesionInvalidaError } from '../db/tenant-context';
+import { recibirDocumento } from '../services/ingest';
+import { sha256Hex } from '../ingest/hash';
 import {
   manejarWebhookCorreo,
   manejarWebhookConAdaptador,
   elegirBuzonDestino,
-} from '../ingest/correo/webhook.js';
-import { evaluarAutenticacion, autenticacionFalla } from '../ingest/correo/spf-dkim.js';
-import { excedeTamanoCorreo, excedeTamanoAdjunto, excedeLimiteTasa, LIMITE_CORREOS_POR_VENTANA, VENTANA_LIMITE_TASA_MINUTOS } from '../ingest/correo/limites.js';
-import { registrarCorreo, registrarAdjunto, contarCorreosRecientes } from '../ingest/persistencia.js';
-import type { CorreoEntrante, ProveedorCorreoEntrante } from '../ingest/correo/tipos.js';
-import { abrirSesionSistema, cerrarSesionSistema, TokenIntegracionInvalidoError } from './sesion-sistema.js';
-import { registrarLlamada, registrarLlamadaNoAutenticada } from './llamadas.js';
+} from '../ingest/correo/webhook';
+import { evaluarAutenticacion, autenticacionFalla } from '../ingest/correo/spf-dkim';
+import { excedeTamanoCorreo, excedeTamanoAdjunto, excedeLimiteTasa, LIMITE_CORREOS_POR_VENTANA, VENTANA_LIMITE_TASA_MINUTOS } from '../ingest/correo/limites';
+import { registrarCorreo, registrarAdjunto, contarCorreosRecientes } from '../ingest/persistencia';
+import type { CorreoEntrante, ProveedorCorreoEntrante } from '../ingest/correo/tipos';
+import { abrirSesionSistema, cerrarSesionSistema, TokenIntegracionInvalidoError } from './sesion-sistema';
+import { registrarLlamada, registrarLlamadaNoAutenticada } from './llamadas';
 
 export const ENDPOINT_INGEST_CORREO = '/api/integraciones/correo';
 

@@ -16,14 +16,14 @@
  * lote con filas que ya no le corresponden. Los tres se prueban aquí.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { createTestDb, uuid, type TestDb } from '../helpers/db.js';
+import { createTestDb, uuid, type TestDb } from '../helpers/db';
 import {
   crearAsientoBorrador,
   crearEscenario,
   partidasEquilibradas,
   type Escenario,
-} from '../helpers/fixtures.js';
-import { isPostgresError, SQLSTATE, type DbHandle, type SqlClient } from '../../src/db/types.js';
+} from '../helpers/fixtures';
+import { isPostgresError, SQLSTATE, type DbHandle, type SqlClient } from '../../src/db/types';
 
 // -----------------------------------------------------------------------------
 // Simulación del transporte de Next.js — y NADA más
@@ -61,9 +61,9 @@ vi.mock('../../app/lib/db.js', () => ({
 }));
 
 // Importaciones que dependen de los mocks: después de declararlos.
-const { guardarUvtAction } = await import('../../app/parametros/valores-base/acciones.js');
-const { aprobarSeleccionAction } = await import('../../app/bandeja/acciones.js');
-const { obtenerBandejaConsolidada } = await import('../../app/lib/bandeja.js');
+const { guardarUvtAction } = await import('../../app/parametros/valores-base/acciones');
+const { aprobarSeleccionAction } = await import('../../app/bandeja/acciones');
+const { obtenerBandejaConsolidada } = await import('../../app/lib/bandeja');
 
 beforeAll(async () => {
   db = await createTestDb();

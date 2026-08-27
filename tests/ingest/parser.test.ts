@@ -13,8 +13,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { procesarAdjuntoXml } from '../../src/ingest/procesar.js';
-import { sha256Hex } from '../../src/ingest/hash.js';
+import { procesarAdjuntoXml } from '../../src/ingest/procesar';
+import { sha256Hex } from '../../src/ingest/hash';
 
 const DIR_FIXTURES = fileURLToPath(new URL('../fixtures/ubl/', import.meta.url));
 

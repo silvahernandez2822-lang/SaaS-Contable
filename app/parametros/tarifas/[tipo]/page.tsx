@@ -11,10 +11,10 @@ import {
   hoyIso,
   type FilaTarifa,
   type TipoTaxRule,
-} from '../../../../src/services/parametrizacion.js';
-import { conSesion } from '../../../lib/sesion.js';
-import { BadgeAlcance, MensajeError } from '../../_componentes.js';
-import { confirmarAction, simularAction } from './acciones.js';
+} from '../../../../src/services/parametrizacion';
+import { conSesion } from '../../../lib/sesion';
+import { BadgeAlcance, MensajeError } from '../../_componentes';
+import { confirmarAction, simularAction } from './acciones';
 
 export const dynamic = 'force-dynamic';
 

@@ -12,7 +12,7 @@
  *      se llama a `editarTarifaTaxRule`, que hace el cierre + inserción.
  */
 import { redirect } from 'next/navigation';
-import { conSesion } from '../../../lib/sesion.js';
+import { conSesion } from '../../../lib/sesion';
 import {
   editarTarifaTaxRule,
   fechaMinimaVigenciaTaxRule,
@@ -21,9 +21,9 @@ import {
   NormaDeRespaldoRequeridaError,
   ParametroNoEncontradoError,
   VigenciaInvalidaError,
-} from '../../../../src/services/parametrizacion.js';
-import { isPostgresError, SQLSTATE } from '../../../../src/db/types.js';
-import type { SqlClient } from '../../../../src/db/types.js';
+} from '../../../../src/services/parametrizacion';
+import { isPostgresError, SQLSTATE } from '../../../../src/db/types';
+import type { SqlClient } from '../../../../src/db/types';
 
 function leer(fd: FormData, campo: string): string {
   const v = fd.get(campo);

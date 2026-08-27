@@ -13,11 +13,11 @@ export {
   reencolarJob,
   estadoJobDeDocumento,
   calcularBackoffSegundos,
-} from './cola.js';
-export type { DocumentProcessingJob, EstadoJob } from './cola.js';
+} from './cola';
+export type { DocumentProcessingJob, EstadoJob } from './cola';
 
-export { recibirDocumento, proyectarLineasParaCausacion } from './ingest.js';
-export type { RecibirDocumentoInput, ResultadoIngesta, DatosExtraidos, LineaExtraida } from './ingest.js';
+export { recibirDocumento, proyectarLineasParaCausacion } from './ingest';
+export type { RecibirDocumentoInput, ResultadoIngesta, DatosExtraidos, LineaExtraida } from './ingest';
 
 export {
   procesarJobCausacion,
@@ -25,7 +25,7 @@ export {
   aprobarAsiento,
   aprobarAsientosEnLote,
   reversarAsientoPublicado,
-} from './causacion.js';
+} from './causacion';
 export type {
   ResultadoProcesamiento,
   MotivoLocal,
@@ -35,10 +35,10 @@ export type {
   ResultadoLoteAprobacion,
   ReversarAsientoInput,
   PartidaBorrador,
-} from './causacion.js';
+} from './causacion';
 
-export { consultarEstadoDocumento, listarPendientesDeAprobacion } from './consulta.js';
-export type { EstadoDocumento, RetencionResumen, AsientoResumen, PartidaResumen } from './consulta.js';
+export { consultarEstadoDocumento, listarPendientesDeAprobacion } from './consulta';
+export type { EstadoDocumento, RetencionResumen, AsientoResumen, PartidaResumen } from './consulta';
 
 export {
   listarEmpresasAccesibles,
@@ -48,7 +48,7 @@ export {
   reprocesarDocumento,
   listarPendientesRevision,
   listarMunicipiosParaCorreccion,
-} from './bandeja.js';
+} from './bandeja';
 export type {
   EmpresaAccesible,
   CorreccionesVigentes,
@@ -57,10 +57,10 @@ export type {
   MotivoRevision,
   DocumentoEnRevision,
   MunicipioOpcion,
-} from './bandeja.js';
+} from './bandeja';
 
-export { ejecutarCicloCola, vaciarCola } from './worker.js';
-export type { ResultadoCiclo } from './worker.js';
+export { ejecutarCicloCola, vaciarCola } from './worker';
+export type { ResultadoCiclo } from './worker';
 
 export {
   detectarAlertasParametrizacion,
@@ -84,7 +84,7 @@ export {
   VigenciaInvalidaError,
   ParametroNoEncontradoError,
   EdicionRetroactivaError,
-} from './parametrizacion.js';
+} from './parametrizacion';
 export type {
   AlertaParametro,
   TipoTaxRule,
@@ -97,4 +97,4 @@ export type {
   EditarRoundingRuleInput,
   FilaMunicipioIca,
   EditarMunicipioIcaInput,
-} from './parametrizacion.js';
+} from './parametrizacion';

@@ -2,8 +2,8 @@
  * A13 — "Buzón que falla" (sección 13.1). Solo lectura: ver
  * `src/integraciones/notificaciones.ts`.
  */
-import { listarBuzonesConFallas, TokenIntegracionInvalidoError } from '../../../../../src/integraciones/index.js';
-import { AutenticacionIntegracionAusenteError, conSesionSistema, respuestaError } from '../../../../lib/integraciones-auth.js';
+import { listarBuzonesConFallas, TokenIntegracionInvalidoError } from '../../../../../src/integraciones/index';
+import { AutenticacionIntegracionAusenteError, conSesionSistema, respuestaError } from '../../../../lib/integraciones-auth';
 
 export async function GET(request: Request): Promise<Response> {
   const url = new URL(request.url);

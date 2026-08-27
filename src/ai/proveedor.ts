@@ -12,7 +12,7 @@
  * humana sin propuesta. Un sistema contable que se detiene porque un proveedor
  * de IA no contesta es un sistema contable roto.
  */
-import type { ProveedorLlm } from './tipos.js';
+import type { ProveedorLlm } from './tipos';
 
 export interface ConfiguracionLlm {
   /** 'anthropic' | 'ninguno'. Cualquier otra cosa se trata como 'ninguno'. */
@@ -51,7 +51,7 @@ export async function crearProveedorLlm(
   if (config.proveedor !== 'anthropic') return null;
   if (config.apiKey === null || config.apiKey === undefined || config.apiKey === '') return null;
 
-  const modulo = await import('./proveedores/anthropic.js');
+  const modulo = await import('./proveedores/anthropic');
   return modulo.crearProveedorAnthropic({
     apiKey: config.apiKey,
     modelo: config.modelo ?? undefined,

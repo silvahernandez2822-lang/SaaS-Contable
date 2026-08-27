@@ -28,12 +28,12 @@
  * `causacion.ts`, que solo ejecuta el worker de la cola. Esta función termina
  * con un INSERT y un encolado; nunca resuelve una retención.
  */
-import { procesarAdjuntoXml, type OpcionesProcesarAdjunto } from '../ingest/procesar.js';
-import { guardarDocumentoProcesado } from '../ingest/persistencia.js';
-import type { DocumentoNormalizado, TipoDocumentoUbl } from '../ingest/tipos.js';
-import type { SqlClient } from '../db/types.js';
-import { exigirPermiso, PERMISOS } from '../auth/permisos.js';
-import { encolarCausacion, type DocumentProcessingJob } from './cola.js';
+import { procesarAdjuntoXml, type OpcionesProcesarAdjunto } from '../ingest/procesar';
+import { guardarDocumentoProcesado } from '../ingest/persistencia';
+import type { DocumentoNormalizado, TipoDocumentoUbl } from '../ingest/tipos';
+import type { SqlClient } from '../db/types';
+import { exigirPermiso, PERMISOS } from '../auth/permisos';
+import { encolarCausacion, type DocumentProcessingJob } from './cola';
 
 export interface RecibirDocumentoInput {
   /** Bytes crudos del adjunto, tal como llegaron (antes de cualquier desempaquetado). */

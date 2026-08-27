@@ -19,9 +19,9 @@
  * cambia nada sin que un humano intervenga, así que el workflow no debe
  * reintentarla (ver `n8n/ingest-correo.workflow.json`).
  */
-import { procesarWebhookCorreo, TokenIntegracionInvalidoError } from '../../../../src/integraciones/index.js';
-import { obtenerDb } from '../../../lib/db.js';
-import { AutenticacionIntegracionAusenteError, extraerTokenBearer, respuestaError } from '../../../lib/integraciones-auth.js';
+import { procesarWebhookCorreo, TokenIntegracionInvalidoError } from '../../../../src/integraciones/index';
+import { obtenerDb } from '../../../lib/db';
+import { AutenticacionIntegracionAusenteError, extraerTokenBearer, respuestaError } from '../../../lib/integraciones-auth';
 
 export async function POST(request: Request): Promise<Response> {
   let token: string;

@@ -11,11 +11,11 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createTestDb, type TestDb } from '../helpers/db.js';
-import { crearEscenario, type Escenario } from '../helpers/fixtures.js';
-import { recibirDocumento } from '../../src/services/ingest.js';
-import { estadoJobDeDocumento } from '../../src/services/cola.js';
-import { ejecutarCicloCola, vaciarCola } from '../../src/services/worker.js';
+import { createTestDb, type TestDb } from '../helpers/db';
+import { crearEscenario, type Escenario } from '../helpers/fixtures';
+import { recibirDocumento } from '../../src/services/ingest';
+import { estadoJobDeDocumento } from '../../src/services/cola';
+import { ejecutarCicloCola, vaciarCola } from '../../src/services/worker';
 
 const DIR_FIXTURES = fileURLToPath(new URL('../fixtures/ubl/', import.meta.url));
 function leerFixture(nombre: string): Buffer {

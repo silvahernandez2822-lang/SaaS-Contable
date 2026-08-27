@@ -14,9 +14,9 @@
  * así que `procesarWebhookCorreo` (`./ingest-correo.ts`) la cierra ella misma
  * al terminar, en vez de esperar a que expire.
  */
-import type { SqlClient } from '../db/types.js';
-import { abrirSesion, cerrarSesion, type DatosSesion } from '../auth/sesion.js';
-import { autenticarTokenIntegracion, type CanalIntegracion } from './token.js';
+import type { SqlClient } from '../db/types';
+import { abrirSesion, cerrarSesion, type DatosSesion } from '../auth/sesion';
+import { autenticarTokenIntegracion, type CanalIntegracion } from './token';
 
 /** Vigencia corta: una sesión de integración vive lo que dura procesar UNA llamada. */
 export const MINUTOS_SESION_INTEGRACION = 10;

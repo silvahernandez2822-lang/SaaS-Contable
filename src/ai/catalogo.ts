@@ -14,8 +14,8 @@
  * cálculo, que no es suyo (Regla de Oro 4). Menos contexto es además menos
  * tokens: es el mismo interés.
  */
-import type { SqlClient } from '../db/types.js';
-import type { ConceptoCatalogo } from './tipos.js';
+import type { SqlClient } from '../db/types';
+import type { ConceptoCatalogo } from './tipos';
 
 /** Naturalezas que tienen sentido al clasificar una factura de compra. */
 export const NATURALEZAS_COMPRA = ['compra', 'otro'] as const;

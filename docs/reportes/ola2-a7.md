@@ -280,3 +280,110 @@ tocar ni una de sus seis reglas.
 - Dos pruebas de punta a punta nuevas cierran V-7 y V-8 contra el pipeline real (ingesta → cola →
   motor de A3 con datos reales de A1 → corrección humana → reproceso → aprobación), no solo contra el
   motor en aislamiento.
+
+---
+
+## 11. Nota de cierre — V-11 (corrección quirúrgica, antes de la Ola 3)
+
+**Estado:** cerrado. `npm test`: **611 pruebas en verde** (603 al cerrar A14 la Ola 2 + 8 propias en
+`tests/app/bandeja-acciones.test.ts`). `npm run typecheck`: limpio. No toqué `ESTADO_PROYECTO.md`, no
+hice commit, no reabrí nada fuera de `app/bandeja/acciones.ts` (y su prueba nueva).
+
+**El defecto:** `approval.ip` es `NOT NULL` (Ola 0, A2) a propósito — trazabilidad de quién aprueba y
+desde dónde, Regla de Oro 6. `app/bandeja/acciones.ts` solo leía `x-forwarded-for`; si esa cabecera no
+llegaba, `ip` quedaba `null` hasta el `INSERT INTO approval` de `aprobarAsiento`
+(`src/services/causacion.ts`), y PostgreSQL lo rechazaba con un `23502` crudo — un error de motor en
+la cara del contador en vez de un mensaje de negocio.
+
+**La corrección:**
+
+1. **Dos cabeceras, no una.** `resolverIpDeOrigen` (nueva, exportada desde `app/bandeja/acciones.ts`)
+   lee `x-forwarded-for` (toma la primera IP si el proxy encadena varias) y, si esa falta o viene
+   vacía/solo espacios, cae a `x-real-ip`.
+2. **Falla ANTES de tocar la base de datos, con un error de dominio tipado.** Si ninguna de las dos
+   cabeceras llega, `resolverIpDeOrigen` lanza `IpNoDisponibleError` — mismo estilo que ya usa el
+   proyecto para errores de aplicación que no son del motor (`SesionNoPresenteError` en
+   `app/lib/sesion.ts`, `PermisoInsuficienteError` en `src/auth/permisos.ts`, las cuatro clases de
+   error de `src/services/parametrizacion.ts` que ya catalogaba A8): un mensaje en español, que
+   nombra las dos cabeceras, cita la Regla de Oro 6 como motivo, y dice qué revisar (la configuración
+   del proxy/balanceador). `aprobarOResolverLote` resuelve la IP **antes** de agrupar por empresa y
+   abrir ninguna sesión; si falla, redirige a `/bandeja?error=...` con ese mensaje — el usuario nunca
+   ve un SQLSTATE ni el texto de un error de PostgreSQL. No usé el patrón de SQLSTATE propios (D-018)
+   porque ese patrón es para invariantes que el MOTOR impone dentro de una transacción; esto es una
+   validación de una cabecera HTTP que debe impedir que la transacción siquiera se abra, así que el
+   error de dominio tipado en TypeScript es la pieza correcta, no un SQLSTATE inventado.
+3. **La restricción `NOT NULL` no se tocó.** No hay `ALTER TABLE approval` en ninguna migración mía,
+   no hay `DEFAULT`, no hay `'0.0.0.0'` ni ningún otro relleno en el código — verificado con una
+   prueba que lee el `.sql` de A2 y confirma que `ip inet NOT NULL` sigue ahí, y otra que barre el
+   código (sin comentarios, con el mismo criterio que usa el detector de la Regla de Oro 2) buscando
+   cualquier asignación literal a `ip`.
+4. **Extraje `resolverIpDeOrigen` como función pura**, sin `next/headers` dentro, específicamente
+   para poder probarla con Vitest sin simular el runtime de un Server Action de Next.js (que sigue
+   sin tener suite propia en este repositorio, igual que el módulo de A8). `ipYUserAgent` (privada)
+   sigue siendo la única que llama `headers()`.
+
+**Prueba, exactamente los tres casos que pidió el encargo** (`tests/app/bandeja-acciones.test.ts`,
+8 casos):
+
+- Sin `x-forwarded-for` ni `x-real-ip` → `IpNoDisponibleError`, con mensaje que nombra ambas
+  cabeceras y la Regla de Oro 6, y que **no** contiene `23502` ni el texto de un error de PostgreSQL.
+- Con solo `x-real-ip` → resuelve esa IP.
+- Con solo `x-forwarded-for` (con o sin cadena de proxies) → sigue funcionando exactamente como antes.
+- Con las dos presentes → gana `x-forwarded-for` (la más cercana al cliente real).
+- `x-forwarded-for` vacío o solo espacios → cae a `x-real-ip` en vez de devolver una IP vacía.
+- La columna `approval.ip` sigue `NOT NULL` en `009_control.sql`.
+- Ninguna migración de A7 la toca.
+- El código (sin comentarios) no asigna ningún literal de cadena a `ip`.
+
+**Lo que queda para A15 (parte de despliegue de V-11, explícitamente fuera de mi alcance):** esta
+corrección resuelve "qué pasa si falta la cabecera" con un mensaje claro; no resuelve "que la
+cabecera llegue siempre". Eso depende de cómo se configure el proxy/balanceador delante de la
+aplicación en producción (Nginx, Cloudflare, el proxy del proveedor de hosting, etc.) para que
+reenvíe `x-forwarded-for` o `x-real-ip` de forma consistente. Si el entorno de despliegue no
+garantiza ninguna de las dos, todo intento de aprobar en la bandeja fallará limpio con
+`IpNoDisponibleError` — que es el comportamiento correcto (no aprobar sin trazabilidad), pero bloquea
+el flujo de trabajo real hasta que A15 lo configure.
+
+---
+
+## 12. Nota de cierre — arreglo de `npx next build` tras V-11 (mismo día, antes de la Ola 3)
+
+**Estado:** cerrado. `npm test`: **611 pruebas en verde**. `npm run typecheck`: limpio.
+`npx next build`: compila sin errores (`/bandeja` sale como ruta dinámica). No toqué
+`ESTADO_PROYECTO.md`, no hice commit.
+
+**El defecto que introdujo la nota anterior:** `app/bandeja/acciones.ts` lleva `"use server"`, y
+Next.js exige que **todo** lo que ese archivo exporte sea una función `async`. Al añadir
+`IpNoDisponibleError` (una clase) y `resolverIpDeOrigen` (una función pura y síncrona) como exports
+de ese mismo archivo, Next invalidó el módulo entero — no fallaba `npm test` ni `npm run typecheck`
+(ninguno de los dos aplica las reglas del compilador de Next sobre archivos `"use server"`), pero
+`npx next build` sí, con un error en cascada: los tres server actions del archivo "dejaban de
+existir" para `page.tsx`.
+
+**El arreglo:** `IpNoDisponibleError` y `resolverIpDeOrigen` se movieron a `app/bandeja/ip.ts`, un
+módulo normal sin `"use server"`. `app/bandeja/acciones.ts` ahora solo los IMPORTA y ya no exporta
+nada que no sea uno de los tres server actions `async`. El diseño de V-11 no cambió ni una línea: el
+mensaje de negocio, las dos cabeceras (`x-forwarded-for` con `x-real-ip` como respaldo) y la prueba de
+que `approval.ip` sigue `NOT NULL` son exactamente los mismos; lo único que se movió fue la ubicación
+de dos exports. `tests/app/bandeja-acciones.test.ts` se actualizó para importar desde
+`app/bandeja/ip` en vez de `app/bandeja/acciones`.
+
+**Convención nueva que recogí de A0 (aplica a todo `app/` de aquí en adelante):** los imports
+relativos ya no llevan extensión `.js` (Turbopack no resolvía esa convención; A0 reescribió 460
+imports en 106 archivos). El import nuevo que agregué (`import { resolverIpDeOrigen } from './ip';`
+en `acciones.ts`) se escribió sin extensión, siguiendo esa convención.
+
+**Efecto colateral encontrado y corregido, sin relación con V-11 ni con la bandeja:** al correr la
+suite completa después del arreglo, `tests/ai/clasificacion.test.ts` (de A5) fallaba en un único
+`expect`: esperaba literalmente `await import('./proveedores/anthropic.js')` (con extensión) dentro
+de `src/ai/proveedor.ts`, pero el barrido de imports de A0 también reescribió esa línea —un `import()`
+dinámico, no uno estático— quitándole la extensión, que es la convención correcta ahora. Ajusté esa
+única aserción (una línea) para que exija el mismo import dinámico sin extensión, sin tocar ninguna
+otra línea de ese archivo ni de `src/ai/`. No es un cambio de diseño de nadie: es la misma reescritura
+de A0 alcanzando una aserción que todavía esperaba el formato anterior. Lo señalo aparte porque no es
+mío por dominio (es de A5/A0), pero bloqueaba "`npm test` en verde", que es criterio de cierre
+explícito de este encargo.
+
+**Criterio de entrega que aplico de ahora en adelante para cualquier cosa que toque `app/`:**
+`npm test`, `npm run typecheck` y `npx next build`, los tres, antes de darme por terminado — ninguno
+de los dos primeros ve las reglas de Next.

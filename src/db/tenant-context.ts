@@ -1,4 +1,4 @@
-import type { SqlClient } from './types.js';
+import type { SqlClient } from './types';
 
 /**
  * Contexto de sesión (D-004, corregido por D-021 — cierre de D-020).

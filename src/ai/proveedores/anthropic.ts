@@ -25,7 +25,7 @@
  * y un score. Todo lo demás que el modelo escriba se descarta sin leerlo. No
  * hay ninguna rama de este archivo capaz de devolver una tarifa.
  */
-import type { PeticionLlm, ProveedorLlm, RespuestaLlm } from '../tipos.js';
+import type { PeticionLlm, ProveedorLlm, RespuestaLlm } from '../tipos';
 
 const URL_MENSAJES = 'https://api.anthropic.com/v1/messages';
 const VERSION_API = '2023-06-01';

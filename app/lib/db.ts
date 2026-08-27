@@ -12,8 +12,8 @@
  * `withSessionContext` (`app/lib/sesion.ts`), que fija el rol `app_user` y
  * exige un token de sesión válido.
  */
-import { createDb } from '../../src/db/client.js';
-import type { DbHandle } from '../../src/db/types.js';
+import { createDb } from '../../src/db/client';
+import type { DbHandle } from '../../src/db/types';
 
 let promesa: Promise<DbHandle> | null = null;
 

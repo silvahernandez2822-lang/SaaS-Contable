@@ -12,16 +12,16 @@ export {
   normalizacionMinima,
   patronesDeMemoria,
   patronCanonico,
-} from './normalizar.js';
+} from './normalizar';
 
-export { cargarParametros, umbralesUtilizables, CLAVE } from './parametros.js';
-export type { AlcanceMemoria, ParametrosClasificacion } from './parametros.js';
+export { cargarParametros, umbralesUtilizables, CLAVE } from './parametros';
+export type { AlcanceMemoria, ParametrosClasificacion } from './parametros';
 
-export { cargarCatalogo, indicePorCodigo, NATURALEZAS_COMPRA } from './catalogo.js';
-export type { OpcionesCatalogo } from './catalogo.js';
+export { cargarCatalogo, indicePorCodigo, NATURALEZAS_COMPRA } from './catalogo';
+export type { OpcionesCatalogo } from './catalogo';
 
-export { buscarEnMemoria, contarAcierto, registrarDecisionHumana } from './memoria.js';
-export type { BusquedaMemoria, DecisionHumana, EntradaMemoria, ResultadoDecision } from './memoria.js';
+export { buscarEnMemoria, contarAcierto, registrarDecisionHumana } from './memoria';
+export type { BusquedaMemoria, DecisionHumana, EntradaMemoria, ResultadoDecision } from './memoria';
 
 export {
   cargarPrompt,
@@ -30,31 +30,31 @@ export {
   formatearCatalogo,
   huellaPeticion,
   renderizar,
-} from './prompt.js';
-export type { EntradaPeticion, PromptVersionado } from './prompt.js';
+} from './prompt';
+export type { EntradaPeticion, PromptVersionado } from './prompt';
 
-export { costoMicrosUsd } from './costo.js';
-export type { PreciosModelo } from './costo.js';
+export { costoMicrosUsd } from './costo';
+export type { PreciosModelo } from './costo';
 
 export {
   clasificarDocumento,
   confirmarClasificacion,
   listarColaRevision,
-} from './clasificar.js';
+} from './clasificar';
 export type {
   ConfirmacionInput,
   ItemColaRevision,
   OpcionesClasificacion,
   ResultadoConfirmacion,
-} from './clasificar.js';
+} from './clasificar';
 
-export { crearProveedorLlm, configuracionDesdeEntorno } from './proveedor.js';
-export type { ConfiguracionLlm } from './proveedor.js';
+export { crearProveedorLlm, configuracionDesdeEntorno } from './proveedor';
+export type { ConfiguracionLlm } from './proveedor';
 
-export { ProveedorLlmFalso } from './proveedores/falso.js';
-export type { OpcionesProveedorFalso } from './proveedores/falso.js';
+export { ProveedorLlmFalso } from './proveedores/falso';
+export type { OpcionesProveedorFalso } from './proveedores/falso';
 
-export { MOTIVO_CLASIFICACION } from './tipos.js';
+export { MOTIVO_CLASIFICACION } from './tipos';
 export type {
   CodigoMotivoClasificacion,
   ConceptoCatalogo,
@@ -65,4 +65,4 @@ export type {
   RespuestaLlm,
   ResultadoClasificacion,
   ResultadoLinea,
-} from './tipos.js';
+} from './tipos';

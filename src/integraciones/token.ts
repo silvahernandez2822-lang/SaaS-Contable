@@ -12,9 +12,9 @@
  * la excepción: corre en el camino de autenticación (`app_auth`), igual que
  * `buscarCredencial` en `src/auth/autenticacion.ts`.
  */
-import type { SqlClient } from '../db/types.js';
-import { withAuthContext } from '../db/tenant-context.js';
-import { generarTokenSesion, hashTokenSesion } from '../auth/sesion.js';
+import type { SqlClient } from '../db/types';
+import { withAuthContext } from '../db/tenant-context';
+import { generarTokenSesion, hashTokenSesion } from '../auth/sesion';
 
 export type CanalIntegracion = 'correo';
 

@@ -6,3 +6,5 @@ dist/
 *.log
 .pglite/
 .*-spike.mjs
+tsconfig.tsbuildinfo
+next-env.d.ts

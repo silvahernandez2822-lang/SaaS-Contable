@@ -25,20 +25,20 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { createTestDb, esperarErrorPg, uuid, type TestDb } from '../helpers/db.js';
-import { crearEscenario, type Escenario } from '../helpers/fixtures.js';
-import { SQLSTATE, type SqlClient } from '../../src/db/types.js';
-import { withAdminContext } from '../../src/db/tenant-context.js';
-import { procesarAdjuntoXml } from '../../src/ingest/index.js';
-import { MODOS_REDONDEO } from '../../src/domain/dinero.js';
-import { guardarDocumentoProcesado, resolverEmpresaPorBuzon } from '../../src/ingest/persistencia.js';
+import { createTestDb, esperarErrorPg, uuid, type TestDb } from '../helpers/db';
+import { crearEscenario, type Escenario } from '../helpers/fixtures';
+import { SQLSTATE, type SqlClient } from '../../src/db/types';
+import { withAdminContext } from '../../src/db/tenant-context';
+import { procesarAdjuntoXml } from '../../src/ingest/index';
+import { MODOS_REDONDEO } from '../../src/domain/dinero';
+import { guardarDocumentoProcesado, resolverEmpresaPorBuzon } from '../../src/ingest/persistencia';
 import {
   aprobarAsiento,
   procesarJobCausacion,
   reversarAsientoPublicado,
-} from '../../src/services/causacion.js';
-import { encolarCausacion, reclamarSiguienteJob } from '../../src/services/cola.js';
-import { ejecutarCicloCola } from '../../src/services/worker.js';
+} from '../../src/services/causacion';
+import { encolarCausacion, reclamarSiguienteJob } from '../../src/services/cola';
+import { ejecutarCicloCola } from '../../src/services/worker';
 
 let db: TestDb;
 
@@ -1174,7 +1174,7 @@ describe('A14 · LA COSTURA QUE NADIE PROBÓ: el pipeline completo CON retencion
    * en uno que cuadra por casualidad con un valor equivocado.
    */
   it('caso dorado 1 de punta a punta: $1.000.000 + IVA → asiento con retefuente $40.000 y ReteIVA $28.500, publicado', async () => {
-    const { seed } = await import('../../src/db/seed.js');
+    const { seed } = await import('../../src/db/seed');
     const dirSeeds = fileURLToPath(new URL('../../db/seeds', import.meta.url));
     const e = await crearEscenario(db);
     const fecha = '2026-07-15'; // con el Decreto 572 ya vigente según A1
@@ -1503,7 +1503,7 @@ describe('A14 · CASO DORADO 8 SIN ANDAMIAJE: ReteICA de Medellín con los seeds
    * normativos— y se deja que el motor resuelva con lo que hay en la base.
    */
   it('$1.000.000 de servicio en Medellín produce ReteICA de $2.000 (2 por mil), asiento publicado, sin insertar ninguna regla', async () => {
-    const { seed } = await import('../../src/db/seed.js');
+    const { seed } = await import('../../src/db/seed');
     const dirSeeds = fileURLToPath(new URL('../../db/seeds', import.meta.url));
     const e = await crearEscenario(db);
     const fecha = '2026-07-15';
@@ -1753,7 +1753,7 @@ describe('A14 · el respaldo "parámetro operativo" no puede convertirse en una 
     // demás pruebas del archivo.
     const db2 = await createTestDb();
     try {
-      const { seed } = await import('../../src/db/seed.js');
+      const { seed } = await import('../../src/db/seed');
       const dirSeeds = fileURLToPath(new URL('../../db/seeds', import.meta.url));
       const e2 = await crearEscenario(db2);
 
@@ -1862,8 +1862,8 @@ describe('A14 · el valor por defecto de A1 es SOBREESCRIBIBLE por la firma, sin
     // visible en el número y no solo en el identificador de la regla.
     const db2 = await createTestDb();
     try {
-      const { seed } = await import('../../src/db/seed.js');
-      const { RepositorioTributarioSql } = await import('../../src/domain/index.js');
+      const { seed } = await import('../../src/db/seed');
+      const { RepositorioTributarioSql } = await import('../../src/domain/index');
       const dirSeeds = fileURLToPath(new URL('../../db/seeds', import.meta.url));
       const e2 = await crearEscenario(db2);
       await db2.asAdmin(async (tx) => {

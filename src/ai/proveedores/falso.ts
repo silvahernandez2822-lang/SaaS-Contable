@@ -19,7 +19,7 @@
  * clasifique bien, sino que el FLUJO alrededor sea correcto —memoria antes que
  * modelo, umbrales, cola, catálogo cerrado y determinismo—.
  */
-import type { PeticionLlm, ProveedorLlm, RespuestaLlm } from '../tipos.js';
+import type { PeticionLlm, ProveedorLlm, RespuestaLlm } from '../tipos';
 
 /** Palabras vacías del español que no aportan a la comparación. */
 const VACIAS = new Set([

@@ -8,8 +8,8 @@
  * paramétricas del concepto, por la fecha del hecho económico, y ninguna
  * prueba de este directorio lo invoca.
  */
-import { createTestDb, uuid, type TestDb } from '../helpers/db.js';
-import { crearEscenario, type Escenario } from '../helpers/fixtures.js';
+import { createTestDb, uuid, type TestDb } from '../helpers/db';
+import { crearEscenario, type Escenario } from '../helpers/fixtures';
 
 export interface ConceptosPrueba {
   mantenimiento: string;

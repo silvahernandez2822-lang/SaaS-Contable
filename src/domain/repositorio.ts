@@ -12,8 +12,8 @@
  * empresa gana sobre lo de la firma, y lo de la firma sobre el catálogo global
  * (`tenant_id IS NULL`, D-015).
  */
-import type { SqlClient } from '../db/types.js';
-import type { FechaIso, TipoOperacionIca } from './tipos.js';
+import type { SqlClient } from '../db/types';
+import type { FechaIso, TipoOperacionIca } from './tipos';
 
 /** Filtro de alcance híbrido: propio de la empresa, propio de la firma, o global. */
 const ALCANCE = `(

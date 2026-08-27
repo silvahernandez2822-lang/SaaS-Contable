@@ -10,8 +10,8 @@
  */
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createTestDb, type TestDb } from '../helpers/db.js';
-import { seed } from '../../src/db/seed.js';
+import { createTestDb, type TestDb } from '../helpers/db';
+import { seed } from '../../src/db/seed';
 
 const SEEDS_DIR = fileURLToPath(new URL('../../db/seeds', import.meta.url));
 

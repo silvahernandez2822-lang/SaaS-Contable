@@ -16,9 +16,9 @@
  *   --list    solo lista los archivos de seed en el orden en que se aplicarían
  *   --dir=X   directorio de seeds alterno
  */
-import { createDb } from './client.js';
-import { migrate } from './migrate.js';
-import { DEFAULT_SEEDS_DIR, cargarSeeds, seed } from './seed.js';
+import { createDb } from './client';
+import { migrate } from './migrate';
+import { DEFAULT_SEEDS_DIR, cargarSeeds, seed } from './seed';
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);

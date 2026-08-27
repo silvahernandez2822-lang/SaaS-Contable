@@ -12,7 +12,7 @@
  * (migración 016). Estas funciones sirven para decidir qué mostrar en la
  * interfaz y para fallar temprano con un mensaje útil, no para autorizar.
  */
-import type { SqlClient } from '../db/types.js';
+import type { SqlClient } from '../db/types';
 
 export const PERMISOS = {
   DOCUMENTO_LEER: 'documento.leer',

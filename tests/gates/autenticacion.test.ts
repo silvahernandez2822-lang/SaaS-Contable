@@ -15,10 +15,10 @@
  *     `audit_log` con usuario, marca de tiempo e IP.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createTestDb } from '../helpers/db.js';
-import type { TestDb } from '../helpers/db.js';
-import { crearEscenario, crearUsuarioConCredencial } from '../helpers/fixtures.js';
-import type { Escenario } from '../helpers/fixtures.js';
+import { createTestDb } from '../helpers/db';
+import type { TestDb } from '../helpers/db';
+import { crearEscenario, crearUsuarioConCredencial } from '../helpers/fixtures';
+import type { Escenario } from '../helpers/fixtures';
 import {
   ALGORITMO_PASSWORD,
   LONGITUD_MINIMA_PASSWORD,
@@ -26,7 +26,7 @@ import {
   hashearPassword,
   necesitaRehash,
   verificarPassword,
-} from '../../src/auth/password.js';
+} from '../../src/auth/password';
 import {
   base32Decode,
   base32Encode,
@@ -35,18 +35,18 @@ import {
   hotp,
   uriOtpauth,
   verificarCodigoTotp,
-} from '../../src/auth/totp.js';
+} from '../../src/auth/totp';
 import {
   CifradoInvalidoError,
   cifrar,
   claveDesdeBase64,
   descifrar,
   generarClave,
-} from '../../src/auth/cifrado.js';
-import { CredencialInvalidaError, iniciarSesion } from '../../src/auth/autenticacion.js';
-import { cerrarSesion, revocarSesionesDeUsuario } from '../../src/auth/sesion.js';
-import { withSessionContext, SesionInvalidaError } from '../../src/db/tenant-context.js';
-import { ROLES } from '../../src/auth/permisos.js';
+} from '../../src/auth/cifrado';
+import { CredencialInvalidaError, iniciarSesion } from '../../src/auth/autenticacion';
+import { cerrarSesion, revocarSesionesDeUsuario } from '../../src/auth/sesion';
+import { withSessionContext, SesionInvalidaError } from '../../src/db/tenant-context';
+import { ROLES } from '../../src/auth/permisos';
 
 let db: TestDb;
 let e: Escenario;

@@ -22,17 +22,17 @@ import {
   estimarTokens,
   huellaPeticion,
   listarColaRevision,
-} from '../../src/ai/index.js';
-import { CLAVE } from '../../src/ai/parametros.js';
-import { createTestDb, esperarErrorPg, uuid, type TestDb } from '../helpers/db.js';
-import { crearEscenario, type Escenario } from '../helpers/fixtures.js';
-import { SQLSTATE } from '../../src/db/types.js';
+} from '../../src/ai/index';
+import { CLAVE } from '../../src/ai/parametros';
+import { createTestDb, esperarErrorPg, uuid, type TestDb } from '../helpers/db';
+import { crearEscenario, type Escenario } from '../helpers/fixtures';
+import { SQLSTATE } from '../../src/db/types';
 import {
   crearConceptos,
   crearDocumentoConLineas,
   fijarParametro,
   type ConceptosPrueba,
-} from './_escenario.js';
+} from './_escenario';
 
 let db: TestDb;
 
@@ -688,7 +688,7 @@ describe('A5 · ni una ruta de red en el camino de las pruebas', () => {
       const contenido = readFileSync(archivo, 'utf8');
       const relativo = archivo.replace(/\\/g, '/').split('/src/ai/')[1]!;
       if (relativo === 'proveedor.ts') {
-        expect(contenido).toMatch(/await import\('\.\/proveedores\/anthropic\.js'\)/);
+        expect(contenido).toMatch(/await import\('\.\/proveedores\/anthropic'\)/);
         expect(contenido).not.toMatch(/^import .*anthropic/m);
         continue;
       }

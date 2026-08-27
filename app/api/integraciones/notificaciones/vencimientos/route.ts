@@ -3,8 +3,8 @@
  * `src/integraciones/notificaciones.ts`. Filtra fechas ya cargadas por A1 en
  * `tax_calendar`; no calcula ningún vencimiento nuevo.
  */
-import { listarVencimientosProximos, TokenIntegracionInvalidoError } from '../../../../../src/integraciones/index.js';
-import { AutenticacionIntegracionAusenteError, conSesionSistema, respuestaError } from '../../../../lib/integraciones-auth.js';
+import { listarVencimientosProximos, TokenIntegracionInvalidoError } from '../../../../../src/integraciones/index';
+import { AutenticacionIntegracionAusenteError, conSesionSistema, respuestaError } from '../../../../lib/integraciones-auth';
 
 export async function GET(request: Request): Promise<Response> {
   const url = new URL(request.url);

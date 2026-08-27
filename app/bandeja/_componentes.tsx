@@ -11,8 +11,8 @@
  * de `tests/adversarial/valores-tributarios.test.ts` lo confundiera con una
  * tarifa quemada.
  */
-import type { RetencionResumen, PartidaResumen } from '../../src/services/consulta.js';
-import type { MotivoRevision, LineaExtraida, MunicipioOpcion } from '../lib/bandeja.js';
+import type { RetencionResumen, PartidaResumen } from '../../src/services/consulta';
+import type { MotivoRevision, LineaExtraida, MunicipioOpcion } from '../lib/bandeja';
 
 /** Centavos (BIGINT como texto, Regla de Oro 5) -> pesos formateados. */
 export function pesos(centavosTexto: string | number): string {

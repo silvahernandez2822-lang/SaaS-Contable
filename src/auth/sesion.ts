@@ -12,8 +12,8 @@
  * Hay una prueba que compara ambos resultados, para que no se separen.
  */
 import { createHash, randomBytes } from 'node:crypto';
-import type { SqlClient } from '../db/types.js';
-import { withAuthContext } from '../db/tenant-context.js';
+import type { SqlClient } from '../db/types';
+import { withAuthContext } from '../db/tenant-context';
 
 /** Vigencia por defecto de una sesión: 8 horas, la jornada de trabajo. */
 export const MINUTOS_SESION_POR_DEFECTO = 480;

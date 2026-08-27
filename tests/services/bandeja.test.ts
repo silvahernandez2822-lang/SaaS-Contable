@@ -24,19 +24,19 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { fileURLToPath } from 'node:url';
-import { createTestDb, uuid, type TestDb } from '../helpers/db.js';
-import { crearEscenario, type Escenario } from '../helpers/fixtures.js';
-import { PermisoInsuficienteError } from '../../src/auth/permisos.js';
-import { procesarJobCausacion } from '../../src/services/causacion.js';
-import { encolarCausacion } from '../../src/services/cola.js';
-import { consultarEstadoDocumento } from '../../src/services/consulta.js';
+import { createTestDb, uuid, type TestDb } from '../helpers/db';
+import { crearEscenario, type Escenario } from '../helpers/fixtures';
+import { PermisoInsuficienteError } from '../../src/auth/permisos';
+import { procesarJobCausacion } from '../../src/services/causacion';
+import { encolarCausacion } from '../../src/services/cola';
+import { consultarEstadoDocumento } from '../../src/services/consulta';
 import {
   guardarCorreccionAiu,
   guardarCorreccionMunicipio,
   listarEmpresasAccesibles,
   listarPendientesRevision,
   reprocesarDocumento,
-} from '../../src/services/bandeja.js';
+} from '../../src/services/bandeja';
 
 let db: TestDb;
 
@@ -134,7 +134,7 @@ describe('listarEmpresasAccesibles — insumo de la bandeja multi-empresa', () =
 describe('V-7 — AIU por línea, de punta a punta (caso dorado 11 por el canal real)', () => {
   async function montarConceptoAiu(e: Escenario, dirSeeds: string): Promise<string> {
     return db.asAdmin(async (tx) => {
-      const { seed } = await import('../../src/db/seed.js');
+      const { seed } = await import('../../src/db/seed');
       await seed(tx, { dir: dirSeeds });
 
       const { rows: tc } = await tx.query<{ id: string }>(
@@ -274,7 +274,7 @@ describe('V-8 — municipio de la operación, de punta a punta (caso dorado 10 p
     const e = await crearEscenario(db);
 
     const medellinId = await db.asAdmin(async (tx) => {
-      const { seed } = await import('../../src/db/seed.js');
+      const { seed } = await import('../../src/db/seed');
       await seed(tx, { dir: dirSeeds });
 
       await tx.query(`UPDATE company SET es_agente_retencion_ica = true WHERE id = $1`, [e.companyId]);

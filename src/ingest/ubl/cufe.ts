@@ -14,7 +14,7 @@
  * busca por el atributo, no por el nombre del esquema exacto, porque distintos
  * proveedores tecnológicos han usado variantes del literal.
  */
-import { hijo, atributo, texto, type NodoXml } from './xml.js';
+import { hijo, atributo, texto, type NodoXml } from './xml';
 
 const PATRON_CUFE_SHA384 = /^[0-9a-f]{96}$/i;
 

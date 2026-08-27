@@ -8,8 +8,8 @@
  * si `asTenant` no estuviera degradando de verdad a `app_user`, todo lo demás
  * sería un falso PASS y hay que enterarse ahí, no al final.
  */
-import type { SqlClient } from '../../src/db/types.js';
-import { isPostgresError } from '../../src/db/types.js';
+import type { SqlClient } from '../../src/db/types';
+import { isPostgresError } from '../../src/db/types';
 
 export interface RechazoDelMotor {
   code: string;

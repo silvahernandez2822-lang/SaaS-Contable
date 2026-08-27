@@ -9,8 +9,8 @@
  * como texto listo para volver a parsear, o un motivo de cuarentena si el
  * contenedor no trae nada aprovechable.
  */
-import { hijo, quitarPrefijo, texto, type NodoXml } from './xml.js';
-import type { MotivoCuarentena } from '../tipos.js';
+import { hijo, quitarPrefijo, texto, type NodoXml } from './xml';
+import type { MotivoCuarentena } from '../tipos';
 
 export interface Desempaquetado {
   ok: true;

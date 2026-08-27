@@ -19,7 +19,7 @@
  *  - `reencolarJob` la llama una sesión normal con el permiso
  *    `documento.reprocesar`: es una acción humana explícita, no del worker.
  */
-import type { SqlClient } from '../db/types.js';
+import type { SqlClient } from '../db/types';
 
 export type EstadoJob = 'pendiente' | 'en_proceso' | 'completado' | 'agotado';
 

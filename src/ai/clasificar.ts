@@ -35,13 +35,13 @@
  * Oro 4), que lee las reglas paramétricas de ESE concepto por la fecha del
  * hecho económico.
  */
-import type { SqlClient } from '../db/types.js';
-import { cargarCatalogo, indicePorCodigo } from './catalogo.js';
-import { costoMicrosUsd } from './costo.js';
-import { buscarEnMemoria, contarAcierto, registrarDecisionHumana } from './memoria.js';
-import { patronCanonico } from './normalizar.js';
-import { cargarParametros, umbralesUtilizables, type ParametrosClasificacion } from './parametros.js';
-import { construirPeticion, cargarPrompt, estimarTokens, type PromptVersionado } from './prompt.js';
+import type { SqlClient } from '../db/types';
+import { cargarCatalogo, indicePorCodigo } from './catalogo';
+import { costoMicrosUsd } from './costo';
+import { buscarEnMemoria, contarAcierto, registrarDecisionHumana } from './memoria';
+import { patronCanonico } from './normalizar';
+import { cargarParametros, umbralesUtilizables, type ParametrosClasificacion } from './parametros';
+import { construirPeticion, cargarPrompt, estimarTokens, type PromptVersionado } from './prompt';
 import {
   MOTIVO_CLASIFICACION,
   type ConceptoCatalogo,
@@ -49,7 +49,7 @@ import {
   type ProveedorLlm,
   type ResultadoClasificacion,
   type ResultadoLinea,
-} from './tipos.js';
+} from './tipos';
 
 const MILESIMAS = 1000;
 

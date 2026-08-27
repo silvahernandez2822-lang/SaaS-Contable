@@ -9,17 +9,17 @@
  * y `requiereRevisionManual = false` sin necesitar ninguna `tax_rule` de A1.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createTestDb, esperarErrorPg, uuid, type TestDb } from '../helpers/db.js';
-import { crearEscenario, type Escenario } from '../helpers/fixtures.js';
-import { SQLSTATE } from '../../src/db/types.js';
-import { PermisoInsuficienteError } from '../../src/auth/permisos.js';
+import { createTestDb, esperarErrorPg, uuid, type TestDb } from '../helpers/db';
+import { crearEscenario, type Escenario } from '../helpers/fixtures';
+import { SQLSTATE } from '../../src/db/types';
+import { PermisoInsuficienteError } from '../../src/auth/permisos';
 import {
   aprobarAsiento,
   aprobarAsientosEnLote,
   procesarJobCausacion,
   reversarAsientoPublicado,
-} from '../../src/services/causacion.js';
-import { encolarCausacion, reclamarSiguienteJob } from '../../src/services/cola.js';
+} from '../../src/services/causacion';
+import { encolarCausacion, reclamarSiguienteJob } from '../../src/services/cola';
 
 let db: TestDb;
 

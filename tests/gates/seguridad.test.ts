@@ -16,18 +16,18 @@
  * aislamiento ahí sería un falso PASS.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createTestDb, esperarErrorPg, uuid } from '../helpers/db.js';
-import type { TestDb } from '../helpers/db.js';
-import { crearAsientoBorrador, crearEscenario, partidasEquilibradas } from '../helpers/fixtures.js';
-import type { Escenario } from '../helpers/fixtures.js';
-import { SQLSTATE } from '../../src/db/types.js';
+import { createTestDb, esperarErrorPg, uuid } from '../helpers/db';
+import type { TestDb } from '../helpers/db';
+import { crearAsientoBorrador, crearEscenario, partidasEquilibradas } from '../helpers/fixtures';
+import type { Escenario } from '../helpers/fixtures';
+import { SQLSTATE } from '../../src/db/types';
 import {
   EmpresaNoAutorizadaError,
   SesionInvalidaError,
   withSessionContext,
-} from '../../src/db/tenant-context.js';
-import { generarTokenSesion, hashTokenSesion } from '../../src/auth/sesion.js';
-import { PERMISOS } from '../../src/auth/permisos.js';
+} from '../../src/db/tenant-context';
+import { generarTokenSesion, hashTokenSesion } from '../../src/auth/sesion';
+import { PERMISOS } from '../../src/auth/permisos';
 
 let db: TestDb;
 let a: Escenario;

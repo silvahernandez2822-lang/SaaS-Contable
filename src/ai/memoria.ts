@@ -13,9 +13,9 @@
  * se grabara sola, un error del modelo se volvería permanente y silencioso,
  * y a partir de ahí ya no habría ni llamada ni revisión que lo detectara.
  */
-import type { SqlClient } from '../db/types.js';
-import { VERSION_NORMALIZADOR, patronCanonico, patronesDeMemoria } from './normalizar.js';
-import type { AlcanceMemoria } from './parametros.js';
+import type { SqlClient } from '../db/types';
+import { VERSION_NORMALIZADOR, patronCanonico, patronesDeMemoria } from './normalizar';
+import type { AlcanceMemoria } from './parametros';
 
 export interface EntradaMemoria {
   id: string;
