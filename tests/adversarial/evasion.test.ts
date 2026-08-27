@@ -281,9 +281,20 @@ describe('A14 · D-023 — el rol app_auth, medido por lo que el motor le deja h
       );
       return rows.filter((r) => r.privs !== '').map((r) => `${r.tabla}:${r.privs}`);
     });
-    // Exactamente dos, y ninguno más. Si aparece un tercero, alguien amplió el
+    // Exactamente tres, y ninguno más. Si aparece un cuarto, alguien amplió el
     // camino de autenticación sin decirlo.
-    expect(privilegios.sort()).toEqual(['audit_log:INSERT', 'user:SELECT']);
+    //
+    // A13, Ola 2 (migración 091): `integration_call_log:INSERT` — registrar
+    // que una llamada de integración NO se autenticó (token ausente,
+    // inválido o revocado) es el mismo perímetro que `ACCESO_DENEGADO` en
+    // `audit_log`: la fila queda con `tenant_id`/`company_id` NULL (una
+    // política propia, `integration_call_log_no_autenticado`, se lo exige
+    // incluso con este GRANT de tabla) y ningún tenant la ve.
+    expect(privilegios.sort()).toEqual([
+      'audit_log:INSERT',
+      'integration_call_log:INSERT',
+      'user:SELECT',
+    ]);
   });
 
   it('no tiene un solo privilegio sobre las tablas del esquema app, ni siquiera de lectura', async () => {
@@ -558,13 +569,26 @@ describe('A14 · barrido estructural de puertas laterales', () => {
     // `app.current_tenant_id()`.
     expect(inventario).toEqual([
       'app.cerrar_sesion',
+      // A13, Ola 2 (migración 090, cierre de V-9): emitir/rotar el token del
+      // canal de correo. SECURITY DEFINER + filtro explícito por
+      // `app.current_tenant_id()` (nunca un tenant recibido como parámetro),
+      // exige sesión + `usuario.administrar`. El análogo de
+      // `buscar_credencial` para este canal (`autenticar_token_integracion`)
+      // NO aparece aquí: está concedido solo a `app_auth`, igual que
+      // `abrir_sesion`/`buscar_credencial`.
+      'app.crear_token_integracion',
       'app.current_company_id',
       'app.empresas_accesibles',
       'app.fecha_minima_vigencia_municipio_ica',
       'app.fecha_minima_vigencia_tax_rule',
       'app.fecha_minima_vigencia_tenant',
+      // A13, Ola 2 (migración 090): lista los tokens de integración de la
+      // firma en sesión, nunca el secreto. Mismo filtro que crear_token_integracion.
+      'app.listar_tokens_integracion',
       'app.resolver_empresa_por_buzon',
       'app.revocar_sesiones_de_usuario',
+      // A13, Ola 2 (migración 090): revoca un token de integración (incidente).
+      'app.revocar_token_integracion',
       'app.sesion_actual',
       'app.simular_impacto_municipio_ica',
       'app.simular_impacto_tax_concept',

@@ -1,0 +1,109 @@
+{
+  "name": "A13 - Ingest de correo hacia la aplicacion",
+  "meta": {
+    "descripcion": "Recibe el webhook del proveedor de inbound email (SendGrid Inbound Parse, Mailgun Routes, SES+SNS o Postmark - ninguno contratado todavia, ver docs/reportes/ola2-a13.md), lo traduce a la forma neutra CorreoEntrante y lo entrega al endpoint de ingest de la aplicacion (A6/A4). n8n NUNCA decide una retencion ni escribe un asiento: solo transporta, reintenta y notifica.",
+    "seccion": "13.1",
+    "configuracionManual": [
+      "Credential 'appIntegrationTokenCorreo' (Header Auth): cabecera Authorization = Bearer <token emitido por crearTokenIntegracion/provisionarCanalIngestaCorreo, uno por firma>.",
+      "Variable de entorno APP_BASE_URL con la URL publica de la aplicacion desplegada.",
+      "El nodo 'Webhook - proveedor de correo' expone una URL publica que hay que registrar como destino del proveedor de inbound email real (no contratado en este repositorio).",
+      "El nodo 'Normalizar a CorreoEntrante' es un placeholder: su cuerpo depende del proveedor concreto que se contrate (mapear su payload al contrato de src/ingest/correo/tipos.ts)."
+    ]
+  },
+  "nodes": [
+    {
+      "id": "webhook-proveedor",
+      "name": "Webhook - proveedor de correo",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "parameters": {
+        "path": "correo-entrante",
+        "httpMethod": "POST",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "id": "normalizar",
+      "name": "Normalizar a CorreoEntrante",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 0],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Traduce el payload del proveedor de inbound email contratado a la forma\n// neutra que espera POST /api/integraciones/correo (src/ingest/correo/tipos.ts).\n// Puro reordenamiento de campos: NINGUN calculo tributario ni contable.\nconst p = $input.first().json;\nreturn [{\n  json: {\n    messageId: p.messageId ?? null,\n    remitenteEmail: p.from ?? p.envelope?.from ?? '',\n    remitenteNombre: p.fromName ?? null,\n    destinatarios: p.to ? [].concat(p.to) : [],\n    asunto: p.subject ?? null,\n    headers: p.headers ?? {},\n    adjuntos: (p.attachments ?? []).map((a) => ({\n      nombreArchivo: a.filename ?? null,\n      contentType: a.contentType ?? null,\n      contenidoBase64: a.content,\n    })),\n    tamanoBytes: p.tamanoBytes ?? null,\n  },\n}];"
+      }
+    },
+    {
+      "id": "post-ingest",
+      "name": "POST /api/integraciones/correo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [440, 0],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.APP_BASE_URL}}/api/integraciones/correo",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json}}",
+        "options": {
+          "retry": { "retryOnFail": true, "maxTries": 5, "waitBetweenTries": 30000 },
+          "response": { "response": { "neverError": true, "fullResponse": true } }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": { "id": "appIntegrationTokenCorreo", "name": "Token de integracion - canal correo" }
+      }
+    },
+    {
+      "id": "fue-error-definitivo",
+      "name": "¿4xx definitivo o 5xx a reintentar?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [660, 0],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            { "leftValue": "={{$json.statusCode}}", "operator": { "type": "number", "operation": "gte" }, "rightValue": 400 }
+          ]
+        }
+      }
+    },
+    {
+      "id": "notificar-fallo",
+      "name": "Notificar fallo de ingesta al contador",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [880, -80],
+      "parameters": {
+        "subject": "Correo de factura rechazado por el sistema",
+        "text": "=El correo {{$('Normalizar a CorreoEntrante').item.json.messageId}} fue rechazado: {{$json.body?.motivo}} - {{$json.body?.detalle}}. Revise la bandeja de ingesta."
+      }
+    },
+    {
+      "id": "responder-webhook",
+      "name": "Responder 200 al proveedor",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [880, 80],
+      "parameters": { "respondWith": "text", "responseBody": "ok" }
+    }
+  ],
+  "connections": {
+    "Webhook - proveedor de correo": { "main": [[{ "node": "Normalizar a CorreoEntrante", "type": "main", "index": 0 }]] },
+    "Normalizar a CorreoEntrante": { "main": [[{ "node": "POST /api/integraciones/correo", "type": "main", "index": 0 }]] },
+    "POST /api/integraciones/correo": { "main": [[{ "node": "¿4xx definitivo o 5xx a reintentar?", "type": "main", "index": 0 }]] },
+    "¿4xx definitivo o 5xx a reintentar?": {
+      "main": [
+        [{ "node": "Notificar fallo de ingesta al contador", "type": "main", "index": 0 }],
+        [{ "node": "Responder 200 al proveedor", "type": "main", "index": 0 }]
+      ]
+    },
+    "Notificar fallo de ingesta al contador": { "main": [[{ "node": "Responder 200 al proveedor", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" }
+}

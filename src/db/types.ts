@@ -70,6 +70,9 @@ export const SQLSTATE = {
    * este guardia el ledger podría referenciar un plan de cuentas ajeno (D-032).
    */
   FK_ALCANCE_AJENO: 'AL001',
+  /** Integraciones (A13, migración 090): tokens de canal de correo/n8n. */
+  INTEGRACION_TOKEN_INVALIDO: 'IG001',
+  INTEGRACION_USUARIO_AJENO: 'IG003',
   /** Seguridad (A12, migraciones 015 y 016). */
   SESION_INVALIDA: 'SE001',
   PERMISO_INSUFICIENTE: 'SE002',

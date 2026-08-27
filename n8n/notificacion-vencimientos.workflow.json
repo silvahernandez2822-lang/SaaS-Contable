@@ -1,0 +1,90 @@
+{
+  "name": "A13 - Notificacion de vencimiento tributario proximo",
+  "meta": {
+    "descripcion": "Todos los dias, para cada empresa activa, pregunta a la aplicacion cuales obligaciones de tax_calendar (A1, con su propia vigencia y norma de respaldo) vencen dentro de los proximos 15 dias (GET, solo lectura - src/integraciones/notificaciones.ts) y avisa. n8n NO calcula ningun vencimiento ni interpreta el calendario tributario: solo filtra fechas ya cargadas.",
+    "seccion": "13.1",
+    "configuracionManual": [
+      "Credential 'appIntegrationTokenCorreo' (Header Auth).",
+      "Variable de entorno APP_BASE_URL.",
+      "Ventana 'diasVentana' ajustable (por defecto 15)."
+    ]
+  },
+  "nodes": [
+    {
+      "id": "cron",
+      "name": "Cron diario 07:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0],
+      "parameters": { "rule": { "interval": [{ "field": "cronExpression", "expression": "0 7 * * *" }] } }
+    },
+    {
+      "id": "listar-empresas",
+      "name": "GET /api/integraciones/empresas",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [220, 0],
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.APP_BASE_URL}}/api/integraciones/empresas",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": { "httpHeaderAuth": { "id": "appIntegrationTokenCorreo", "name": "Token de integracion - canal correo" } }
+    },
+    {
+      "id": "por-empresa",
+      "name": "Dividir empresas.empresas",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [440, 0],
+      "parameters": { "fieldToSplitOut": "empresas" }
+    },
+    {
+      "id": "get-vencimientos",
+      "name": "GET /notificaciones/vencimientos",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [660, 0],
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.APP_BASE_URL}}/api/integraciones/notificaciones/vencimientos",
+        "sendQuery": true,
+        "queryParameters": { "parameters": [{ "name": "companyId", "value": "={{$json.id}}" }, { "name": "diasVentana", "value": "15" }] },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": { "httpHeaderAuth": { "id": "appIntegrationTokenCorreo", "name": "Token de integracion - canal correo" } }
+    },
+    {
+      "id": "hay-vencimientos",
+      "name": "¿Hay vencimientos proximos?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [880, 0],
+      "parameters": {
+        "conditions": { "combinator": "and", "conditions": [{ "leftValue": "={{$json.vencimientos.length}}", "operator": { "type": "number", "operation": "gt" }, "rightValue": 0 }] }
+      }
+    },
+    {
+      "id": "notificar",
+      "name": "Notificar contador de la empresa",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [1100, 0],
+      "parameters": {
+        "subject": "Vencimiento tributario proximo",
+        "text": "=Hay {{$json.vencimientos.length}} obligacion(es) que vencen en los proximos 15 dias. Consulte el calendario tributario en la aplicacion."
+      }
+    }
+  ],
+  "connections": {
+    "Cron diario 07:00": { "main": [[{ "node": "GET /api/integraciones/empresas", "type": "main", "index": 0 }]] },
+    "GET /api/integraciones/empresas": { "main": [[{ "node": "Dividir empresas.empresas", "type": "main", "index": 0 }]] },
+    "Dividir empresas.empresas": { "main": [[{ "node": "GET /notificaciones/vencimientos", "type": "main", "index": 0 }]] },
+    "GET /notificaciones/vencimientos": { "main": [[{ "node": "¿Hay vencimientos proximos?", "type": "main", "index": 0 }]] },
+    "¿Hay vencimientos proximos?": { "main": [[{ "node": "Notificar contador de la empresa", "type": "main", "index": 0 }], []] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" }
+}

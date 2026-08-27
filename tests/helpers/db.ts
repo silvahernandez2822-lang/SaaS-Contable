@@ -127,6 +127,14 @@ async function asegurarRolesAplicacion(db: DbHandle): Promise<void> {
     REVOKE ALL ON FUNCTION app.registrar_login_fallido(text, uuid, uuid, text, inet, text)
       FROM PUBLIC, ${ROL_APLICACION};
     REVOKE ALL ON FUNCTION app.contar_intento_fallido(uuid) FROM PUBLIC, ${ROL_APLICACION};
+
+    -- A13 (090): autenticar un token de integración es del camino de
+    -- autenticación, igual que buscar_credencial/abrir_sesion (D-023) — el
+    -- GRANT masivo de arriba se lo devolvería a ${ROL_APLICACION} si no se
+    -- revocara aquí también (D-034: todo REVOKE de una migración se espeja
+    -- en el harness o el banco de pruebas queda más permisivo que producción).
+    REVOKE ALL ON FUNCTION app.autenticar_token_integracion(text) FROM PUBLIC, ${ROL_APLICACION};
+
     REVOKE ALL ON FUNCTION app.instalar_permiso_escritura(text, text)
       FROM PUBLIC, ${ROL_APLICACION}, app_auth;
     REVOKE ALL ON FUNCTION app.instalar_triggers_vigencia(text)  FROM ${ROL_APLICACION};
@@ -159,6 +167,11 @@ async function asegurarRolesAplicacion(db: DbHandle): Promise<void> {
     REVOKE ALL ON ALL TABLES IN SCHEMA public FROM app_auth;
     GRANT SELECT ON "user"    TO app_auth;
     GRANT INSERT ON audit_log TO app_auth;
+    -- A13 (091): registrar una llamada de integración que NO se autenticó
+    -- (integration_call_log, tenant_id NULL) es del mismo perímetro que
+    -- ACCESO_DENEGADO en audit_log — el REVOKE ALL de arriba se lo quita si
+    -- no se vuelve a conceder aquí (D-034).
+    GRANT INSERT ON integration_call_log TO app_auth;
     GRANT USAGE  ON ALL SEQUENCES IN SCHEMA public TO app_auth;
     GRANT EXECUTE ON FUNCTION app.abrir_sesion(uuid, text, inet, text, boolean, integer) TO app_auth;
     GRANT EXECUTE ON FUNCTION app.buscar_credencial(text)                                TO app_auth;

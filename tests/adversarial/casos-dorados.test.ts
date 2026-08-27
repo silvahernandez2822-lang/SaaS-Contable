@@ -921,7 +921,23 @@ describe('A14 · canario anti-falso-PASS (actualizado en la Ola 1)', () => {
     // recorre `src/` entero) y el caso dorado 19 de más arriba, que además
     // exige que la única ruta de red del repositorio esté en dos archivos
     // nombrados y que nadie los importe de forma estática.
-    expect(readdirSync(raiz).sort()).toEqual(['ai', 'auth', 'db', 'domain', 'ingest', 'services']);
+    //
+    // Ola 2: `src/integraciones/` (A13, sección 13) también queda DECLARADO.
+    // Cero red: la costura con n8n es HTTP entrante (n8n llama a la
+    // aplicación), nunca la aplicación llamando hacia afuera — no hay
+    // `fetch`/`http.request` en este módulo (lo audita el mismo grep de la
+    // regla de la única ruta de red, más abajo). Solo abre sesión de sistema
+    // (D-021, cierre de V-9) y traduce hacia `src/services` (A6): nunca
+    // calcula una retención ni construye un asiento.
+    expect(readdirSync(raiz).sort()).toEqual([
+      'ai',
+      'auth',
+      'db',
+      'domain',
+      'ingest',
+      'integraciones',
+      'services',
+    ]);
   });
 
   it('las migraciones NO traen datos normativos: aplicar el esquema solo deja las tablas VACÍAS', async () => {

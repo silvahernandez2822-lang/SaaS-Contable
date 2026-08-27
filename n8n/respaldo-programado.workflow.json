@@ -1,0 +1,48 @@
+{
+  "name": "A13 - Respaldo programado (placeholder de orquestacion)",
+  "meta": {
+    "descripcion": "El mecanismo REAL de respaldo (snapshot del Postgres gestionado, prueba de restauracion) es infraestructura de A15, fuera del alcance de A13 - ver seccion 14.1 'Respaldos automaticos con prueba de restauracion'. Lo que corresponde a n8n (seccion 13.1) es el lado de orquestacion/aviso: disparar el respaldo en el horario acordado y notificar si el proveedor de infraestructura reporta un fallo. Este workflow queda como ESQUELETO explicito: no inventa un endpoint de respaldo que no existe.",
+    "seccion": "13.1",
+    "configuracionManual": [
+      "PENDIENTE DE A15: URL/credencial del mecanismo real de respaldo (snapshot administrado por el proveedor de Postgres, o un endpoint propio que A15 decida construir). Este workflow NO la trae porque no existe todavia.",
+      "Una vez exista, reemplazar el nodo 'Disparar respaldo (pendiente A15)' por el nodo HTTP/Comando real.",
+      "Credencial de notificacion (correo/Slack) para el aviso de fallo."
+    ]
+  },
+  "nodes": [
+    {
+      "id": "cron",
+      "name": "Cron diario 02:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0],
+      "parameters": { "rule": { "interval": [{ "field": "cronExpression", "expression": "0 2 * * *" }] } }
+    },
+    {
+      "id": "disparar-respaldo",
+      "name": "Disparar respaldo (pendiente A15)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [220, 0],
+      "parameters": {
+        "notes": "Reemplazar por el nodo HTTP/Comando real del mecanismo de respaldo de A15 cuando exista. Este NoOp documenta el punto de enganche sin inventar un endpoint que no existe."
+      }
+    },
+    {
+      "id": "notificar-fallo",
+      "name": "Notificar fallo de respaldo",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [440, 0],
+      "parameters": {
+        "subject": "Respaldo automatico fallido",
+        "text": "El job de respaldo programado no se completo. Revisar el proveedor de infraestructura."
+      }
+    }
+  ],
+  "connections": {
+    "Cron diario 02:00": { "main": [[{ "node": "Disparar respaldo (pendiente A15)", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" }
+}

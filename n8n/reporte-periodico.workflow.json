@@ -1,0 +1,47 @@
+{
+  "name": "A13 - Reporte periodico (placeholder de orquestacion)",
+  "meta": {
+    "descripcion": "Los reportes en si (libros, Excel, estados financieros, exogena) son de A9/A10/A11, que todavia no han corrido su Ola 2 al momento de esta entrega -no existe endpoint de reportes que consultar todavia. Seccion 13.1 solo le pide a n8n el 'job programado' que dispare/avise: este workflow queda como ESQUELETO explicito, con el punto de enganche marcado, para no inventar un endpoint que no existe (mismo criterio que respaldo-programado.workflow.json).",
+    "seccion": "13.1",
+    "configuracionManual": [
+      "PENDIENTE DE A9/A10/A11: endpoint de solo lectura que devuelva el estado/enlace del reporte periodico generado. Reemplazar el nodo 'Consultar reporte (pendiente A9-A11)' por un HTTP Request real cuando exista, autenticado con el MISMO patron de token de integracion de src/integraciones/token.ts (alcance limitado, canal propio si aplica).",
+      "Credencial de notificacion (correo/Slack)."
+    ]
+  },
+  "nodes": [
+    {
+      "id": "cron",
+      "name": "Cron mensual (dia 1, 06:00)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0],
+      "parameters": { "rule": { "interval": [{ "field": "cronExpression", "expression": "0 6 1 * *" }] } }
+    },
+    {
+      "id": "consultar-reporte",
+      "name": "Consultar reporte (pendiente A9-A11)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [220, 0],
+      "parameters": {
+        "notes": "Reemplazar por HTTP Request al endpoint de reportes cuando A9/A10/A11 lo entreguen. No se inventa aqui."
+      }
+    },
+    {
+      "id": "notificar",
+      "name": "Notificar reporte disponible",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [440, 0],
+      "parameters": {
+        "subject": "Reporte periodico listo",
+        "text": "El reporte periodico del mes ya esta disponible en la aplicacion."
+      }
+    }
+  ],
+  "connections": {
+    "Cron mensual (dia 1, 06:00)": { "main": [[{ "node": "Consultar reporte (pendiente A9-A11)", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" }
+}

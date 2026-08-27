@@ -1,0 +1,90 @@
+{
+  "name": "A13 - Notificacion de buzon de correo que falla",
+  "meta": {
+    "descripcion": "Cada hora, para cada empresa activa, pregunta a la aplicacion si su buzon dedicado tuvo correos rechazados o en cuarentena en las ultimas 24 horas (GET, solo lectura sobre email_ingest_log de A4 - src/integraciones/notificaciones.ts) y avisa. n8n nunca decide si el correo era una factura valida: eso ya lo decidio procesarWebhookCorreo al escribir email_ingest_log.",
+    "seccion": "13.1",
+    "configuracionManual": [
+      "Credential 'appIntegrationTokenCorreo' (Header Auth).",
+      "Variable de entorno APP_BASE_URL.",
+      "Umbral 'minimoFallas' ajustable por firma (por defecto 1)."
+    ]
+  },
+  "nodes": [
+    {
+      "id": "cron",
+      "name": "Cron cada hora",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0],
+      "parameters": { "rule": { "interval": [{ "field": "hours", "hoursInterval": 1 }] } }
+    },
+    {
+      "id": "listar-empresas",
+      "name": "GET /api/integraciones/empresas",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [220, 0],
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.APP_BASE_URL}}/api/integraciones/empresas",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": { "httpHeaderAuth": { "id": "appIntegrationTokenCorreo", "name": "Token de integracion - canal correo" } }
+    },
+    {
+      "id": "por-empresa",
+      "name": "Dividir empresas.empresas",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [440, 0],
+      "parameters": { "fieldToSplitOut": "empresas" }
+    },
+    {
+      "id": "get-fallos",
+      "name": "GET /notificaciones/buzones-fallidos",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [660, 0],
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.APP_BASE_URL}}/api/integraciones/notificaciones/buzones-fallidos",
+        "sendQuery": true,
+        "queryParameters": { "parameters": [{ "name": "companyId", "value": "={{$json.id}}" }, { "name": "ventanaHoras", "value": "24" }] },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": { "httpHeaderAuth": { "id": "appIntegrationTokenCorreo", "name": "Token de integracion - canal correo" } }
+    },
+    {
+      "id": "hay-fallos",
+      "name": "¿Hay buzones con fallas?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [880, 0],
+      "parameters": {
+        "conditions": { "combinator": "and", "conditions": [{ "leftValue": "={{$json.buzones.length}}", "operator": { "type": "number", "operation": "gt" }, "rightValue": 0 }] }
+      }
+    },
+    {
+      "id": "notificar",
+      "name": "Notificar administrador del canal",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [1100, 0],
+      "parameters": {
+        "subject": "Un buzon de correo esta fallando",
+        "text": "=Se detectaron {{$json.buzones.length}} buzon(es) con correos rechazados o en cuarentena en la ultima ventana. Revise el proveedor de correo y el SPF/DKIM del emisor."
+      }
+    }
+  ],
+  "connections": {
+    "Cron cada hora": { "main": [[{ "node": "GET /api/integraciones/empresas", "type": "main", "index": 0 }]] },
+    "GET /api/integraciones/empresas": { "main": [[{ "node": "Dividir empresas.empresas", "type": "main", "index": 0 }]] },
+    "Dividir empresas.empresas": { "main": [[{ "node": "GET /notificaciones/buzones-fallidos", "type": "main", "index": 0 }]] },
+    "GET /notificaciones/buzones-fallidos": { "main": [[{ "node": "¿Hay buzones con fallas?", "type": "main", "index": 0 }]] },
+    "¿Hay buzones con fallas?": { "main": [[{ "node": "Notificar administrador del canal", "type": "main", "index": 0 }], []] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" }
+}

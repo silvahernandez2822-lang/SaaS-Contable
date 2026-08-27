@@ -1,0 +1,91 @@
+{
+  "name": "A13 - Notificacion de facturas pendientes de revision",
+  "meta": {
+    "descripcion": "Todos los dias, para cada empresa activa de la firma, pregunta a la aplicacion cuales facturas llevan mas de N dias en pendiente_aprobacion (GET, solo lectura - src/integraciones/notificaciones.ts) y notifica al contador. n8n nunca decide si una factura esta 'bien' contablemente: solo cuenta lo que la aplicacion ya clasifico.",
+    "seccion": "13.1",
+    "configuracionManual": [
+      "Credential 'appIntegrationTokenCorreo' (Header Auth), la misma del canal de correo (el rol sistema_ingesta tiene documento.leer).",
+      "Variable de entorno APP_BASE_URL.",
+      "El nodo 'Cron diario' esta en 08:00 America/Bogota; ajustar segun la firma.",
+      "Credential de correo/Slack del nodo de notificacion final."
+    ]
+  },
+  "nodes": [
+    {
+      "id": "cron",
+      "name": "Cron diario 08:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0],
+      "parameters": { "rule": { "interval": [{ "field": "cronExpression", "expression": "0 8 * * *" }] } }
+    },
+    {
+      "id": "listar-empresas",
+      "name": "GET /api/integraciones/empresas",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [220, 0],
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.APP_BASE_URL}}/api/integraciones/empresas",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": { "httpHeaderAuth": { "id": "appIntegrationTokenCorreo", "name": "Token de integracion - canal correo" } }
+    },
+    {
+      "id": "por-empresa",
+      "name": "Dividir empresas.empresas",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [440, 0],
+      "parameters": { "fieldToSplitOut": "empresas" }
+    },
+    {
+      "id": "get-pendientes",
+      "name": "GET /notificaciones/pendientes",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [660, 0],
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.APP_BASE_URL}}/api/integraciones/notificaciones/pendientes",
+        "sendQuery": true,
+        "queryParameters": { "parameters": [{ "name": "companyId", "value": "={{$json.id}}" }, { "name": "diasMinimos", "value": "2" }] },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth"
+      },
+      "credentials": { "httpHeaderAuth": { "id": "appIntegrationTokenCorreo", "name": "Token de integracion - canal correo" } }
+    },
+    {
+      "id": "hay-pendientes",
+      "name": "¿Hay facturas pendientes?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [880, 0],
+      "parameters": {
+        "conditions": { "combinator": "and", "conditions": [{ "leftValue": "={{$json.facturas.length}}", "operator": { "type": "number", "operation": "gt" }, "rightValue": 0 }] }
+      }
+    },
+    {
+      "id": "notificar",
+      "name": "Notificar contador",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [1100, 0],
+      "parameters": {
+        "subject": "={{$json.facturas.length}} factura(s) pendiente(s) de revision",
+        "text": "=Hay {{$json.facturas.length}} documento(s) esperando aprobacion hace mas de 2 dias. Revise la bandeja de causacion."
+      }
+    }
+  ],
+  "connections": {
+    "Cron diario 08:00": { "main": [[{ "node": "GET /api/integraciones/empresas", "type": "main", "index": 0 }]] },
+    "GET /api/integraciones/empresas": { "main": [[{ "node": "Dividir empresas.empresas", "type": "main", "index": 0 }]] },
+    "Dividir empresas.empresas": { "main": [[{ "node": "GET /notificaciones/pendientes", "type": "main", "index": 0 }]] },
+    "GET /notificaciones/pendientes": { "main": [[{ "node": "¿Hay facturas pendientes?", "type": "main", "index": 0 }]] },
+    "¿Hay facturas pendientes?": { "main": [[{ "node": "Notificar contador", "type": "main", "index": 0 }], []] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" }
+}

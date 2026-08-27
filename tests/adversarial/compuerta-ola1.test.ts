@@ -1112,6 +1112,17 @@ describe('A14 · la vía del buzón: ¿se puede cruzar de firma por ahí? (adjud
     });
     expect(inventario).toEqual([
       'app.cerrar_sesion',
+      // A13, Ola 2 (migración 090, cierre de V-9): emitir/rotar el token de
+      // integración del canal de correo. SECURITY DEFINER porque escribe en
+      // `app.integration_credential` (esquema `app`, sin GRANTs), pero exige
+      // sesión + `usuario.administrar` y filtra SIEMPRE por
+      // `app.current_tenant_id()` — nunca por un tenant que el llamador pase
+      // como parámetro (mismo criterio que `abrir_sesion` con el tenant del
+      // usuario). `app.autenticar_token_integracion`, el análogo de
+      // `buscar_credencial` para este canal, NO aparece aquí porque está
+      // concedida solo a `app_auth`, igual que `abrir_sesion`/
+      // `buscar_credencial`.
+      'app.crear_token_integracion',
       'app.current_company_id',
       // A7, Ola 2 (migración 070): `app.empresas_accesibles()`, para la
       // bandeja multi-empresa (sección 4). SECURITY DEFINER + row_security=off,
@@ -1127,8 +1138,16 @@ describe('A14 · la vía del buzón: ¿se puede cruzar de firma por ahí? (adjud
       'app.fecha_minima_vigencia_municipio_ica',
       'app.fecha_minima_vigencia_tax_rule',
       'app.fecha_minima_vigencia_tenant',
+      // A13, Ola 2 (migración 090): lista los tokens de integración de la
+      // firma en sesión (nunca el secreto: ya no existe en claro en ningún
+      // lado). Mismo patrón de filtro que crear_token_integracion.
+      'app.listar_tokens_integracion',
       'app.resolver_empresa_por_buzon',
       'app.revocar_sesiones_de_usuario',
+      // A13, Ola 2 (migración 090): revoca un token de integración —
+      // respuesta a incidente. Mismo patrón de filtro que
+      // crear_token_integracion; idempotente.
+      'app.revocar_token_integracion',
       'app.sesion_actual',
       'app.simular_impacto_municipio_ica',
       'app.simular_impacto_tax_concept',

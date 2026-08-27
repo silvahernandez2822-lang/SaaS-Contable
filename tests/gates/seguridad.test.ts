@@ -402,6 +402,10 @@ describe('Sección 14.1 — permisos granulares impuestos por el motor', () => {
       'admin_tributario',
       'auxiliar_causacion',
       'contador',
+      // A13, Ola 2 (migración 090): cuenta técnica sin humano detrás del
+      // canal de correo (cierre de V-9). Alcance mínimo: documento.leer +
+      // documento.cargar, nunca causación ni parámetros.
+      'sistema_ingesta',
       'solo_lectura',
     ]);
   });
