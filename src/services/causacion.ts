@@ -38,6 +38,10 @@ import {
 import { isPostgresError, SQLSTATE } from '../db/types.js';
 import type { SqlClient } from '../db/types.js';
 import { exigirPermiso, PERMISOS } from '../auth/permisos.js';
+// Solo la normalización de A5, que es una función pura y sin I/O. La
+// clasificación por IA no se llama desde aquí: el worker de causación resuelve
+// contra la memoria y nada más (Regla de Oro 4 y caso dorado 19).
+import { patronesDeMemoria } from '../ai/normalizar.js';
 import { proyectarLineasParaCausacion, type DatosExtraidos, type LineaExtraida } from './ingest.js';
 import { completarJob, type DocumentProcessingJob } from './cola.js';
 
@@ -78,26 +82,34 @@ interface FilaConceptoCuentas {
   cuenta_contrapartida_id: string | null;
 }
 
-/** Normalización MÍNIMA para el lookup de memoria (D-013: el resto lo hace A5, sección 8.3). */
-function normalizarDescripcion(descripcion: string | null): string | null {
-  if (descripcion === null) return null;
-  const normalizada = descripcion.toLowerCase().trim();
-  return normalizada === '' ? null : normalizada;
-}
-
+/**
+ * Lookup de memoria (sección 8.3, paso 2).
+ *
+ * La Ola 1 normalizaba al mínimo (minúsculas + trim, D-013) y dejaba dicho que
+ * el resto lo haría A5. A5 ya normaliza de verdad —sin tildes, sin números
+ * variables, sin fechas— y marca sus filas con `normalizador_version = 2`. Las
+ * filas escritas antes siguen ahí, con la normalización vieja, y no se
+ * reescriben: `patronesDeMemoria` devuelve LOS DOS patrones y se busca con
+ * ambos, prefiriendo el nuevo. Así ninguna factura deja de encontrar su
+ * memoria por culpa del cambio.
+ */
 async function buscarConceptoEnMemoria(
   tx: SqlClient,
   companyId: string,
   terceroId: string,
   descripcion: string | null,
 ): Promise<string | null> {
-  const patron = normalizarDescripcion(descripcion);
-  if (patron === null) return null;
+  const patrones = patronesDeMemoria(descripcion);
+  if (patrones.length === 0) return null;
   const { rows } = await tx.query<{ concepto_causacion_id: string }>(
     `SELECT concepto_causacion_id FROM memoria_clasificacion
-      WHERE company_id = $1 AND third_party_id = $2 AND patron_descripcion = $3 AND activo
-      ORDER BY ultima_confirmacion_en DESC LIMIT 1`,
-    [companyId, terceroId, patron],
+      WHERE company_id = $1 AND third_party_id = $2
+        AND patron_descripcion = ANY($3::text[]) AND activo
+      ORDER BY (patron_descripcion = $4) DESC,
+               normalizador_version DESC,
+               ultima_confirmacion_en DESC
+      LIMIT 1`,
+    [companyId, terceroId, patrones, patrones[0]],
   );
   return rows[0]?.concepto_causacion_id ?? null;
 }
@@ -412,7 +424,14 @@ async function causarFactura(
   }
 
   const { rows: extraccionRows } = await tx.query<{ datos_extraidos: unknown }>(
-    `SELECT datos_extraidos FROM extraction WHERE source_document_id = $1 ORDER BY created_at DESC LIMIT 1`,
+    // `origen = 'parser_ubl'` es obligatorio, no cosmético: desde la Ola 2, A5
+    // deja también filas de `extraction` con la traza de cada propuesta de IA
+    // (score, prompt, tokens, costo). Esas filas NO llevan las líneas del
+    // documento, así que «la última extracción» ya no es la del parser y sin
+    // este filtro la causación se quedaría sin líneas que causar.
+    `SELECT datos_extraidos FROM extraction
+      WHERE source_document_id = $1 AND origen = 'parser_ubl'
+      ORDER BY created_at DESC LIMIT 1`,
     [doc.id],
   );
   const crudo = extraccionRows[0] && jsonComoObjeto(extraccionRows[0].datos_extraidos);

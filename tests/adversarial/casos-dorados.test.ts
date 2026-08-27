@@ -724,14 +724,46 @@ describe('A14 · los 20 casos dorados de la sección 12 — veredicto propio', (
 
     // Barrido de TODO src/, no solo de src/domain: si mañana aparece una
     // llamada de red en los servicios, esto la ve.
+    //
+    // OLA 2 — LA ÚNICA EXCEPCIÓN, Y ESTÁ ACOTADA. A5 entrega el puerto
+    // `ProveedorLlm` con dos implementaciones: una falsa y determinista (la que
+    // usan TODAS las pruebas) y un adaptador real «escrito pero no ejecutado».
+    // Ese adaptador, por definición, contiene una ruta de red. La prueba no se
+    // afloja: se convierte en una lista CERRADA de dos archivos, ambos de
+    // `src/ai/`, y se le añaden dos exigencias nuevas —que el motor y los
+    // servicios sigan sin un solo rastro de red, y que nadie importe el
+    // adaptador de forma estática, que es lo que de verdad garantiza que la
+    // suite no puede abrir un socket—.
+    const normalizar = (a: string): string =>
+      a.replace(/\\/g, '/').replace(raiz.replace(/\\/g, '/'), 'src/');
+    const ADAPTADOR_DECLARADO = ['src/ai/proveedor.ts', 'src/ai/proveedores/anthropic.ts'];
+
     const conRed = archivos
       .filter((a) =>
         /\b(fetch|XMLHttpRequest|node:http|node:https|axios|openai|anthropic|@ai-sdk)\b/.test(
           readFileSync(a, 'utf8'),
         ),
       )
-      .map((a) => a.replace(raiz, 'src/'));
-    expect(conRed).toEqual([]);
+      .map(normalizar)
+      .sort();
+    expect(conRed).toEqual(ADAPTADOR_DECLARADO);
+
+    // El motor de A3 y los servicios de A6 siguen limpios: la excepción no se
+    // desborda ni un archivo fuera de src/ai/.
+    expect(conRed.filter((a) => !a.startsWith('src/ai/'))).toEqual([]);
+
+    // Y el adaptador no está enchufado: ni un import estático en todo src/.
+    // (El propio adaptador se excluye: ahí `anthropic` es el nombre de sus
+    // exportaciones, no un import de nadie.)
+    const importadores = archivos
+      .map(normalizar)
+      .filter((a) => a !== 'src/ai/proveedores/anthropic.ts')
+      .filter((a) =>
+        /(^|\n)\s*(import|export)[^\n]*anthropic/i.test(
+          readFileSync(join(raiz, a.replace('src/', '')), 'utf8'),
+        ),
+      );
+    expect(importadores).toEqual([]);
 
     // Y el cálculo es reproducible sin estado: dos resoluciones seguidas de la
     // misma factura dan la misma huella.
@@ -884,7 +916,12 @@ describe('A14 · canario anti-falso-PASS (actualizado en la Ola 1)', () => {
     // el punto: obliga a declararlo y a barrerlo.
     const { readdirSync } = await import('node:fs');
     const raiz = new URL('../../src/', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
-    expect(readdirSync(raiz).sort()).toEqual(['auth', 'db', 'domain', 'ingest', 'services']);
+    // Ola 2: `src/ai/` (A5, sección 8) queda DECLARADO y barrido. Lo barren,
+    // como el resto, `valores-tributarios.test.ts` (Regla de Oro 2, que
+    // recorre `src/` entero) y el caso dorado 19 de más arriba, que además
+    // exige que la única ruta de red del repositorio esté en dos archivos
+    // nombrados y que nadie los importe de forma estática.
+    expect(readdirSync(raiz).sort()).toEqual(['ai', 'auth', 'db', 'domain', 'ingest', 'services']);
   });
 
   it('las migraciones NO traen datos normativos: aplicar el esquema solo deja las tablas VACÍAS', async () => {
