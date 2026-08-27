@@ -42,3 +42,40 @@ export type { EstadoDocumento, RetencionResumen, AsientoResumen } from './consul
 
 export { ejecutarCicloCola, vaciarCola } from './worker.js';
 export type { ResultadoCiclo } from './worker.js';
+
+export {
+  detectarAlertasParametrizacion,
+  listarTarifasPorTipo,
+  listarConceptosSinTarifaVigente,
+  listarHistorialTaxRule,
+  simularImpactoTarifa,
+  fechaMinimaVigenciaTaxRule,
+  editarTarifaTaxRule,
+  simularImpactoValorBase,
+  editarUvtValue,
+  editarSmmlvValue,
+  editarRoundingRule,
+  listarMunicipiosIca,
+  simularImpactoMunicipioIca,
+  editarMunicipioIcaRule,
+  puedeEditarParametros,
+  diaAnterior,
+  hoyIso,
+  NormaDeRespaldoRequeridaError,
+  VigenciaInvalidaError,
+  ParametroNoEncontradoError,
+  EdicionRetroactivaError,
+} from './parametrizacion.js';
+export type {
+  AlertaParametro,
+  TipoTaxRule,
+  FilaTarifa,
+  ImpactoSimulado,
+  EditarTarifaInput,
+  ResultadoEdicion,
+  EditarUvtInput,
+  EditarSmmlvInput,
+  EditarRoundingRuleInput,
+  FilaMunicipioIca,
+  EditarMunicipioIcaInput,
+} from './parametrizacion.js';

@@ -1113,9 +1113,20 @@ describe('A14 · la vía del buzón: ¿se puede cruzar de firma por ahí? (adjud
     expect(inventario).toEqual([
       'app.cerrar_sesion',
       'app.current_company_id',
+      // A8, Ola 2 (migración 080): agregados de firma para el simulador de
+      // impacto y la fecha mínima de vigencia del módulo de parametrización
+      // (sección 6.2). SECURITY DEFINER + row_security=off, mismo patrón que
+      // `app.resolver_empresa_por_buzon`, con filtro explícito por
+      // `app.current_tenant_id()` y `app.exigir_permiso('parametro.editar')`.
+      'app.fecha_minima_vigencia_municipio_ica',
+      'app.fecha_minima_vigencia_tax_rule',
+      'app.fecha_minima_vigencia_tenant',
       'app.resolver_empresa_por_buzon',
       'app.revocar_sesiones_de_usuario',
       'app.sesion_actual',
+      'app.simular_impacto_municipio_ica',
+      'app.simular_impacto_tax_concept',
+      'app.simular_impacto_valor_base',
       'app.tiene_permiso',
       'app.trg_espejo_acceso',
       'app.trg_espejo_usuario',
