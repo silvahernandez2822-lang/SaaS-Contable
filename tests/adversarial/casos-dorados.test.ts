@@ -929,6 +929,13 @@ describe('A14 · canario anti-falso-PASS (actualizado en la Ola 1)', () => {
     // regla de la única ruta de red, más abajo). Solo abre sesión de sistema
     // (D-021, cierre de V-9) y traduce hacia `src/services` (A6): nunca
     // calcula una retención ni construye un asiento.
+    //
+    // Ola 3: `src/reports/` (A9, sección 11) también queda DECLARADO. Solo
+    // lee (`SELECT` sobre `v_journal_line_reporte`, `retention_applied` y las
+    // tablas paramétricas de A1) y arma libros Excel: no escribe una sola
+    // fila, no calcula ninguna retención y no queda exento del barrido de
+    // `valores-tributarios.test.ts` (toda tarifa que aparece en la hoja
+    // "Parámetros" la trae la base de datos, nunca un literal).
     expect(readdirSync(raiz).sort()).toEqual([
       'ai',
       'auth',
@@ -936,6 +943,7 @@ describe('A14 · canario anti-falso-PASS (actualizado en la Ola 1)', () => {
       'domain',
       'ingest',
       'integraciones',
+      'reports',
       'services',
     ]);
   });
