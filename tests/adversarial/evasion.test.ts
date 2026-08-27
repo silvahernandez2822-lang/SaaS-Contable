@@ -533,12 +533,31 @@ describe('A14 · barrido estructural de puertas laterales', () => {
     // coincida exacto con el buzón — nunca NIT, razón social ni ningún otro
     // dato. No cruza firmas: no acepta ningún parámetro que identifique un
     // tenant u otra empresa, así que no hay firma que falsificar.
+    //
+    // Añadidas en la Ola 2 por A8 (migración 080_a8_parametrizacion_simulador.sql):
+    // el simulador de impacto y la fecha mínima de vigencia del módulo de
+    // parametrización (sección 6.2, puntos 3 y 6). SECURITY DEFINER +
+    // row_security=off, mismo patrón auditado que `app.resolver_empresa_por_buzon`.
+    // SÍ cruzan de una empresa a otra, pero A PROPÓSITO y con límite explícito:
+    // cada una exige sesión + `parametro.editar` (`app.exigir_permiso`) y filtra
+    // por `WHERE tenant_id = app.current_tenant_id()` — nunca ven una firma
+    // distinta a la de quien llama. Es el mismo límite que ya usa
+    // `app.tiene_permiso` para permisos sin empresa en contexto (migración 016),
+    // necesario porque un parámetro puede ser compartido entre las empresas de
+    // una firma (`company_id IS NULL`, D-015) y su impacto real no lo ve una
+    // sesión con una sola empresa seleccionada.
     expect(inventario).toEqual([
       'app.cerrar_sesion',
       'app.current_company_id',
+      'app.fecha_minima_vigencia_municipio_ica',
+      'app.fecha_minima_vigencia_tax_rule',
+      'app.fecha_minima_vigencia_tenant',
       'app.resolver_empresa_por_buzon',
       'app.revocar_sesiones_de_usuario',
       'app.sesion_actual',
+      'app.simular_impacto_municipio_ica',
+      'app.simular_impacto_tax_concept',
+      'app.simular_impacto_valor_base',
       'app.tiene_permiso',
       'app.trg_espejo_acceso',
       'app.trg_espejo_usuario',

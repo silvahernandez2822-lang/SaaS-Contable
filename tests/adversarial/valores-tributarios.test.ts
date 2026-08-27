@@ -121,7 +121,7 @@ const EXENCION_ESCALA = /(?:const|let|var)\s+(ESCALA_[A-Z0-9_]*)\s*=\s*10n\s*\*\
 export interface ReglaDetector {
   id: string;
   descripcion: string;
-  detecta(texto: string): boolean;
+  detecta(texto: string, archivo?: string): boolean;
 }
 
 export const REGLAS: readonly ReglaDetector[] = [
@@ -210,16 +210,29 @@ export const REGLAS: readonly ReglaDetector[] = [
   },
   {
     id: 'insert_normativo',
-    descripcion: 'INSERT de datos normativos en código o migraciones (su sitio es db/seeds)',
-    detecta: (t) =>
-      /INSERT\s+INTO\s+(uvt_value|smmlv_value|tax_rule|tax_concept|municipality_ica_rule|ciiu_activity|rounding_rule|tax_calendar)\b/i.test(
+    descripcion: 'INSERT de datos normativos en una MIGRACIÓN (su sitio es db/seeds)',
+    // AJUSTE DE LA OLA 2 (A8, sección 6): desde el módulo de parametrización,
+    // `src/services/parametrizacion.ts` inserta filas en estas mismas tablas
+    // A PROPÓSITO — es la interfaz por la que un contador crea una vigencia
+    // nueva sin desplegar código (sección 6.1). Esos INSERT usan siempre
+    // parámetros ligados ($1, $2, ...) que llegan del contador en tiempo de
+    // ejecución: no hay ahí ningún valor tributario «quemado», y si lo
+    // hubiera, lo cazarían las otras cinco reglas de este mismo detector
+    // (aplican a `src/` igual que a `db/migrations`). Lo que esta regla sigue
+    // sin permitir es que una MIGRACIÓN (que es esquema, no dato) le haga un
+    // INSERT de datos normativos por fuera de `db/seeds/` para esquivar el
+    // escrutinio de A1 — ese es el hueco original que cierra D-039.
+    detecta: (t, archivo) => {
+      if (!archivo || !archivo.startsWith('db/migrations/')) return false;
+      return /INSERT\s+INTO\s+(uvt_value|smmlv_value|tax_rule|tax_concept|municipality_ica_rule|ciiu_activity|rounding_rule|tax_calendar)\b/i.test(
         t,
-      ),
+      );
+    },
   },
 ];
 
 function hallazgosDe(regla: ReglaDetector): Linea[] {
-  return LINEAS.filter((l) => regla.detecta(l.texto));
+  return LINEAS.filter((l) => regla.detecta(l.texto, l.archivo));
 }
 
 // =============================================================================
