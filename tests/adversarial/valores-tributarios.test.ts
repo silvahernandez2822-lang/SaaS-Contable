@@ -231,6 +231,150 @@ export const REGLAS: readonly ReglaDetector[] = [
   },
 ];
 
+// =============================================================================
+// SALVAGUARDA RESTITUIDA POR A14 EN LA OLA 2 (D-049)
+//
+// A8 acotó la regla `insert_normativo` a `db/migrations/`, apoyándose en que
+// «si un INSERT de `src/` tuviera un valor tributario, lo cazarían las otras
+// cinco reglas». A14 lo comprobó con canario envenenado y es FALSO: los
+// valores tributarios que son ENTEROS PEQUEÑOS pasan intactos, porque las
+// cinco reglas restantes se anclan en decimales, en el signo `%` o en enteros
+// de cinco cifras o más. Escaparon, entre otros:
+//
+//   INSERT INTO tax_rule (base_minima_uvt) VALUES (2)      -> base mínima
+//   INSERT INTO rounding_rule (multiplo)   VALUES (1000)   -> regla de redondeo
+//   INSERT INTO tax_calendar (dia)         VALUES (12)     -> calendario
+//   INSERT INTO tax_rule (tarifa)          VALUES (4::numeric/100)
+//
+// Los cuatro son exactamente lo que la Regla 2 prohíbe («tarifa, base mínima,
+// valor de UVT, salario mínimo, porcentaje, tope o calendario»), y los cuatro
+// los cazaba la regla ANTES del acotamiento.
+//
+// La necesidad de A8 sí es legítima (§6.1: el contador crea una vigencia nueva
+// desde la interfaz, y esa escritura pasa por `src/services/parametrizacion.ts`).
+// Así que no se restituye la prohibición total: se restituye con la forma que
+// distingue el caso legítimo del peligroso, que es la que A8 invocó en su
+// propia justificación — «esos INSERT usan siempre parámetros ligados».
+//
+// REGLA: en `src/` y `app/`, un INSERT sobre una tabla normativa puede llevar
+// SOLO marcadores ligados (`$1`), `NULL`, `DEFAULT` y llamadas a función. Ni un
+// literal numérico. Si el valor llega del contador en tiempo de ejecución, va
+// en un `$n`; si está escrito en la sentencia, es un valor tributario quemado.
+// =============================================================================
+
+const TABLAS_NORMATIVAS =
+  'uvt_value|smmlv_value|tax_rule|tax_concept|municipality_ica_rule|ciiu_activity|rounding_rule|tax_calendar';
+
+/**
+ * Extrae el cuerpo de cada sentencia `INSERT INTO <tabla normativa>` de un
+ * archivo, sin comentarios, desde el `INSERT` hasta el primer terminador
+ * (`RETURNING`, `ON CONFLICT`, `;` o el cierre de la literal SQL).
+ */
+export function insertsNormativos(contenido: string): string[] {
+  const texto = sinComentarios(contenido).join('\n');
+  const re = new RegExp(String.raw`INSERT\s+INTO\s+(?:` + TABLAS_NORMATIVAS + String.raw`)\b`, 'gi');
+  const sentencias: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(texto)) !== null) {
+    const resto = texto.slice(m.index);
+    const corte = resto.search(/RETURNING|ON\s+CONFLICT|[`;]|'\s*,\s*\[|"\s*,\s*\[/i);
+    sentencias.push(corte === -1 ? resto.slice(0, 1200) : resto.slice(0, corte));
+  }
+  return sentencias;
+}
+
+/** Literales numéricos de una sentencia, ignorando `$1` y los sufijos de identificador. */
+export function literalesNumericos(sentencia: string): string[] {
+  const sinLigados = sentencia.replace(/\$\d+/g, '$');
+  return sinLigados.match(/(?<![\w$.])\d+(?:\.\d+)?/g) ?? [];
+}
+
+describe('A14 · un INSERT normativo en `src/`/`app/` solo puede llevar parámetros ligados (D-049)', () => {
+  const ARCHIVOS_EJECUTABLES = [...new Set(LINEAS.map((l) => l.archivo))].filter(
+    (a) => a.startsWith('src/') || a.startsWith('app/'),
+  );
+
+  it('el barrido alcanza el módulo de parametrización (si no, no probaría nada)', () => {
+    expect(ARCHIVOS_EJECUTABLES).toContain('src/services/parametrizacion.ts');
+    const conInsert = ARCHIVOS_EJECUTABLES.filter(
+      (a) => insertsNormativos(readFileSync(join(RAIZ, a), 'utf8')).length > 0,
+    );
+    // Debe haber al menos un INSERT normativo vivo en `src/`: es la vía del
+    // contador (§6.1). Si desapareciera, esta salvaguarda estaría vigilando el
+    // vacío y habría que revisar por dónde se edita ahora un parámetro.
+    expect(conInsert.length).toBeGreaterThan(0);
+  });
+
+  it('ningún INSERT normativo de `src/`/`app/` lleva un literal numérico', () => {
+    const hallazgos: string[] = [];
+    for (const archivo of ARCHIVOS_EJECUTABLES) {
+      for (const sentencia of insertsNormativos(readFileSync(join(RAIZ, archivo), 'utf8'))) {
+        const literales = literalesNumericos(sentencia);
+        if (literales.length > 0) {
+          hallazgos.push(`${archivo}  literales [${literales.join(', ')}]  en «${
+            sentencia.replace(/\s+/g, ' ').slice(0, 120)
+          }»`);
+        }
+      }
+    }
+    expect(hallazgos).toEqual([]);
+  });
+
+  // ---- canario de esta salvaguarda: si alguien la afloja, aquí falla --------
+  const VENENO_INSERT: readonly { sql: string; porQue: string }[] = [
+    {
+      sql: 'await tx.query(`INSERT INTO tax_rule (tarifa) VALUES (0.04)`);',
+      porQue: 'tarifa decimal quemada',
+    },
+    {
+      sql: 'await tx.query(`INSERT INTO tax_rule (base_minima_uvt) VALUES (2)`);',
+      porQue: 'base mínima de 2 UVT: entero pequeño que NINGUNA otra regla ve',
+    },
+    {
+      sql: 'await tx.query(`INSERT INTO rounding_rule (multiplo) VALUES (1000)`);',
+      porQue: 'regla de redondeo quemada (Regla 5: el redondeo es parámetro)',
+    },
+    {
+      sql: 'await tx.query(`INSERT INTO tax_calendar (dia, mes) VALUES (12, 4)`);',
+      porQue: 'calendario tributario quemado',
+    },
+    {
+      sql: 'await tx.query(`INSERT INTO tax_rule (tarifa) VALUES (4::numeric/100)`);',
+      porQue: 'tarifa disfrazada de división, sin un solo decimal',
+    },
+    {
+      sql: [
+        'await tx.query(`INSERT INTO municipality_ica_rule (',
+        '   municipality_id, tarifa_general, base_minima_servicios_uvt',
+        ' ) VALUES ($1, 0.002, 15)`);',
+      ].join('\n'),
+      porQue: 'multilínea: el barrido por línea no lo vería completo',
+    },
+  ];
+
+  for (const v of VENENO_INSERT) {
+    it(`caza «${v.porQue}»`, () => {
+      const sentencias = insertsNormativos(v.sql);
+      expect(sentencias.length).toBeGreaterThan(0);
+      expect(sentencias.flatMap(literalesNumericos).length).toBeGreaterThan(0);
+    });
+  }
+
+  it('y NO caza la forma legítima de A8: parámetros ligados, NULL y llamadas a función', () => {
+    const LEGITIMO = [
+      'await tx.query(`INSERT INTO tax_rule (',
+      '   tenant_id, company_id, tarifa, base_minima_uvt, vigente_desde, vigente_hasta, created_by',
+      ' ) VALUES (',
+      '   $1,$2,$3,$4,$5,NULL,',
+      '   app.current_user_id()',
+      ' )',
+      ' RETURNING id`, [ctx.tenantId, companyId, input.tarifa, input.baseMinimaUvt, input.vigenteDesde]);',
+    ].join('\n');
+    const literales = insertsNormativos(LEGITIMO).flatMap(literalesNumericos);
+    expect(literales).toEqual([]);
+  });
+});
+
 function hallazgosDe(regla: ReglaDetector): Linea[] {
   return LINEAS.filter((l) => regla.detecta(l.texto, l.archivo));
 }
@@ -247,6 +391,22 @@ describe('A14 · Regla de Oro 2 — ni un valor tributario quemado en el código
     for (const esperado of ['src/domain', 'src/ingest', 'src/services', 'db/migrations']) {
       expect([...modulos]).toContain(esperado);
     }
+    // Ola 2 (A14): `app/` ya existe y es la superficie con MÁS decimales
+    // legítimos del repositorio (CSS, `step=`, `width=`). Que el barrido la
+    // alcance de verdad no puede quedar implícito: si alguien la excluyera
+    // para acallar la regla `fraccion`, esta prueba cae.
+    const modulosDeApp = [...modulos].filter((m) => m.startsWith('app/'));
+    expect(modulosDeApp.length).toBeGreaterThan(0);
+    const archivosDeApp = new Set(
+      LINEAS.filter((l) => l.archivo.startsWith('app/')).map((l) => l.archivo),
+    );
+    expect(archivosDeApp.size).toBeGreaterThan(5);
+    // Y entre ellos hay `.tsx`: si la extensión se cayera de EXTENSIONES, el
+    // barrido diría «cero hallazgos» sobre unos archivos que ni abrió.
+    expect([...archivosDeApp].some((a) => a.endsWith('.tsx'))).toBe(true);
+    for (const ruta of ['app/parametros', 'app/bandeja']) {
+      expect([...archivosDeApp].some((a) => a.startsWith(ruta))).toBe(true);
+    }
   });
 
   for (const regla of REGLAS) {
@@ -259,7 +419,7 @@ describe('A14 · Regla de Oro 2 — ni un valor tributario quemado en el código
 // =============================================================================
 describe('A14 · el detector sigue cazando tarifas de verdad (canario)', () => {
   /** Cada muestra es código que un agente podría escribir, y que DEBE ser cazado. */
-  const VENENO: readonly { texto: string; porQue: string }[] = [
+  const VENENO: readonly { texto: string; porQue: string; archivo?: string }[] = [
     { texto: 'const TARIFA_SERVICIOS = 0.04;', porQue: 'tarifa quemada, nombre delator' },
     { texto: 'const x = 0.025;', porQue: 'tarifa quemada con nombre inocente' },
     { texto: 'const UVT_2026 = 5237400;', porQue: 'UVT en centavos' },
@@ -271,7 +431,19 @@ describe('A14 · el detector sigue cazando tarifas de verdad (canario)', () => {
     { texto: 'const techo = 4975530;', porQue: '95 UVT precalculadas (umbral de salarios)' },
     { texto: 'const RETEIVA_PORCENTAJE = 15;', porQue: 'porcentaje con nombre tributario' },
     { texto: 'return monto * 15 / 100; // 15%', porQue: 'porcentaje literal' },
-    { texto: "INSERT INTO tax_rule (tarifa) VALUES (0.04);", porQue: 'dato normativo en migración' },
+    {
+      texto: 'INSERT INTO tax_rule (tarifa) VALUES (0.04);',
+      porQue: 'dato normativo en migración',
+      // A14, Ola 2: sin `archivo` esta muestra la cazaba `fraccion`, y la regla
+      // `insert_normativo` —que es la que existe para ESTO— nunca se ejercitaba
+      // en el canario. Se declara la ruta para que la regla se pruebe de verdad.
+      archivo: 'db/migrations/999_veneno.sql',
+    },
+    {
+      texto: "INSERT INTO tax_concept (codigo, nombre) VALUES ('X', 'Y');",
+      porQue: 'dato normativo en migración SIN ningún número: solo lo caza insert_normativo',
+      archivo: 'db/migrations/999_veneno.sql',
+    },
     { texto: 'const baseMinimaUvt = 104748;', porQue: 'base mínima en pesos junto a la palabra' },
     // Los tres que intentan colarse POR LA EXENCIÓN de escala:
     { texto: 'const ESCALA_TARIFA = 0.04;', porQue: 'usa el prefijo eximido con valor de tarifa' },
@@ -284,7 +456,9 @@ describe('A14 · el detector sigue cazando tarifas de verdad (canario)', () => {
 
   for (const muestra of VENENO) {
     it(`caza «${muestra.texto}» (${muestra.porQue})`, () => {
-      const cazadores = REGLAS.filter((r) => r.detecta(muestra.texto)).map((r) => r.id);
+      const cazadores = REGLAS.filter((r) => r.detecta(muestra.texto, muestra.archivo)).map(
+        (r) => r.id,
+      );
       expect(cazadores.length).toBeGreaterThan(0);
     });
   }

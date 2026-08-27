@@ -1,10 +1,13 @@
 # ESTADO_PROYECTO.md
 
 > Memoria única entre sesiones. Todo agente lo lee al empezar y lo actualiza al terminar.
-> Última actualización: 2026-08-27 — **A14, segunda pasada de la compuerta de la Ola 1 tras el
-> desbloqueo de A1 (`ffaf3db`). Veredicto: OLA 1 CERRADA.** Los cuatro criterios pasan; los casos 1 y 8
-> se causan de punta a punta **con el repositorio tal como está**, sin que ninguna prueba inserte un
-> parámetro. Suite: 435 en verde, cero `todo`, cero fallos, typecheck limpio.
+> Última actualización: 2026-08-27 — **A14, compuerta de la Ola 2 (A5, A7, A8, A13). Veredicto: OLA 2
+> CERRADA.** Los tres criterios de salida de la sección 4 pasan, verificados **por la interfaz real** y
+> con instrumentos propios de A14 (una mina en vez de un contador, un espía de `fetch`, 30 empresas de
+> verdad y 50 aprobaciones de un golpe). En el camino A14 **refutó** el acotamiento que A8 le había
+> hecho a su detector de la Regla de Oro 2 y lo restituyó (D-049), y **corrigió** un defecto real de la
+> aprobación en lote que hacía que una sola fila mala se llevara por delante las otras 49 (D-050).
+> Suite: **603 en verde** (32 archivos), cero `todo`, cero fallos, typecheck limpio.
 
 ## Olas cerradas
 
@@ -12,6 +15,7 @@
 |---|---|---|---|---|
 | **0 — Fundaciones** | A2, A12, A14 | **PASA las cuatro pruebas**, verificadas de forma independiente por A14 con pruebas propias (`tests/adversarial/`) | *pendiente — lo pone A0* | 2026-08-26 |
 | **1 — Núcleo del dominio** | A1, A3, A4, A6, A14 | **PASA los cuatro criterios**, verificados de forma independiente por A14 con pruebas propias. Bloqueada primero por V-4 y V-6, cerrados por A1 en `ffaf3db` y **reverificados** por A14 sin creerle al reporte. Ver «Compuerta de la Ola 1 — veredicto de A14» | *pendiente — lo pone A0* | 2026-08-27 |
+| **2 — Inteligencia, parametrización e interfaz** | A5, A7, A8, A13, A14 | **PASA los tres criterios**, verificados por A14 **por la interfaz real** (`tests/adversarial/compuerta-ola2-interfaz.test.ts`) y con instrumentos propios (`tests/adversarial/compuerta-ola2.test.ts`). Dos defectos reales encontrados y **corregidos por A14** (D-049, D-050); uno declarado y asignado (V-11). Ver «Compuerta de la Ola 2 — veredicto de A14» | *pendiente — lo pone A0* | 2026-08-27 |
 
 **Ola 1: CERRADA por A14, en la segunda pasada.** En la primera, la compuerta quedó **bloqueada**: con el
 repositorio tal como se entregaba, `rounding_rule` estaba vacía y no había ni una regla de ReteICA, de
@@ -21,6 +25,20 @@ sobre andamiaje de la suite. A1 cerró los dos huecos en `ffaf3db` sin escribir 
 parámetro operativo). A14 **volvió a correr la compuerta entera** y verificó lo que decidía el cierre:
 los casos 1 y 8 se causan, cuadran y se publican **sin que ninguna prueba inserte un parámetro**. Quedan
 abiertas y declaradas V-1, V-5, V-7, V-8 y V-9; ninguna derrota ninguno de los cuatro criterios.
+
+**Ola 2: CERRADA por A14.** Los tres criterios de la sección 4 pasan, y pasan **por donde los va a usar
+un contador**, no solo por la capa de servicios: la UVT se cambia enviando el `FormData` de la acción de
+servidor de A8, y las 50 aprobaciones se hacen enviando el `FormData` de la bandeja de A7 con 30 empresas
+reales montadas. De lo simulado, solo el transporte de Next (`next/headers`, `next/navigation`) y la
+conexión; la sesión, el rol, la RLS, los triggers y el ledger son los de producción.
+
+Durante la verificación A14 encontró **cuatro cosas que nadie había reportado**: que el acotamiento de A8
+al detector de la Regla 2 **sí perdía cobertura real** (V-13, refutado con canario envenenado y
+restituido, D-049); que el canario había dejado de ejercitar la regla acotada (V-14, corregido); que
+`aprobarAsientosEnLote` **no tenía SAVEPOINT** y su `catch` por ítem era decorativo (V-12, corregido por
+A14, D-050); y que la aprobación desde la bandeja **revienta con un error crudo de PostgreSQL** si el
+despliegue no reenvía la IP del cliente (V-11, abierta, asignada). Ninguna de las cuatro derrota un
+criterio de salida una vez corregidas las tres primeras.
 
 **Ola 0: CERRADA por A14.** Las cuatro pruebas de la compuerta de la sección 4 pasan, y pasan contra el
 motor de PostgreSQL (SQLSTATE), no contra un `throw` de TypeScript. Ninguna vulnerabilidad abierta
@@ -737,6 +755,196 @@ esa limitación **declarada en la tabla de casos dorados**, no escondida.
 
 ---
 
+## Decisiones de QA adversarial de A14 (compuerta de la Ola 2)
+
+### D-049 — El acotamiento de A8 al detector de la Regla de Oro 2 está REFUTADO. Salvaguarda restituida
+**Qué había hecho A8:** acotar la regla `insert_normativo` a `db/migrations/`, de modo que ya no aplica a
+`src/`. Su necesidad es **legítima** (§6.1: `src/services/parametrizacion.ts` inserta en `tax_rule` a
+propósito, porque es la vía por la que un contador crea una vigencia nueva sin desplegar). Pero es el
+acotamiento de una salvaguarda, o sea la dirección peligrosa, y se apoyaba en una afirmación verificable
+escrita en el propio código: *«si alguna vez lo tuviera, lo cazarían las otras cinco reglas»*.
+
+**A14 no la leyó: la envenenó.** Trece muestras de código pasadas por las reglas reales, con
+`archivo = 'src/services/parametrizacion.ts'`. **Cuatro escaparon enteras:**
+
+```
+INSERT INTO tax_rule (base_minima_uvt) VALUES (2)          -> NADIE la caza
+INSERT INTO rounding_rule (multiplo)   VALUES (1000)       -> NADIE la caza
+INSERT INTO tax_calendar (dia)         VALUES (12)         -> NADIE la caza
+INSERT INTO tax_rule (tarifa) VALUES (4::numeric/100)      -> NADIE la caza
+```
+
+La afirmación es **falsa**, y falla justo donde más duele: las cinco reglas restantes se anclan en
+decimales, en el signo de porcentaje o en enteros de cinco cifras o más. Un valor tributario que sea un
+**entero pequeño** —una base mínima en UVT, un múltiplo de redondeo, un día de calendario— les es
+invisible. Y los tres primeros son literalmente lo que la Regla 2 enumera: «tarifa, base mínima, valor de
+UVT, salario mínimo, porcentaje, tope o **calendario**». Antes del acotamiento, los cuatro los cazaba la
+regla por su forma, sin mirar el valor.
+
+**Adjudicación: el acotamiento de `insert_normativo` se ACEPTA, pero el hueco NO.** No se restituye la
+prohibición total —rompería la vía legítima de A8—: se restituye con la forma que separa el caso legítimo
+del peligroso, que es **la que el propio A8 invocó** en su justificación («esos INSERT usan siempre
+parámetros ligados»). Regla nueva en `tests/adversarial/valores-tributarios.test.ts`:
+
+> En `src/` y `app/`, un `INSERT` sobre una tabla normativa puede llevar **solo** marcadores ligados
+> (`$1`), `NULL`, `DEFAULT` y llamadas a función. **Ni un literal numérico.** Si el valor llega del
+> contador en tiempo de ejecución, va en un `$n`; si está escrito en la sentencia, es un valor quemado.
+
+Es un escáner **por sentencia**, no por línea, así que ve los `INSERT` multilínea que un barrido
+línea-a-línea no puede ver. Trae su propio canario de seis venenos (incluido uno multilínea) y una
+muestra inocente con la forma exacta que usa A8. Verificado de punta a punta: inyectando dos de los
+venenos en el `parametrizacion.ts` **real**, la prueba los reporta con archivo, literal y sentencia.
+
+**Segundo hallazgo, del mismo sitio (V-14):** al acotar la regla, las muestras del canario dejaron de
+pasarle el `archivo`, así que `insert_normativo` **devolvía `false` para todas** y ya no la ejercitaba
+nadie. La muestra `INSERT INTO tax_rule (tarifa) VALUES (0.04)` la cazaba `fraccion`, no ella. Corregido:
+las muestras declaran su ruta y se añadió una que **solo** esa regla puede cazar (un `INSERT INTO
+tax_concept` sin un solo número).
+
+**Tercer refuerzo, por la Ola 2:** ahora que existe `app/` —la superficie con más decimales legítimos del
+repositorio (CSS, `step=`, `width=`)—, el barrido ya no puede «alcanzarla» de forma implícita. Se exige
+explícitamente que vea archivos de `app/parametros` y `app/bandeja` y que entre ellos haya `.tsx`: si
+alguien excluyera `app/` o quitara la extensión para acallar la regla `fraccion`, la prueba cae.
+
+### D-050 — `aprobarAsientosEnLote` no tenía SAVEPOINT: su `catch` por ítem era decorativo. CORREGIDO por A14
+**Hallazgo, medido sobre la bandeja real de A7 con 30 empresas montadas.** El criterio de salida dice
+«aprobar 50 de un golpe». A14 mandó las 50 y leyó el mensaje que la interfaz le devolvió al contador:
+
+```
+<id>: null value in column "ip" of relation "approval" violates not-null constraint
+<id>: current transaction is aborted, commands ignored until end of transaction block
+<id>: null value in column "ip" ...
+<id>: current transaction is aborted ...
+```
+
+El patrón alterna porque cada empresa es su propia transacción: dentro de cada una, el primer ítem
+fallaba por su propio motivo y **el segundo moría contagiado**. `aprobarAsientosEnLote` envolvía cada
+ítem en un `try/catch`, pero un error del motor **aborta la transacción entera**: a partir de ahí toda
+sentencia devuelve `25P02` y el `catch` solo sirve para coleccionar mensajes inútiles. Con 50 filas de 30
+empresas, una sola fila rancia —un asiento que otro contador ya publicó, un período cerrado— se llevaba
+por delante el trabajo de toda la pantalla, y el contador no tenía forma de saber cuáles se aprobaron.
+
+**Es exactamente el mismo hallazgo que D-043 en `causarFactura`, en el otro extremo del flujo:** aislar
+la escritura de cada unidad de trabajo para que el fallo de una no contamine a las demás.
+
+**Corregido por A14** en `src/services/causacion.ts`: `SAVEPOINT lote_aprobacion_<n>` por ítem, con
+`RELEASE` en el camino feliz y `ROLLBACK TO` + `RELEASE` en el `catch`. Con prueba de regresión que
+**discrimina de verdad**: se comprobó desactivando el `SAVEPOINT` y verificando que la prueba **falla**
+(«expected error not to contain \<id-de-la-fila-sana\>»), no solo que pasa con él.
+
+### D-051 — Los cambios de A5 al caso dorado 19 se ACEPTAN: no perdió alcance, ganó
+**Qué cambió A5:** la aserción «ningún archivo de `src/` menciona `fetch|anthropic|…`» pasó de
+`toEqual([])` a `toEqual(['src/ai/proveedor.ts', 'src/ai/proveedores/anthropic.ts'])`, más dos
+comprobaciones nuevas (que nada fuera de `src/ai/` tenga red, y que nadie importe el adaptador de forma
+estática en todo `src/`).
+
+**Verificado con canario envenenado, no leyendo el diff.** Dos ataques sobre `src/services/consulta.ts`,
+el archivo más inocente que hay:
+
+| Veneno inyectado | Resultado |
+|---|---|
+| `import { crearProveedorAnthropic } from '../ai/proveedores/anthropic.js'` | **CAZADO** — la lista cerrada crece a 3 y la igualdad falla |
+| `export async function _n() { return fetch('https://ejemplo'); }` | **CAZADO** — mismo mecanismo |
+
+La lista cerrada es una **igualdad**, no un `includes`: mover el adaptador, añadir un segundo proveedor o
+meter una ruta de red en cualquier otro archivo de `src/` la rompe. Es más fuerte que el `toEqual([])`
+original, que solo sabía decir «hay algo» sin obligar a nombrarlo. **ACEPTADO.**
+
+### D-052 — El caso dorado 19 se cierra con una MINA, no con un contador
+El contador de A5 (`ProveedorLlmFalso.llamadas === 0`) demuestra que **ese objeto** no se llamó. No
+demuestra que no se llamara a otro. A14 lo cerró con dos instrumentos que no admiten interpretación:
+
+1. **`ProveedorMina`** — un `ProveedorLlm` que **lanza una excepción** en cuanto alguien lo invoca. Si el
+   flujo lo llamara, la prueba muere; no hay número que interpretar.
+2. **Espía sobre `globalThis.fetch`** durante toda la segunda pasada: si el proceso intentara salir a la
+   red por cualquier vía (el flujo, un `import()` perezoso, telemetría), revienta ahí.
+
+La segunda factura del mismo proveedor con la misma descripción, escrita **distinta** (mayúsculas,
+tildes, otro consecutivo de orden), se resuelve desde `memoria_clasificacion` con `origen = 'memoria'`,
+`llamadasLlm = 0` y `costoMicrosUsd = 0`. Y una tercera comprobación que A5 no hacía: **con
+`proveedor: null`** —sin ningún LLM configurado en absoluto— la clasificación sigue funcionando. El
+ahorro no depende del modelo; el producto tampoco.
+
+**Regla de Oro 4, atacada de frente:** un proveedor que devuelve un código **fuera del catálogo cerrado**
+con score máximo no clasifica nada (`conceptoId = null`, decisión distinta de `aplicar`), y
+`clasificarDocumento` **no escribe ni una fila** de `retention_applied` ni de `journal_entry`. El LLM
+propone; el motor calcula.
+
+### D-053 — Las diez funciones `SECURITY DEFINER` nuevas se ACEPTAN: ninguna es un oráculo de existencia
+Los cuatro agentes ampliaron el inventario cerrado y **los cuatro actualizaron las dos copias** que A14
+duplicó a propósito en D-042. Esa es la conducta que se buscaba. Pero declarar bien no exime de auditar
+lo declarado.
+
+**Método de A14 (no leer el `WHERE`, interrogar a la función):** a cada una se le pasa el identificador
+**real** de un objeto de otra firma y, por separado, uno **inventado**, y se exige que las dos respuestas
+sean **idénticas**. Si difieren, la función confirma que el objeto existe.
+
+| Función | Autor | Veredicto |
+|---|---|---|
+| `app.fecha_minima_vigencia_tax_rule` | A8 | idéntica con regla ajena y con inventada |
+| `app.fecha_minima_vigencia_municipio_ica` | A8 | idéntica |
+| `app.fecha_minima_vigencia_tenant` | A8 | sin parámetros; exige `parametro.editar` |
+| `app.simular_impacto_tax_concept` | A8 | idéntica |
+| `app.simular_impacto_municipio_ica` | A8 | idéntica |
+| `app.simular_impacto_valor_base` | A8 | sin parámetros; exige `parametro.editar` |
+| `app.empresas_accesibles` | A7 | sin parámetros; solo la firma en sesión |
+| `app.crear_token_integracion` | A13 | usuario de otra firma y usuario inexistente dan **el mismo** `IG003` |
+| `app.revocar_token_integracion` | A13 | token ajeno y token inventado dan lo mismo, y el ajeno **sigue vivo** |
+| `app.listar_tokens_integracion` | A13 | solo la firma en sesión |
+
+Y el permiso no es decorativo: un `auxiliar_causacion` que llame a las de parametrización recibe `SE002`,
+y crear un token sin `usuario.administrar` recibe `SE002`. Ninguna acepta un `tenant_id` por parámetro —
+si lo hiciera, D-020 se reabriría por la puerta de al lado.
+
+### D-054 — V-9 está RESUELTA por A13, y la prueba es que NO tuvo que tocar nada de A12
+**Lo que A14 verificó, no lo que A13 reportó:**
+
+- `db/migrations/090` **no redefine** `app.abrir_sesion` ni `app.session_context`. El token de
+  integración es un **segundo camino de primer factor** que desemboca en el mismo `abrir_sesion` intacto,
+  igual que `buscar_credencial` para el humano (D-023). D-020/D-021 no se rodean: no hay forma nueva de
+  decirle a la base «soy el tenant X».
+- **`app.integration_credential` está tan cerrada como `app.session_context`.** Comprobado con
+  `has_table_privilege` sobre las dos tablas y los dos roles de aplicación: **cero privilegios**, ni
+  siquiera de lectura. El aislamiento ahí es por privilegio, no por política, igual que en D-021.
+- **`app.autenticar_token_integracion` está fuera del alcance de `app_user`**: el intento muere con
+  `42501` —el motor le niega el `EXECUTE`, no llega ni a entrar en la función—, que es más fuerte que un
+  rechazo de dominio. Solo `app_auth`, exactamente como `abrir_sesion` y `buscar_credencial`.
+- **El rol `sistema_ingesta` es de mínimo privilegio real, medido:** tiene **exactamente**
+  `documento.cargar` y `documento.leer`, y ninguno más. Una sesión abierta con ese rol recibe `SE002` al
+  pedir `asiento.aprobar` y `SE002` al pedir `parametro.editar`.
+- Un administrador de la firma A **no puede** crear el usuario de sistema en la firma B: lo rechaza la
+  RLS (`42501`), no un `if` de aplicación.
+
+**V-9: CERRADA.** Y **V-1 sigue abierta**, correctamente: A13 no tocó el `GRANT` de
+`app.resolver_empresa_por_buzon` (verificado en la migración 032) y **hizo bien**, porque el camino de A4
+(`src/ingest/persistencia.ts`) todavía la usa. Lo que cambia es que ahora **está desbloqueada**: el rol de
+sistema que D-042 exigía como precondición ya existe.
+
+### D-055 — La frontera de n8n (13.2) se verifica sobre los JSON, no sobre el reporte
+A14 barrió los seis `n8n/*.workflow.json` con criterio propio: cero nodos de base de datos (`postgres`,
+`mysql`, `mongo`, `redis`, `supabase`, `timescale`…), cero nodos de ejecución (`executeCommand`, `ssh`),
+cero SQL (`INSERT INTO` / `UPDATE` / `DELETE FROM` / `SELECT … FROM`), cero menciones a una tabla del
+ledger (`journal_entry`, `journal_line`, `retention_applied`, `tax_rule`, `uvt_value`), cero vocabulario
+tributario (`retefuente`, `reteiva`, `reteica`, `autorretenci`, `tarifa`, `uvt`, `smmlv`) y cero imports
+de código del repositorio. **n8n orquesta y notifica; la aplicación decide y calcula.**
+
+### D-056 — La compuerta de la Ola 2 se prueba por la INTERFAZ, no por la capa de servicios
+Dos de los tres criterios de salida hablan de lo que hace **un contador**, no de lo que hace una función.
+Desde esta ola existe `app/`, así que se prueban por donde se van a usar: las acciones de servidor de
+Next.js, con su `FormData`, su cookie de sesión y su `redirect`
+(`tests/adversarial/compuerta-ola2-interfaz.test.ts`).
+
+**Lo único simulado es el transporte** (`next/headers`, `next/navigation`) y la conexión
+(`app/lib/db.ts`). La sesión la emite `app.abrir_sesion` de verdad, el rol es real, la RLS está activa,
+los triggers de vigencia y de ledger son los de producción. Un mock de `withSessionContext` habría
+convertido la prueba en teatro; un mock de `cookies()` solo sustituye al navegador.
+
+**Consecuencia para la Ola 3:** cualquier pantalla nueva se prueba igual. Probar el servicio y no la
+acción de servidor deja sin verificar precisamente la costura donde el cliente elige qué enviar — que es
+donde vive el contador hostil.
+
+---
+
 ## Vulnerabilidades — registro de A14
 
 | Id | Qué es | Gravedad | Estado | De quién |
@@ -771,6 +979,34 @@ cuatro criterios de la compuerta.
 | V-9 | No existe sesión de sistema para el canal de correo: `recibirDocumento` exige una sesión real (D-021) y el correo llega sin ninguna | Media como producto (el canal de correo no está cablead0 de punta a punta) | **ABIERTA, declarada.** No es criterio de la compuerta de la Ola 1 | **A12** (mecanismo) + **A6/A13** (quien la abre) |
 | V-10 | **La costura A3↔A6 no la probaba nadie**: A3 probó el motor sin asiento, A6 probó el asiento con cero retenciones | Era el riesgo más alto de la ola | **CERRADA por A14**: prueba de punta a punta escrita y **en verde** (D-045) | — |
 | — | Los 11 fixtures UBL de A4 son **construidos a mano**, no capturas de producción, y el CUFE no es criptográficamente auténtico | Media antes de producción | **Declarada por A4 y aceptada por A14 para la compuerta.** A14 amplió la cobertura con variantes hostiles propias (base64 partido en líneas de 76, XML plano en CDATA, prefijos `ns2/ns3/ns4`) y con dos ataques (**billion laughs** y **XXE**), todos superados. El riesgo residual está confinado a `validar.ts` y `extraer.ts` | **humano / A15**: conseguir un XML real de la DIAN antes de producción |
+
+
+
+### Hallazgos de la Ola 2 (A14)
+
+Se numeran a continuación de los de la Ola 1. **Ninguno bloquea la compuerta**: los tres que podían
+hacerlo están corregidos por A14 en esta misma pasada, y el que queda abierto (V-11) es una **fragilidad
+de despliegue** que no derrota ningún criterio con la cabecera estándar puesta.
+
+**Estado de los hallazgos heredados de la Ola 1 al cerrar la Ola 2:**
+
+| Id | Estado al cerrar la Ola 2 |
+|---|---|
+| V-1 | **SIGUE ABIERTA, y ahora DESBLOQUEADA.** A13 **no** tocó el `GRANT` de `app.resolver_empresa_por_buzon` (verificado por A14 en `db/migrations/032`), e hizo bien: `src/ingest/persistencia.ts` (A4) todavía la usa. La precondición que D-042 exigía —que existiera un rol/sesión de sistema para el canal de correo— **ya se cumple** (D-054). Le toca a **A4 + A12** |
+| V-5 | **SIGUE ABIERTA.** Nada de la Ola 2 la toca. `A2` decide el esquema del código de actividad municipal; luego A1 carga lo verificable |
+| V-7 | **CERRADA por A7** (`document_correction`, migración 070). A14 la reverificó **solo por ejecución** de la prueba de A7, que sí es de punta a punta por el canal real (sin AIU va a revisión manual; corregido y reencolado, causa sobre el AIU). No hay prueba propia de A14 para esta: deuda menor anotada, no bloqueante |
+| V-8 | **CERRADA por A7**, misma condición que V-7 (municipio del tercero sin ReteICA; corregido a Medellín, causa con la tarifa real de A1) |
+| V-9 | **CERRADA por A13**, verificada por A14 punto por punto (D-054) sin creerle al reporte: no rodea D-020/D-021, la tabla de credenciales está tan cerrada como `app.session_context`, autenticar es exclusivo de `app_auth` (`42501` para `app_user`) y el rol de sistema tiene exactamente dos permisos |
+
+**Hallazgos nuevos de esta pasada:**
+
+| Id | Qué es | Gravedad | Estado | De quién |
+|---|---|---|---|---|
+| V-11 | **La aprobación desde la bandeja revienta con un error crudo de PostgreSQL si el despliegue no reenvía la IP del cliente.** `approval.ip` es `inet NOT NULL` (Regla de Oro 6, «desde dónde»); `aprobarAsiento` la resuelve con `COALESCE($5::inet, app.current_ip())` y A7 solo sabe leer `x-forwarded-for`. Sin esa cabecera, el contador recibe `null value in column "ip" of relation "approval" violates not-null constraint` y no aprueba nada | **Media como producto** — no es fuga ni corrupción: A14 verificó que el fallo **no deja el ledger a medias** (el asiento sigue en `draft`, cero aprobaciones huérfanas) y que el usuario sí se entera. Con la cabecera puesta —lo estándar detrás de cualquier proxy— el criterio de salida pasa completo | **ABIERTA, declarada y medida** en `compuerta-ola2-interfaz.test.ts` («7) V-11 …») | **A7** (leer también `x-real-ip` y, si no hay ninguna, dar un mensaje accionable en vez de propagar el error del motor) + **A15** (garantizar la cabecera en el despliegue). **A6** puede además comprobar el invariante explícitamente antes de insertar |
+| V-12 | **`aprobarAsientosEnLote` no tenía `SAVEPOINT`: su `catch` por ítem era decorativo.** Un error del motor en cualquier ítem abortaba la transacción y todos los siguientes morían con `25P02`. Una sola fila rancia se llevaba por delante el resto del lote — justo en el criterio «aprobar 50 de un golpe» | **Media-alta como producto** (derrotaba el tercer criterio de salida en el escenario más común: dos contadores con la misma bandeja abierta) | **CORREGIDA por A14** (D-050), con prueba de regresión que se verificó **desactivando** la corrección | era de **A6** |
+| V-13 | **El acotamiento de A8 al detector de la Regla de Oro 2 sí perdía cobertura real.** Cuatro valores tributarios —base mínima en UVT, múltiplo de redondeo, día de calendario y una tarifa escrita como división— pasaban intactos por `src/`, y los cuatro los cazaba la regla antes del cambio | **Media** (es infraestructura de QA: no rompe nada hoy, pero deja de avisar mañana) | **CORREGIDA por A14** (D-049): salvaguarda restituida con la forma «solo parámetros ligados en un INSERT normativo de `src/`/`app/`», con canario propio y verificada inyectando veneno en el archivo real | infraestructura de QA de **A14**, hueco abierto por **A8** |
+| V-14 | **El canario había dejado de ejercitar `insert_normativo`.** Al acotar la regla, las muestras del veneno dejaron de pasarle la ruta del archivo, así que la regla devolvía `false` para todas: la muestra que existía para ella la cazaba `fraccion` | **Baja** (una regla sin canario es una regla que nadie sabe si sigue viva) | **CORREGIDA por A14** (D-049): las muestras declaran su ruta y se añadió una que **solo** esa regla puede cazar | infraestructura de QA de **A14** |
+| — | La bandeja consolidada abre **una transacción por empresa, en secuencia** (declarado por A7). A14 lo midió con 31 empresas accesibles: la pantalla completa tarda ~0,7 s en PGlite. No es un defecto hoy; es el techo conocido | Muy baja | **Aceptada**, con el número medido | anotación para **A15** |
 
 
 ---
@@ -934,6 +1170,118 @@ $785.610, $157.122). No salen de ninguna tabla: son la afirmación que la suite 
 | Un cambio de parámetro no altera lo publicado | **PASA** (caso 17) |
 | Balance de prueba vs. ledger con 10.000 asientos | no implementado todavía — A9 + A14, Ola 3 |
 | Carga: 5.000 facturas en cola sin degradar el request HTTP | no implementado todavía — A6 + A13 + A15, Ola 2 |
+
+---
+
+## Casos dorados — VEREDICTO DE LA OLA 2 (A14), uno por uno
+
+Los veinte se **volvieron a ejecutar completos** en esta pasada, no una muestra: las dos suites
+(`tests/adversarial/casos-dorados.test.ts` y `tests/golden/casos-dorados.test.ts`) más
+`tests/golden/caso19-memoria.test.ts` y las dos suites nuevas de la compuerta de la Ola 2. El detalle de
+**cómo** se verificó cada uno en la Ola 1 sigue en la tabla de arriba y no se repite; aquí va el
+veredicto de HOY y lo que cambió.
+
+| # | Veredicto Ola 2 | Qué pasó en esta pasada |
+|---|---|---|
+| 1 | **PASA** (sin cambios) | Reejecutado. Retefuente $40.000 y ReteIVA $28.500; la pata de ReteICA de Bogotá sigue sin datos (V-5) |
+| 2 | **PASA** (sin cambios) | Reejecutado. $60.000, con `tax_rule_id` distinta de la del declarante |
+| 3 | **PASA** (sin cambios) | Reejecutado. No retiene bajo $104.748, con motivo persistido |
+| 4 | **PASA** (sin cambios) | Reejecutado. No retiene bajo $523.740, con motivo |
+| 5 | **PASA** (sin cambios) | Reejecutado. $15.000 auditado contra su fila |
+| 6 | **PASA** (sin cambios) | Reejecutado. $22.000 desde el primer peso, con base mínima 0 **como dato** |
+| 7 | **PASA** (sin cambios) | Reejecutado. Inmueble no retiene, mueble $16.000 |
+| 8 | **PASA** (sin cambios) | Reejecutado sin andamiaje: $2.000 de ReteICA en Medellín con los seeds del repositorio |
+| 9 | **PASA en lo que discrimina** (sin cambios) | Reejecutado. La base de Cali ($157.122) frente a la de Medellín ($785.610). La magnitud de la tarifa por actividad sigue en V-5 |
+| 10 | **PASA en lo que discrimina**, y ahora **también por el canal real** | Reejecutado en el motor. Además, **V-8 cerrada por A7**: `document_correction` deja capturar el municipio de la operación y el reproceso causa con la tarifa real de Medellín |
+| 11 | **PASA en el motor**, y ahora **también por el canal real** | Reejecutado. Además, **V-7 cerrada por A7**: sin AIU va a revisión manual; capturado el AIU por línea y reencolado, causa sobre el AIU |
+| 12 | **PASA** (sin cambios) | Reejecutado. ReteIVA al 100% = $190.000, con norma que cita el art. 437-2 |
+| 13 | **PASA** (sin cambios) | Reejecutado. Sin política parametrizada el motor no decide; con ella, tratamiento diferenciado |
+| 14 | **PASA** (sin cambios) | Reejecutado, incluida la variante hostil de trocear un concepto en dos líneas |
+| 15 | **PASA** (sin cambios) | Reejecutado. Reversa por asiento nuevo; el original idéntico byte a byte; doble reversa rechazada por `23505` |
+| 16 | **PASA** (sin cambios) | Reejecutado. Manda la fecha del hecho, con el borde exacto 30-jun / 1-jul |
+| 17 | **PASA, y ahora POR LA INTERFAZ** | Reejecutado en el motor. **Nuevo:** A14 lo repite enviando el `FormData` de la acción de servidor de A8 (`guardarUvtAction`): la vigencia anterior conserva su valor y solo se le cierra la fecha (`vigente_hasta = 2026-12-31`), la nueva rige desde 2027-01-01, la resolución por fecha del hecho devuelve la vieja para junio-2026 y la nueva para enero-2027, y la **fotografía de todo lo publicado en la firma es idéntica byte a byte antes y después** |
+| 18 | **PASA, reverificado con escenario propio de la Ola 2** | Diez pasadas de la cola sobre la misma factura: **un solo** `journal_entry`, y la fotografía del asiento con todas sus partidas es **la misma en las diez** (`new Set(fotos).size === 1`), no solo el mismo `id` |
+| 19 | **PASA — dejó de ser PARCIAL.** Era el único que la Ola 1 no pudo cerrar | Cerrado con **mina y espía**, no con contador ajeno (D-052): un `ProveedorLlm` que revienta si lo llaman y un espía sobre `globalThis.fetch`. Segunda factura del mismo proveedor con la misma descripción escrita distinta → `origen = 'memoria'`, `llamadasLlm = 0`, `costoMicrosUsd = 0`, la mina intacta y el espía sin una sola llamada. Y **con `proveedor: null`** —sin ningún LLM configurado— sigue clasificando |
+| 20 | **PASA, reverificado sobre las tablas que estrena la Ola 2** | Cero filas ajenas desde una sesión real, con consulta **sin filtro de tenant**, sobre `memoria_clasificacion`, `document_correction`, `integration_call_log`, `parametro_clasificacion`, `concepto_causacion` y `clasificacion_pendiente` |
+
+**Pruebas adicionales de integridad, estado tras la Ola 2:**
+
+| Prueba | Estado |
+|---|---|
+| Grep de literales tributarios en código → cero | **PASA, con el detector REFORZADO otra vez.** Cero hallazgos en `src/`, `app/` y `db/migrations/`. Ahora son **ocho** comprobaciones de forma (siete reglas por línea + el escáner por sentencia de D-049) y el barrido tiene que demostrar que **alcanza `app/`**, incluidos `.tsx`, `app/parametros` y `app/bandeja` — la superficie con más decimales legítimos del repositorio |
+| UPDATE/DELETE sobre asiento publicado → falla en BD | **PASA**, reverificado en la Ola 2 sobre un asiento publicado por el pipeline: `UPDATE` del asiento, `DELETE` del asiento y `UPDATE` de partidas, los tres `LG001`, **incluso como dueño del esquema** |
+| Asiento desbalanceado → falla en BD | **PASA**, `LG002` con descuadre de un centavo |
+| Reprocesar la misma factura 10 veces → asiento idéntico | **PASA** (caso 18, reverificado con fotografía completa) |
+| Un cambio de parámetro no altera lo publicado | **PASA** (caso 17, ahora también por la interfaz) |
+| Balance de prueba vs. ledger con 10.000 asientos | no implementado todavía — **A9 + A14, Ola 3** |
+| Carga: 5.000 facturas en cola sin degradar el request HTTP | **sigue sin implementar.** Era una advertencia para la Ola 2 y nadie la tomó. **A6 + A13 + A15.** No es criterio de salida de la Ola 2, así que no la bloquea, pero pasa a ser deuda explícita de la Ola 3 |
+
+---
+
+## Compuerta de la Ola 2 — veredicto de A14: **PASA. Ola 2 CERRADA**
+
+### Criterio 1 — «Un contador cambia el valor de la UVT desde la interfaz, y el sistema calcula con el valor nuevo para hechos posteriores a la vigencia, sin alterar los cálculos ya publicados»
+
+**PASA**, verificado **por la interfaz**, no por SQL ni por la capa de servicios: se envía el `FormData`
+real a `guardarUvtAction` con la cookie de sesión puesta y el rol `admin_tributario` (el único que §6.2.5
+autoriza).
+
+- La acción confirma (`?ok=uvt`), sin error.
+- La vigencia **anterior conserva su valor**; lo único que cambia es `vigente_hasta`.
+- La **nueva** existe con el valor nuevo, y la resolución por **fecha del hecho** devuelve la vieja para
+  junio-2026 y la nueva para enero-2027.
+- **La fotografía de todo lo publicado en la firma —asientos y partidas— es idéntica byte a byte antes y
+  después.**
+
+Y las tres puertas del contador hostil, cerradas:
+
+| Ataque | Resultado |
+|---|---|
+| Guardar una vigencia **retroactiva** a un hecho ya publicado | Rechazado por el servicio; el ledger no se mueve |
+| Rodear la interfaz y hacer `UPDATE` del **valor** de la vigencia anterior, con el rol que **sí** puede parametrizar | `PR001` VIGENCIA_INMUTABLE |
+| Mover `vigente_desde`, reabrir `vigente_hasta`, `DELETE` de la vigencia | `PR001`, `PR001`, `PR003` |
+| Guardar desde la interfaz con un rol sin `parametro.editar` | Error, y **cero filas nuevas** en `uvt_value` |
+
+### Criterio 2 — «El segundo procesamiento de una factura del mismo proveedor con la misma descripción NO llama al LLM»
+
+**PASA.** Caso dorado 19, cerrado con instrumentos propios (D-052): mina en vez de contador, espía de
+`fetch`, y la comprobación adicional de que **sin ningún LLM configurado** la clasificación sigue
+funcionando. Cero llamadas, cero tokens, cero costo, `origen = 'memoria'`.
+
+### Criterio 3 — «Un usuario de la firma ve en una sola pantalla las facturas pendientes de sus 30 empresas y puede aprobar 50 de un golpe»
+
+**PASA — después de corregir un defecto real que lo derrotaba** (V-12 / D-050).
+
+Escenario montado por A14: una firma con **31 empresas accesibles** y una **trigésimo segunda a la que la
+sesión NO tiene acceso**, con dos facturas pendientes cada una.
+
+- La pantalla trae las pendientes de **las 30**, exactamente dos por empresa.
+- La empresa sin acceso **no aparece**: ni ella, ni sus facturas, ni sus documentos.
+- **50 filas de distintas empresas se aprueban de un golpe** y quedan las 50 publicadas, sin un solo
+  error.
+- **Contador hostil 1:** seleccionar las facturas de la empresa sin acceso no publica **nada**.
+- **Contador hostil 2:** falsificar el `companyId` del formulario para que declare una empresa a la que
+  sí tiene acceso, con el `journalEntryId` de una a la que no, **no publica el asiento ajeno** — sigue en
+  `draft`. El aislamiento lo impone el motor, no la aplicación.
+- **Robustez del lote:** una fila que falla (ya publicada por otro) **ya no tumba a las sanas del mismo
+  lote**. Antes de D-050 sí lo hacía.
+
+### Lo que A14 corrigió en esta pasada
+
+| Qué | Dónde |
+|---|---|
+| Salvaguarda de la Regla de Oro 2 restituida (V-13) | `tests/adversarial/valores-tributarios.test.ts` |
+| Canario que había dejado de ejercitar `insert_normativo` (V-14) | `tests/adversarial/valores-tributarios.test.ts` |
+| `SAVEPOINT` por ítem en la aprobación en lote (V-12) | `src/services/causacion.ts` |
+
+### Lo que A14 NO corrigió, y a quién le toca
+
+| Qué | De quién |
+|---|---|
+| **V-11** — la aprobación revienta con error crudo si el despliegue no reenvía la IP del cliente | **A7** (fallback de cabecera + mensaje accionable) + **A15** (garantizarla en el despliegue) |
+| **V-1** — el `GRANT` de `app.resolver_empresa_por_buzon` sigue en `app_user`. **Desbloqueada**: el rol de sistema ya existe | **A4 + A12** |
+| **V-5** — sin tarifas de ICA por actividad para Bogotá ni Cali (esquema del código municipal) | **A2**, luego **A1**, luego verificación humana |
+| Prueba de carga: 5.000 facturas en cola sin degradar el request HTTP | **A6 + A13 + A15** |
 
 ---
 
@@ -1147,6 +1495,84 @@ sin broker, tal como exige la sección 5.
 
 ## Próximo paso
 
+**OLA 2 CERRADA por A14.** Los tres criterios de la sección 4 pasan, verificados con pruebas propias y
+**por la interfaz real**. Falta únicamente el **commit de cierre, que lo hace A0** (A14 no hace commits).
+Después de eso, despachar la **Ola 3** (A9, A10, A11).
+
+Estado del árbol al cerrar: **603 pruebas en verde**, 32 archivos, typecheck limpio, cero `todo`.
+Ficheros que A14 tocó en esta pasada y que entran en el commit de cierre:
+
+- `src/services/causacion.ts` — `SAVEPOINT` por ítem en `aprobarAsientosEnLote` (D-050).
+- `tests/adversarial/valores-tributarios.test.ts` — salvaguarda restituida y canario reparado (D-049).
+- `tests/adversarial/compuerta-ola2.test.ts` — **nuevo**.
+- `tests/adversarial/compuerta-ola2-interfaz.test.ts` — **nuevo**.
+- `ESTADO_PROYECTO.md`.
+
+### Condiciones que A0 debe trasladar a la Ola 3
+
+1. **A7 + A15 — V-11, la IP de la aprobación.** `approval.ip` es `NOT NULL` y la bandeja solo lee
+   `x-forwarded-for`. Sin esa cabecera, aprobar devuelve un error crudo de PostgreSQL. A7: leer también
+   `x-real-ip` y, si no hay ninguna, dar un mensaje accionable en vez de propagar el error del motor.
+   A15: garantizar la cabecera en el despliegue. **Es lo único abierto que toca un criterio de salida.**
+2. **A4 + A12 — V-1, ya desbloqueada.** Mover el `GRANT` de `app.resolver_empresa_por_buzon` fuera de
+   `app_user` ahora que el rol de sistema del canal de correo existe (D-054). Ojo: el camino de A4
+   (`src/ingest/persistencia.ts`) todavía la llama, así que la corrección incluye decidir si ese camino
+   se retira en favor del de A13 o se le da su propia autenticación.
+3. **A2 — V-5, el esquema del código de actividad de ICA municipal.** Sigue siendo la única deuda de
+   datos. `ciiu_activity` exige 4 dígitos; Bogotá usa `74901`, de 5.
+4. **A6 + A13 + A15 — la prueba de carga** de 5.000 facturas en cola sin degradar el request HTTP
+   (sección 12, pruebas adicionales). Era advertencia para la Ola 2 y nadie la tomó.
+5. **A5 — los pendientes que él mismo dejó anotados**: no hay job de cola para clasificación (A5-2) y la
+   bandeja de revisión de clasificación no tiene interfaz (A5-3, es de A7).
+6. **A1 — cargar lo que quede verificado** de `smmlv_value` y `tax_calendar` cuando un humano aporte los
+   valores. Ningún caso dorado depende de ello.
+
+### Advertencias para la Ola 3 que salen de esta verificación
+
+- **Toda pantalla nueva se prueba por su acción de servidor, no por el servicio** (D-056). Probar el
+  servicio deja sin verificar precisamente la costura donde el cliente elige qué enviar, que es donde
+  vive el contador hostil. El patrón ya está montado en
+  `tests/adversarial/compuerta-ola2-interfaz.test.ts`: se simulan `next/headers`, `next/navigation` y
+  `app/lib/db.ts`, y **nada más**.
+- **Todo bucle que escriba dentro de una sola transacción necesita `SAVEPOINT` por ítem.** Ya van dos
+  (D-043 en la causación, D-050 en la aprobación en lote) y las dos veces el `try/catch` parecía
+  suficiente y no lo era: un error del motor aborta la transacción entera y el `catch` solo colecciona
+  `25P02`. A9/A10/A11 van a escribir en lote (cierres, ajustes, exportaciones): aplíquenlo desde el
+  principio.
+- **Acotar una salvaguarda es la dirección peligrosa** (D-049). Se puede hacer, y A8 tenía razón en la
+  necesidad; lo que no se puede es sustituir la salvaguarda por una **afirmación** («las otras reglas ya
+  lo cazan») sin comprobarla. A14 la comprobó y era falsa en cuatro formas. Quien acote algo de A14, que
+  traiga el canario que demuestre que lo que quita sigue cubierto.
+- **Un contador que no sube no prueba nada; una mina que no explota, sí** (D-052). Para «no se llamó a
+  X», el instrumento correcto es un doble que **revienta** al ser llamado, más un espía en la frontera
+  del proceso — no un contador que solo vigila el objeto que la propia prueba inyectó.
+- **Una función `SECURITY DEFINER` nueva se declara en las DOS copias del inventario** (D-042) **y se
+  audita como oráculo de existencia**: misma respuesta ante un identificador ajeno real y uno inventado.
+  Diez funciones nuevas pasaron esa prueba en esta ola; la undécima tendrá que pasarla también.
+- **`db/seeds` sigue siendo dato, `src/` sigue siendo código.** Un `INSERT` normativo en `src/` o `app/`
+  solo puede llevar parámetros ligados. Si una pantalla necesita escribir un valor, el valor viene del
+  formulario en un `$n`, nunca escrito en la sentencia.
+
+### Lo que queda listo y no hay que rehacer
+
+- Todo lo de las Olas 0 y 1 (esquema, RLS, ledger, vigencias, motor, parser, cola, servicios, datos).
+- **La clasificación asistida y la memoria de A5**: determinista, con catálogo cerrado, sin ruta de red
+  estática y con el caso dorado 19 cerrado de verdad.
+- **La bandeja multi-empresa de A7**: una sesión por empresa, sin atajos que rompan D-021/D-022,
+  verificada a escala real (31 empresas, 50 aprobaciones) y contra dos ataques de falsificación.
+- **El módulo de parametrización de A8**: primera interfaz del repositorio, con las seis conductas de
+  §6.2 y el simulador de impacto; verificado por su acción de servidor y contra el contador hostil.
+- **El canal de integración de A13**: token de máquina que desemboca en el `abrir_sesion` intacto, rol de
+  sistema de mínimo privilegio real, y los seis workflows de n8n sin una línea de lógica tributaria.
+- El harness `tests/helpers/` y las **siete** suites adversariales de A14.
+
+---
+
+<details>
+<summary>Próximo paso de la Ola 1 (histórico, cerrado)</summary>
+
+### Próximo paso — Ola 1 (histórico)
+
 **OLA 1 CERRADA por A14.** Los cuatro criterios de la compuerta pasan, verificados con pruebas propias, y
 —lo que decidía el cierre— el pipeline produce asientos publicados **con el repositorio tal como está**,
 sin que ninguna prueba inserte un parámetro a mano. Falta únicamente el **commit de cierre, que lo hace
@@ -1200,3 +1626,5 @@ A0** (A14 no hace commits). Después de eso, despachar la **Ola 2** (A5, A7, A8,
 - **Los datos normativos de A1**: 28 reglas tributarias, todas con norma de respaldo, más el parámetro
   operativo de redondeo.
 - El harness `tests/helpers/` y las cinco suites adversariales de A14.
+
+</details>

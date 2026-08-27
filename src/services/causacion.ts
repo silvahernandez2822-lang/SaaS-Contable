@@ -955,7 +955,25 @@ export async function aprobarAsientosEnLote(
   const loteId = randomUUID();
   const resultados: ResultadoLoteAprobacion['resultados'] = [];
 
-  for (const item of input.items) {
+  for (const [indice, item] of input.items.entries()) {
+    // SAVEPOINT POR ÍTEM (corrección de A14 al cerrar la Ola 2, D-050).
+    //
+    // Sin él, el `catch` de abajo era DECORATIVO: en cuanto un ítem provocaba
+    // un error del motor —un asiento que otro contador ya publicó, un período
+    // cerrado, una cuenta no imputable—, PostgreSQL abortaba la transacción
+    // entera y TODOS los ítems siguientes morían con 25P02 «current
+    // transaction is aborted». A14 lo midió sobre la bandeja real: en un lote
+    // de dos, el primero fallaba por su propio motivo y el segundo —sano—
+    // fallaba por contagio. Con 50 filas de 30 empresas, un solo renglón
+    // rancio se llevaba por delante el trabajo de toda la pantalla, y el
+    // contador solo veía un mensaje de error por fila sin saber cuáles se
+    // aprobaron de verdad.
+    //
+    // Es exactamente el mismo hallazgo que D-043 en `causarFactura`, en el
+    // otro extremo del flujo: aislar la escritura de cada unidad de trabajo
+    // para que el fallo de una no contamine a las demás.
+    const punto = `lote_aprobacion_${indice}`;
+    await tx.exec(`SAVEPOINT ${punto}`);
     try {
       const r = await aprobarAsiento(tx, {
         journalEntryId: item.journalEntryId,
@@ -966,8 +984,11 @@ export async function aprobarAsientosEnLote(
         motivo: item.motivo ?? null,
         loteId,
       });
+      await tx.exec(`RELEASE SAVEPOINT ${punto}`);
       resultados.push(r);
     } catch (error) {
+      await tx.exec(`ROLLBACK TO SAVEPOINT ${punto}`);
+      await tx.exec(`RELEASE SAVEPOINT ${punto}`);
       resultados.push({
         journalEntryId: item.journalEntryId,
         error: error instanceof Error ? error.message : String(error),
