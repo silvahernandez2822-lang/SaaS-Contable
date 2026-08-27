@@ -107,7 +107,13 @@ async function registrarCuarentena(
     [ctx.companyId, hash],
   );
   if (existente[0]) {
-    return { ok: false, sourceDocumentId: existente[0].id, ...cuarentena, duplicado: true };
+    return {
+      ok: false,
+      sourceDocumentId: existente[0].id,
+      motivoCuarentena: cuarentena.motivo,
+      detalle: cuarentena.detalle,
+      duplicado: true,
+    };
   }
 
   const { rows } = await tx.query<{ id: string }>(
@@ -131,7 +137,13 @@ async function registrarCuarentena(
     ],
   );
 
-  return { ok: false, sourceDocumentId: rows[0]!.id, ...cuarentena, duplicado: false };
+  return {
+    ok: false,
+    sourceDocumentId: rows[0]!.id,
+    motivoCuarentena: cuarentena.motivo,
+    detalle: cuarentena.detalle,
+    duplicado: false,
+  };
 }
 
 /**

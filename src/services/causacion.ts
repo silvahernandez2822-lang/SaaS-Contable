@@ -38,7 +38,7 @@ import {
 import { isPostgresError, SQLSTATE } from '../db/types.js';
 import type { SqlClient } from '../db/types.js';
 import { exigirPermiso, PERMISOS } from '../auth/permisos.js';
-import type { DatosExtraidos, LineaExtraida } from './ingest.js';
+import { proyectarLineasParaCausacion, type DatosExtraidos, type LineaExtraida } from './ingest.js';
 import { completarJob, type DocumentProcessingJob } from './cola.js';
 
 // =============================================================================
@@ -415,7 +415,8 @@ async function causarFactura(
     `SELECT datos_extraidos FROM extraction WHERE source_document_id = $1 ORDER BY created_at DESC LIMIT 1`,
     [doc.id],
   );
-  const datos = extraccionRows[0] && jsonComoObjeto<DatosExtraidos>(extraccionRows[0].datos_extraidos);
+  const crudo = extraccionRows[0] && jsonComoObjeto(extraccionRows[0].datos_extraidos);
+  const datos: DatosExtraidos | null = crudo ? proyectarLineasParaCausacion(crudo) : null;
   if (!datos) {
     motivos.push({
       codigo: 'sin_extraccion',

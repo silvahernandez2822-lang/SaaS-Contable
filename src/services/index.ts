@@ -16,7 +16,7 @@ export {
 } from './cola.js';
 export type { DocumentProcessingJob, EstadoJob } from './cola.js';
 
-export { recibirDocumento, proyectarDatosExtraidos } from './ingest.js';
+export { recibirDocumento, proyectarLineasParaCausacion } from './ingest.js';
 export type { RecibirDocumentoInput, ResultadoIngesta, DatosExtraidos, LineaExtraida } from './ingest.js';
 
 export {
