@@ -1,14 +1,16 @@
 # ESTADO_PROYECTO.md
 
 > Memoria única entre sesiones. Todo agente lo lee al empezar y lo actualiza al terminar.
-> Última actualización: 2026-08-26 — A2, al cerrar D-032 y D-033 (migración 018). Levanta el bloqueo
-> de la Ola 1.
+> Última actualización: 2026-08-27 — **A14, compuerta de la Ola 1**. Veredicto: **Ola 1 BLOQUEADA**
+> por dos huecos de datos de A1 (V-4 y V-6). El motor, el parser, la cola y el aislamiento pasan.
+> Los 20 casos dorados tienen veredicto real, uno por uno. Suite: 429 en verde, cero `todo`, cero fallos.
 
 ## Olas cerradas
 
 | Ola | Agentes | Compuerta | Commit de cierre | Fecha |
 |---|---|---|---|---|
 | **0 — Fundaciones** | A2, A12, A14 | **PASA las cuatro pruebas**, verificadas de forma independiente por A14 con pruebas propias (`tests/adversarial/`) | *pendiente — lo pone A0* | 2026-08-26 |
+| **1 — Núcleo del dominio** | A1, A3, A4, A6, A14 | **BLOQUEADA por A14.** Pasan 3 de los 4 criterios; el 1.º (los 20 casos dorados) pasa como motor y **no** como producto: con los datos entregados no hay `rounding_rule` ni reglas de ReteICA. Ver «Compuerta de la Ola 1 — veredicto de A14» | — | 2026-08-27 |
 
 **Ola 0: CERRADA por A14.** Las cuatro pruebas de la compuerta de la sección 4 pasan, y pasan contra el
 motor de PostgreSQL (SQLSTATE), no contra un `throw` de TypeScript. Ninguna vulnerabilidad abierta
@@ -491,6 +493,158 @@ duplicación es una divergencia esperando a ocurrir.
 
 ---
 
+## Decisiones de QA adversarial de A14 (compuerta de la Ola 1)
+
+### D-038 — `ESCALA_TARIFA` y `ESCALA_UVT` son representación, no regla. La exención se GANA, no se declara
+**Adjudicado:** el detector de la Regla de Oro 2 marcaba `ESCALA_TARIFA = 10n ** 6n` y
+`ESCALA_UVT = 10n ** 4n` en `src/domain/dinero.ts`. **A14 coincide con A0 y con A3: son falsos
+positivos.** No son tarifa, base, UVT, salario, tope ni calendario: son los factores de escala de punto
+fijo de `numeric(9,6)` y `numeric(12,4)`, es decir la **definición de las columnas**, no el contenido de
+ninguna fila. Si se anulara el Decreto 572 no cambiarían; si la columna pasara a `numeric(9,8)`
+cambiarían sin que cambiara ninguna tarifa. Y quitarlas empujaría a `parseFloat` sobre los `numeric` de
+PostgreSQL, que es justo lo que prohíbe la Regla de Oro 5.
+
+**Lo que A14 NO hizo:** aflojar la regla hasta que callara. La exención está acotada por tres cercas
+simultáneas, y las tres son comprobables:
+
+1. **Por la forma.** Solo se exime `ESCALA_<ALGO> = 10n ** <n>n`: identificador con ese prefijo **y**
+   valor literalmente una potencia de diez en BigInt. `const ESCALA_TARIFA = 0.04`,
+   `const ESCALA_UVT = 5237400n` y `const ESCALA_TARIFA_SERVICIOS = 4n` siguen siendo cazados — hay un
+   canario por cada uno de los tres.
+2. **Por la lista.** Una prueba afirma que las constantes eximidas en todo el código son **exactamente
+   esas dos**. Una tercera que reclame la exención rompe la prueba y obliga a adjudicarla.
+3. **Por el hecho.** La exención se **gana contra el esquema**: una prueba lee `information_schema` y
+   exige que cada constante eximida sea exactamente `10^(escala declarada en la base)`. Si alguien
+   cambiara la columna y no la constante —o al revés— la prueba falla. Deja de ser un argumento y pasa a
+   ser un invariante verificado.
+
+**Efecto neto: el detector quedó MÁS sensible que antes**, no menos (ver D-040).
+
+### D-039 — `db/seeds/` se excluye del barrido de la Regla 2, y a cambio se audita que sea solo DATO
+**Decidido:** el barrido de valores tributarios cubre `src/`, `app/` y `db/migrations/`, y **no**
+`db/seeds/`. Desde la Ola 1 ahí viven las tarifas reales de A1, y eso es **el dato en su sitio**: la
+Regla 2 exige que el valor viva en una tabla paramétrica, no que no exista. Lo prohibido es el valor
+quemado en una ruta ejecutable.
+
+Para que la exclusión no sea una puerta trasera, se comprueba a cambio, con pruebas:
+- **todo** archivo de `db/seeds/` es `.sql` — ni un archivo ejecutable;
+- ningún seed define lógica (`CREATE FUNCTION|PROCEDURE|TRIGGER`, `DO $$`);
+- ningún seed hace `UPDATE`, `DELETE` ni `TRUNCATE` sobre una tabla paramétrica — eso además violaría la
+  Regla 3, porque editar un parámetro **inserta vigencia nueva** y jamás actualiza la anterior;
+- los seeds **sí traen tarifas reales** (si estuvieran vacíos, "cero valores en el código" sería
+  trivialmente cierto y la prueba no probaría nada);
+- **toda** fila normativa declara `norma_respaldo`, en el archivo y en la base. Un valor tributario sin
+  norma es un valor inventado con buena letra (advertencia 17.5).
+
+### D-040 — Séptima regla del detector: el múltiplo exacto de UVT. La encontró el propio canario
+**Hallazgo:** al escribir los canarios que demuestran que el detector sigue cazando tarifas reales,
+`if (base > 104748) retener();` **no lo cazaba ninguna de las seis reglas**: no es fracción, no es
+porcentaje, no hay palabra tributaria cerca, y 104.748 no es una magnitud de UVT sino **dos**. Y es
+exactamente la base mínima de servicios de la sección 12.
+
+**Corregido por A14:** regla nueva `multiplo_de_uvt`, que caza todo entero de cinco cifras o más que sea
+múltiplo exacto de una UVT o de un SMMLV conocido (en pesos o en centavos). La forma más natural de
+quemar una base mínima es precalcularla, y ahora se caza: 104.748 (2 UVT), 523.740 (10), 785.610 (15),
+157.122 (3) y 4.975.530 (95) tienen canario propio. **Cero hallazgos** en el código real.
+
+### D-041 — El andamiaje de A3 es legítimo COMO ANDAMIAJE, y su consecuencia queda MEDIDA
+**Adjudicado**, los dos apoyos que A3 declaró:
+
+1. **La `rounding_rule` que monta la suite: LEGÍTIMA.** El redondeo no es tarifa, base, UVT, tope ni
+   calendario — la propia Regla de Oro 5 lo llama «parámetro configurable». Y A14 comprobó que **ningún
+   valor esperado de la sección 12 depende del modo de redondeo**: en todos los casos
+   `valorSinRedondeo == valor`, es decir el producto `base × tarifa` es exacto. Un andamiaje que no puede
+   cambiar ningún resultado no puede fabricar ningún PASS.
+2. **Las dos `tax_rule` de ReteICA materializadas: legítimas en el VALOR, insuficientes como PRODUCTO.**
+   La tarifa no se escribe: se copia con un `SELECT` de `municipality_ica_rule` de A1. A14 lo verificó
+   comparando las dos filas: son el mismo número, y la norma de A1 dice «Acuerdo». No hay valor
+   inventado. **Pero la fila no existe en producción**, y eso sí tiene consecuencia (V-4).
+
+**Regla general que queda establecida para las olas siguientes:** una suite puede montar un parámetro
+**operativo** (redondeo, política de empresa) y puede **copiar** un valor normativo de una fila real,
+pero no puede escribir un valor tributario nuevo. Y todo andamiaje debe venir con una prueba que mida su
+consecuencia en producción — como la que ahora afirma, en positivo, que con solo los seeds de A1 hay
+**cero** reglas de ReteICA, **cero** conceptos de ReteICA y **cero** reglas de redondeo.
+
+### D-042 — `app.resolver_empresa_por_buzon`: la ampliación de la lista blanca se ACEPTA, con el alcance medido y una corrección asignada
+**Contexto:** A4 amplió el inventario cerrado de funciones `SECURITY DEFINER` de
+`tests/adversarial/evasion.test.ts` para incluir la suya. Es el agente vigilado ampliando la lista que lo
+vigila, así que A14 lo verificó en vez de leerlo.
+
+**Lo que resultó cierto:** la superficie de columnas es mínima (solo `id` y `tenant_id`), la coincidencia
+es exacta y solo sobre empresas `activa`. A14 lo probó con `%`, `%@%`, coincidencias parciales y cadenas
+vacías: **no es un buscador**, devuelve `null` en los seis intentos. Suspendida la empresa, deja de
+responder. Y la función es realmente necesaria: `company` tiene RLS de tenant estricto y resolver el
+buzón ocurre **antes** de que exista sesión.
+
+**Lo que NO era exacto, y A14 midió:** la justificación escrita dice «no cruza firmas». **Sí cruza**: desde
+una sesión de la firma B, con el buzón de la firma A, la función devuelve el `company_id` y el
+`tenant_id` de A. Es un **oráculo de existencia de buzones** y una **divulgación de identificadores entre
+firmas**. Además, el precedente que invoca (`app.buscar_credencial`, D-023) está concedido **solo a
+`app_auth`** y revocado de `app_user`; esta se concedió a `app_user`, que es el rol de **toda** sesión de
+negocio. La analogía era correcta en el patrón y más ancha en el privilegio.
+
+**Alcance real del daño, medido:** con esos dos identificadores en la mano, la firma B lee **cero** filas
+de `company`, `source_document`, `journal_entry` y `third_party` de A, y no puede escribir nada (`42501`).
+Divulga identificadores, no datos.
+
+**Adjudicación: se acepta la ampliación** (V-1, gravedad baja, misma clase que el oráculo de
+`user.email` ya aceptado en la Ola 0) **con una corrección asignada**: cuando A12 construya la sesión de
+sistema del canal de correo, el `GRANT` debe moverse de `app_user` al rol que de verdad resuelve buzones
+antes de la sesión, y revocarse de `app_user`. Hoy no se puede hacer sin romper el camino de A4, porque
+ese rol todavía no existe. Queda **medido en dos pruebas** —una que fija en positivo que la función
+contesta entre firmas y otra que fija que no se puede hacer nada con lo que devuelve— y el inventario
+`SECURITY DEFINER` quedó **duplicado a propósito** en `compuerta-ola1.test.ts`: ampliarlo en un solo sitio
+ya no basta.
+
+### D-043 — La rama de "carrera detectada" de A6 era código muerto. CORREGIDA por A14
+**Hallazgo:** `causarFactura` envuelve el INSERT del asiento en un `try/catch` que, ante
+`journal_entry_idem_uq`, consulta el asiento existente y completa el trabajo como `ya_procesado`. **Ese
+`catch` no podía funcionar:** una violación de unicidad aborta la transacción en PostgreSQL, así que la
+primera consulta del `catch` moría con `25P02` «current transaction is aborted». A14 lo reprodujo
+plantando el asiento del "otro worker" a mano: el resultado era `25P02` y el trabajo quedaba `pendiente`.
+
+**Gravedad real: baja.** El invariante «un solo asiento por documento» nunca estuvo en riesgo — lo impone
+el `UNIQUE`, no el `catch` — y el reintento posterior se autocuraba porque para entonces el documento ya
+había cambiado de estado. Lo que estaba roto era el manejo elegante que el archivo declara.
+
+**Corregido por A14** con un `SAVEPOINT` en `src/services/causacion.ts`, colocado **antes de escribir
+nada del resultado** (traza de retenciones, placeholder de aprobación y asiento), no solo antes del
+INSERT. La colocación importa: con el savepoint pegado al INSERT, el perdedor de la carrera habría
+sobrevivido dejando filas de `retention_applied` huérfanas, sin asiento — cambiar un defecto por otro
+peor. La prueba de regresión verifica las dos cosas: que la carrera se resuelve como `ya_procesado` con
+el trabajo `completado`, **y** que el intento perdedor no deja ni una fila de basura.
+
+### D-044 — El canario de inventario de `src/` pasa de "solo hay dos módulos" a lista cerrada declarativa
+**Decidido:** el canario de la Ola 0 afirmaba `src/` == `['auth','db']`. Su intención era **detectar que
+nadie esconda un cálculo tributario en un rincón**, y esa intención se conserva convirtiéndolo en lo que
+ya es el patrón del proyecto para las superficies peligrosas (igual que el inventario `SECURITY
+DEFINER`): una **lista cerrada** de `['auth','db','domain','ingest','services']`. Un `src/ai/` de A5 en
+la Ola 2 hará fallar la prueba, que es exactamente el punto: obliga a declararlo y a barrerlo, no a
+colarlo.
+
+Por el mismo motivo se reescribió el segundo canario. «Las tablas normativas están vacías» ya no
+significa «A1 no ha trabajado»; ahora afirma que **aplicar solo las migraciones deja las nueve tablas en
+cero** —el dato vive en `db/seeds`, no se cuela por una migración— y se le añadió el complemento
+indispensable: **con** los seeds, esas tablas sí traen datos, así que ningún caso dorado está pasando
+sobre el vacío.
+
+### D-045 — La costura A3↔A6 no la probaba nadie, y era la más peligrosa del proyecto
+**Hallazgo:** A3 probó el motor con datos reales **sin llegar al asiento**. A6 probó el asiento con un
+concepto de `aplica_* = false`, es decir **con cero retenciones** — lo dice el encabezado de
+`tests/services/causacion.test.ts` con todas las letras. Nadie había juntado las dos mitades: un
+documento que entra por la cola, se resuelve con las tarifas de A1 y sale como un asiento **balanceado**
+donde las retenciones son partidas de crédito y el proveedor cobra el neto. Es justo donde un error de un
+centavo en la agregación o en el redondeo produce un asiento que la base rechaza (`LG002`) — o peor, uno
+que cuadra por casualidad con un valor equivocado.
+
+**A14 escribió esa prueba y PASA:** caso dorado 1 de punta a punta, con seeds reales, débito de gasto
+$1.000.000 e IVA $190.000, crédito 2365 $40.000, 2367 $28.500 y proveedores $1.121.500, descuadre cero,
+**publicado**, y la traza de `retention_applied` amarrada al asiento con su norma. Queda como prueba
+permanente: cualquier cambio en la agregación de A3 o en la construcción de partidas de A6 la rompe.
+
+---
+
 ## Vulnerabilidades — registro de A14
 
 | Id | Qué es | Gravedad | Estado | De quién |
@@ -504,6 +658,26 @@ duplicación es una divergencia esperando a ocurrir.
 | D-024 | El descenso a `app_user` es reversible en PGlite | No aplica en producción bien configurada | **ABIERTA por diseño**, invariantes comprobables ya automatizadas | **A15 al desplegar** |
 | — | La secuencia `audit_log_id_seq` es global: `last_value` deja inferir el volumen de escritura de todo el sistema | Muy baja (canal lateral, sin datos) | **Aceptada**, sin acción | anotación |
 | — | `user.email` y `company.buzon_email` son únicos globalmente: permiten saber si un correo está tomado | Muy baja (inherente a un espacio de nombres global de login) | **Aceptada**, sin acción | anotación |
+
+### Hallazgos de la Ola 1 (A14)
+
+Se numeran `V-n` para no confundirlos con las decisiones `D-n`. **Los dos marcados «BLOQUEA» son los que
+dejan la Ola 1 abierta**; el resto está corregido, acotado o declarado.
+
+| Id | Qué es | Gravedad | Estado | De quién |
+|---|---|---|---|---|
+| V-1 | `app.resolver_empresa_por_buzon` contesta a la sesión de **otra firma**: con un buzón ajeno devuelve su `company_id` y su `tenant_id`. Oráculo de existencia de buzones + divulgación de identificadores entre firmas. Está concedida a `app_user` (toda sesión de negocio), mientras el precedente que invoca (`app.buscar_credencial`) está concedido solo a `app_auth` | **Baja** — divulga identificadores, no datos: A14 midió que con ellos se leen **cero** filas y no se escribe nada (`42501`) | **ABIERTA, acotada y medida en dos pruebas.** Ver D-042 | **A12** (crear la sesión/rol de sistema del canal de correo) + **A4** (mover el `GRANT` a ese rol y revocarlo de `app_user`) |
+| V-2 | La rama de "carrera detectada" de `causarFactura` moría con `25P02`: era código muerto | Baja (el invariante lo imponía el `UNIQUE`; lo roto era el manejo elegante) | **CORREGIDA por A14** (`SAVEPOINT`, D-043), con prueba de regresión que además verifica que el perdedor no deja filas huérfanas | era de **A6** |
+| V-3 | El detector de la Regla de Oro 2 no cazaba umbrales **precalculados** (`if (base > 104748)`, que son 2 UVT) | Media (es la forma más natural de quemar una base mínima) | **CORREGIDA por A14** (séptima regla, D-040) | infraestructura de QA de A14 |
+| V-4 | **`tax_rule` no tiene ni una fila de tipo `reteica`**, ni `tax_concept` de tipo `reteica`. El 2‰ de Medellín existe, pero solo en `municipality_ica_rule.tarifa_general`, y el motor amarra toda retención a una `tax_rule` con vigencia (D-017). **En producción, hoy, el ReteICA no existe: todo cae en `sin_regla_vigente_a_la_fecha`** | **Alta como producto** — los casos dorados 8, 9 y 10 solo pasan con el andamiaje de la suite | **ABIERTA — BLOQUEA la Ola 1** | **A1**. No exige inventar nada: la tarifa se copia de la fila de A1 con su norma encadenada |
+| V-5 | No hay tarifas de ICA **por actividad** para Bogotá ni Cali, porque el código municipal de Bogotá `74901` (5 dígitos, Decreto 352 de 2002) no cabe en el `CHECK` de 4 dígitos de `ciiu_activity`, que es el formato del CIIU **nacional** | Media | **ABIERTA.** A1 hizo **bien** en no truncarlo a `7490`: eso habría colgado una tarifa real de un código que describe otra cosa (advertencia 17.5). La pata de ReteICA del caso 1 queda sin verificar | **A2** decide el esquema (ampliar el CHECK o modelar una tabla de actividades de ICA municipal aparte); **luego A1** carga lo verificable. El resto de la tabla de Bogotá y toda la de Cali son **verificación humana**, no trabajo de agente |
+| V-6 | **`rounding_rule` está vacía.** Sin regla de redondeo el motor —correctamente— manda **todo** a revisión manual. Con el repositorio tal como se entrega, el producto **no calcula ni una sola retención** | **Alta como producto** | **ABIERTA — BLOQUEA la Ola 1** | **A1**. El redondeo está en el catálogo obligatorio de la sección 6.3 («reglas de redondeo, al peso, a la decena») y **no es un valor normativo**: es un parámetro operativo. Si hay duda, se carga con `requiere_verificacion_humana = true` y se dice — eso no es inventar un valor tributario |
+| V-7 | El `DocumentoNormalizado` de A4 no discrimina **AIU por línea**, así que todo concepto con `base_es_aiu` va a revisión manual por la vía de ingest | Baja (la conducta es correcta: no se inventa el AIU) | **ABIERTA, declarada.** El caso dorado 11 se prueba contra el motor, no por el canal real | **A4** (si algún proveedor lo trae en UBL) o **A7** (campo editable en la bandeja) |
+| V-8 | `procesarJobCausacion` usa el municipio **del tercero** como municipio de la operación: no hay señal de "dónde ocurrió" en el documento | Baja | **ABIERTA, declarada.** El caso dorado 10 se prueba contra el motor, no por el canal real | **A7** (campo editable) |
+| V-9 | No existe sesión de sistema para el canal de correo: `recibirDocumento` exige una sesión real (D-021) y el correo llega sin ninguna | Media como producto (el canal de correo no está cablead0 de punta a punta) | **ABIERTA, declarada.** No es criterio de la compuerta de la Ola 1 | **A12** (mecanismo) + **A6/A13** (quien la abre) |
+| V-10 | **La costura A3↔A6 no la probaba nadie**: A3 probó el motor sin asiento, A6 probó el asiento con cero retenciones | Era el riesgo más alto de la ola | **CERRADA por A14**: prueba de punta a punta escrita y **en verde** (D-045) | — |
+| — | Los 11 fixtures UBL de A4 son **construidos a mano**, no capturas de producción, y el CUFE no es criptográficamente auténtico | Media antes de producción | **Declarada por A4 y aceptada por A14 para la compuerta.** A14 amplió la cobertura con variantes hostiles propias (base64 partido en líneas de 76, XML plano en CDATA, prefijos `ns2/ns3/ns4`) y con dos ataques (**billion laughs** y **XXE**), todos superados. El riesgo residual está confinado a `validar.ts` y `extraer.ts` | **humano / A15**: conseguir un XML real de la DIAN antes de producción |
+
 
 ---
 
@@ -612,58 +786,125 @@ await esperarErrorPg(() => ..., SQLSTATE.LEDGER_INMUTABLE, 'descripción');
 
 ---
 
-## Casos dorados — estado actual (revisado por A14)
+## Casos dorados — VEREDICTO REAL, uno por uno (A14, compuerta de la Ola 1)
 
-**Los 20 casos siguen `no implementado todavía`, y el motivo NO es descuido: es que todavía no existe
-nada que ejecutarlos pueda medir.** Los veinte calculan retenciones, y calcular una retención exige
-tres piezas que la Ola 0 no entrega a propósito:
+**Ya no hay ni un `todo`.** En la Ola 0 los veinte estaban enumerados como `todo` porque no existía
+motor, ni datos, ni parser. En la Ola 1 existen las tres piezas y A14 los resolvió a veredicto real
+con **suite propia**, no aceptando la de A3:
 
-- los **datos normativos** (UVT, tarifas, bases, municipios) → **A1, Ola 1**. Hoy `uvt_value`,
-  `tax_rule`, `municipality_ica_rule` y las demás están **creadas y vacías**, y así deben estar: la
-  advertencia 17.5 dice que un valor inventado es peor que uno faltante, porque el faltante se ve.
-- el **motor de resolución determinista** → **A3, Ola 1**.
-- el **parser UBL 2.1** que produce el hecho económico → **A4, Ola 1**.
+- `tests/adversarial/casos-dorados.test.ts` — los que se resuelven contra el motor. Cada retención se
+  **audita contra la fila de `tax_rule` que ella misma dice haber usado**: la tarifa reportada tiene que
+  ser la de la fila, la cuenta la de la fila, la vigencia tiene que cubrir la fecha del hecho, y el valor
+  tiene que coincidir con `base × tarifa` **recalculado en SQL por PostgreSQL**, no con la aritmética del
+  propio motor. Si el motor mintiera sobre la regla que usó, esta suite lo ve.
+- `tests/adversarial/compuerta-ola1.test.ts` — los cuatro que solo existen de verdad **al nivel del
+  asiento** (15, 17, 18, 20), más el pipeline completo de punta a punta.
+- `tests/golden/casos-dorados.test.ts` — la suite de A3, que se conserva: 25 pruebas que cubren el
+  detalle del motor. A14 la auditó línea por línea; no la sustituye ni la reemplaza.
 
-**A14 se negó explícitamente a simularlos.** Un caso dorado marcado en verde sin motor de reglas detrás
-afirmaría que el sistema calcula bien algo que todavía no calcula nada: es exactamente el falso PASS que
-este rol existe para impedir. Están enumerados uno a uno como `todo` en
-`tests/adversarial/casos-dorados.test.ts`, de modo que **el corredor de pruebas los nombra en cada
-ejecución** sin contarlos como pasados. Y hay dos pruebas que demuestran que no pueden estar pasando por
-accidente: las nueve tablas normativas están en cero filas, y `src/` contiene exactamente dos módulos
-(`auth`, `db`) —no hay dónde esconder un cálculo—.
+**Los valores esperados de la sección 12 están escritos como literales en las pruebas de A14**
+($40.000, $28.500, $60.000, $15.000, $22.000, $16.000, $10.000, $190.000, $2.000, $104.748, $523.740,
+$785.610, $157.122). No salen de ninguna tabla: son la afirmación que la suite defiende.
 
-| # | Escenario | Estado | Quién y cuándo lo habilita |
+| # | Escenario | Veredicto | Cómo lo verificó A14 |
 |---|---|---|---|
-| 1 | Servicio $1.000.000 + IVA, PJ declarante, Bogotá | no implementado todavía | A1 + A3 — Ola 1 |
-| 2 | Mismo servicio, PN no declarante → 6% | no implementado todavía | A1 + A3 — Ola 1 |
-| 3 | Servicio $80.000 bajo 2 UVT → no retiene | no implementado todavía | A1 + A3 — Ola 1 |
-| 4 | Compra $500.000 bajo 10 UVT → no retiene | no implementado todavía | A1 + A3 — Ola 1 |
-| 5 | Compra $600.000 a declarante → 2,5% | no implementado todavía | A1 + A3 — Ola 1 |
-| 6 | Honorarios PJ $200.000 → 11% desde $0 | no implementado todavía | A1 + A3 — Ola 1 |
-| 7 | Arrendamiento inmueble vs. mueble | no implementado todavía | A1 + A3 — Ola 1 |
-| 8 | Servicio en Medellín → ReteICA 2‰ general | no implementado todavía | A1 + A3 — Ola 1 |
-| 9 | Servicio en Cali → base 3 UVT, tarifa de actividad | no implementado todavía | A1 + A3 — Ola 1 |
-| 10 | Actividad principal Bogotá, operación en Cali | no implementado todavía | A1 + A3 — Ola 1 |
-| 11 | Vigilancia con AIU → base es el AIU | no implementado todavía | A1 + A3 — Ola 1 |
-| 12 | Proveedor del exterior → ReteIVA 100% | no implementado todavía | A1 + A3 — Ola 1 |
-| 13 | Proveedor régimen SIMPLE | no implementado todavía | A1 + A3 — Ola 1 |
-| 14 | Factura con 3 conceptos distintos | no implementado todavía | A1 + A3 + A4 — Ola 1 |
-| 15 | Nota crédito → reversa proporcional sin mutar original | no implementado todavía | A3 + A4 + A6 — Ola 1 |
-| 16 | Factura 15-jun-2026 procesada 20-jul-2026 → vigencia de junio | no implementado todavía | A1 + A3 — Ola 1 |
-| 17 | Cambio de tarifa con vigencia futura → no retroactivo | no implementado todavía | A1 + A3 — Ola 1. **La mitad de base de datos YA está probada**: A14 verifica que una vigencia nueva no altera un `retention_applied` ya registrado, byte a byte |
-| 18 | Reprocesar 10 veces → asiento idéntico | no implementado todavía | A3 + A4 + A6 — Ola 1. Hoy no hay causación que reprocesar |
-| 19 | Segunda factura mismo proveedor → cero llamadas al LLM | no implementado todavía | **A5 — Ola 2**. No hay memoria de clasificación ni LLM que contar |
-| 20 | Tenant A consulta tenant B → cero filas | **PASA** | **YA PROBADO por A14** en `tests/adversarial/compuerta-ola0.test.ts`, Compuerta 3, por barrido de catálogo |
+| 1 | Servicio $1.000.000 + IVA 19%, PJ declarante, Bogotá | **PASA** en retefuente y ReteIVA; **la pata de ReteICA NO existe con los datos entregados** | Retefuente **$40.000** y ReteIVA **$28.500 sobre los $190.000 de IVA** (no sobre la base), ambos auditados contra su fila de `tax_rule` y recalculados en SQL. Y **de punta a punta**: el mismo caso entra por la cola, sale como asiento balanceado (débito gasto $1.000.000 + IVA $190.000; crédito 2365 $40.000, 2367 $28.500, proveedores $1.121.500) y **se publica**. La ReteICA de Bogotá por actividad no se puede calcular: A1 no cargó la tarifa (ver V-4) y el motor **se niega a inventarla** — conducta correcta, caso incompleto |
+| 2 | Mismo servicio, PN **no declarante** → 6% | **PASA** | **$60.000**. Y se comprueba que la `tax_rule_id` aplicada es **otra fila distinta** de la del declarante: si fuera la misma, el eje "tercero" no existiría |
+| 3 | Servicio $80.000 (bajo 2 UVT) | **PASA** | No retiene, con motivo. El umbral **no está en el código**: A14 lo recalcula desde `base_minima_uvt × UVT vigente` y comprueba que da exactamente **$104.748**. La evaluación negativa se **persiste** en `retention_applied` y se relee |
+| 4 | Compra $500.000 (bajo 10 UVT) | **PASA** | No retiene, con motivo. Umbral recalculado desde la base: **$523.740** |
+| 5 | Compra $600.000 a declarante | **PASA** | **$15.000**, auditado contra la fila (2,5%) |
+| 6 | Honorarios PJ $200.000 | **PASA** | **$22.000**. Y "desde el primer peso" es un **dato**, no una excepción del código: la regla trae base mínima 0, comprobado en la fila |
+| 7 | Arrendamiento inmueble vs. mueble, $400.000 | **PASA** | El inmueble no retiene (bajo 10 UVT); el mueble por el mismo valor retiene **$16.000**. Dos reglas distintas, mismo importe, mismo día |
+| 8 | Servicio en Medellín → ReteICA 2‰, base 15 UVT | **PASA solo con andamiaje. NO FUNCIONA con los datos entregados** | Con la regla materializada por la suite: **$2.000** sobre $1.000.000, `ciiu_activity_id` nulo (Medellín no va por actividad), y por debajo de la base no retiene. La base mínima se recalcula desde `municipality_ica_rule` y da **$785.610**, el valor de la sección 12. **Pero `tax_rule` no tiene ni una fila de tipo `reteica`** (medido: 0), así que en producción Medellín cae en `sin_regla_vigente_a_la_fecha`. Ver V-4 |
+| 9 | Mismo servicio en Cali → base servicios 3 UVT | **PASA en la base municipal; la TARIFA es andamiaje** | $200.000 **sí** retiene en Cali y **no** en Medellín: mismo importe, mismo tercero, mismo día, solo cambia el municipio. La base de Cali recalculada da **$157.122**. La tarifa usada es la copiada de Medellín porque la de Cali por actividad no existe (V-5) |
+| 10 | Principal en Bogotá, secundaria en Cali, operación en Cali | **PASA en comportamiento; la tarifa es andamiaje** | La retención sale con la actividad **de Cali**, no con la principal de Bogotá, y con el municipio de Cali. Es exactamente lo que el caso discrimina. La magnitud de la tarifa depende de V-5 |
+| 11 | Vigilancia $5.000.000 con AIU $500.000 | **PASA en el motor. NO se puede disparar por el canal de ingest** | La base es **$500.000**, no $5.000.000, y la retención **$10.000**. Sin AIU declarado el motor **no lo deduce** del total: `concepto_aiu_sin_aiu_declarado`. Limitación declarada: el parser de A4 no discrimina AIU por línea, así que por `recibirDocumento` el caso siempre va a revisión manual (V-7) |
+| 12 | Proveedor del exterior → ReteIVA 100% | **PASA** | **$190.000**, el 100% del IVA, con norma que cita el **art. 437-2**. Y no es "la misma regla al tope": es **otra fila** — el mismo concepto con proveedor nacional da $28.500 |
+| 13 | Régimen SIMPLE | **PASA** | Sin política parametrizada el motor **no decide**: `regimen_simple_sin_politica_parametrizada` y cero agregados. Con la política puesta como dato en `company_setting`: no retefuente (con su motivo), sí ReteIVA $28.500. Un tercero ordinario no se ve afectado |
+| 14 | Factura con 3 líneas de conceptos distintos | **PASA** | $40.000 + $15.000 + $22.000 = **$77.000**; **tres** agregados con **tres** `tax_rule_id` distintos contra **una sola** cuenta. Las tres retenciones auditadas contra sus filas. Variante hostil de A14: **trocear un concepto en dos líneas no esquiva la base mínima** (dos líneas de $300.000 se agregan a $600.000 y retienen) |
+| 15 | Nota crédito sobre factura causada | **PASA, y al nivel del asiento** | A3 lo prueba en la traza; A14 lo prueba en el **ledger**: se causa, se **publica**, se reversa, y el asiento original queda **idéntico byte a byte** (`to_jsonb` del asiento + todas sus partidas). La reversa es un asiento **nuevo** que suma **cero** con el original. Y **no se puede reversar dos veces**: `journal_entry_reversa_uq` lo rechaza con `23505` |
+| 16 | Factura 15-jun-2026 procesada 20-jul-2026 | **PASA** | Mismo motor, misma hora de reloj, dos fechas de hecho: julio da $40.000 y junio da **cero con motivo**, porque A1 **no inventó** la tarifa anterior al decreto. Que lo que falla es la vigencia y no la fecha se prueba con honorarios, que sí estaba vigente en junio ($22.000, auditado contra la fila con fecha de junio). Y el **borde exacto**: 30-jun no resuelve, 1-jul sí. La UVT también se resuelve por la fecha del hecho (2025 vs. 2026) |
+| 17 | Cambio de tarifa con vigencia futura | **PASA, en las dos mitades** | (a) La vigencia anterior se cierra e inserta una nueva **sin tocar código ni redesplegar**: la resolución de un hecho pasado sigue dando la tarifa vieja y la de un hecho posterior da la nueva. (b) La traza ya registrada en `retention_applied` queda **idéntica byte a byte**. (c) Repetido con la **UVT**, que es el parámetro más transversal: el umbral se mueve solo para los hechos posteriores |
+| 18 | Reprocesar 10 veces la misma factura | **PASA, y al nivel del asiento** | Diez pasadas de la cola sobre la misma factura: **un solo** `journal_entry`, **idéntico byte a byte** tras las diez, y las nueve repeticiones devuelven `ya_procesado`. Encolar diez veces deja **un solo** trabajo. Y la garantía **no es el `if` de TypeScript**: saltándose el servicio, insertar un segundo asiento con la misma `idempotency_key` lo rechaza `journal_entry_idem_uq` con `23505` |
+| 19 | Segunda factura igual → cero llamadas al LLM | **PARCIAL, y declarado como tal** | La mitad que existe hoy está **verde**: barrido de **todo** `src/` sin `fetch`, `node:http(s)`, `axios`, `openai`, `anthropic` ni `@ai-sdk` — no hay con qué llamar a un LLM; la segunda factura del mismo proveedor con la misma descripción se causa entera resolviendo el concepto desde `memoria_clasificacion`, sin crear ninguna fila nueva; y dos resoluciones seguidas dan la misma huella. **La otra mitad no se puede verificar y no se finge: no hay LLM que contar hasta que A5 lo construya en la Ola 2** |
+| 20 | Tenant A consulta datos del tenant B | **PASA** | Ya probado en la Ola 0 por catálogo; **reverificado sobre las nueve tablas que estrena la Ola 1** (`document_processing_job`, `source_document`, `extraction`, `retention_applied`, `memoria_clasificacion`, `email_ingest_log`, `journal_entry`, `journal_line`, `concepto_causacion`): cero filas ajenas desde una sesión real, con y sin `WHERE`. Y la firma B **no puede** encolar, completar, reclamar ni aprobar nada de la firma A (`42501`), ni aunque conozca sus identificadores |
 
 **Pruebas adicionales de integridad (sección 12, final):**
 
 | Prueba | Estado |
 |---|---|
-| Grep de literales tributarios en código → cero | **PASA — implementado por A14**, `tests/adversarial/valores-tributarios.test.ts`. Barre `src/`, `app/` y `db/migrations/` ignorando comentarios; seis reglas (fracciones, porcentajes, números grandes junto a palabra tributaria, magnitudes conocidas de UVT/SMMLV, constantes y DEFAULT, INSERT de datos normativos). **Cero hallazgos.** Verificado con un canario: al inyectar `TARIFA_SERVICIOS = 0.04` y `UVT_2026 = 5237400`, cuatro de las reglas lo cazan |
-| UPDATE/DELETE sobre asiento publicado → falla en BD | **PASA — reverificado por A14** con nueve vectores propios, incluido el UPDATE que no cambia nada, el UPDATE y el DELETE sin `WHERE`, el DELETE de un borrador y el TRUNCATE |
-| Asiento desbalanceado → falla en BD | **PASA — reverificado por A14** con siete vectores propios, incluido el descuadre de un centavo y el desbordamiento de `bigint` |
-| Balance de prueba vs. ledger con 10.000 asientos → cuadra al centavo | no implementado todavía — A9 + A14, Ola 3 |
+| Grep de literales tributarios en código → cero | **PASA, con detector reforzado.** `tests/adversarial/valores-tributarios.test.ts`: **siete** reglas (antes seis), 32 pruebas. **Cero hallazgos** en `src/`, `app/` y `db/migrations/`. Ver D-038 (exención de escalas, ganada contra el esquema), D-039 (por qué `db/seeds` se excluye y qué se comprueba a cambio) y D-040 (hueco real que encontró el canario) |
+| UPDATE/DELETE sobre asiento publicado → falla en BD | **PASA, reverificado sobre lo que construyó la Ola 1.** Ocho vectores sobre un asiento publicado **por el pipeline de A6**: UPDATE idempotente, des-publicar, DELETE del asiento, UPDATE/DELETE/INSERT de partidas, y UPDATE y DELETE **masivos sin WHERE**. Los ocho: `LG001`. Fotografía byte a byte idéntica al final |
+| Asiento desbalanceado → falla en BD | **PASA**, `LG002` en el COMMIT, con el descuadre de **un centavo** sobre el escenario real de A6 |
+| Reprocesar la misma factura 10 veces → asiento idéntico | **PASA** (caso 18) |
+| Un cambio de parámetro no altera lo publicado | **PASA** (caso 17) |
+| Balance de prueba vs. ledger con 10.000 asientos | no implementado todavía — A9 + A14, Ola 3 |
 | Carga: 5.000 facturas en cola sin degradar el request HTTP | no implementado todavía — A6 + A13 + A15, Ola 2 |
+
+---
+
+## Compuerta de la Ola 1 — veredicto de A14: **BLOQUEADA**
+
+Verificación **independiente**, con pruebas escritas desde cero, tratando los cuatro reportes de
+`docs/reportes/ola1-a*.md` como una afirmación a refutar y no como evidencia. Mismo criterio único de la
+Ola 0: **si el rechazo no trae SQLSTATE de PostgreSQL, no cuenta.**
+
+### Los cuatro criterios de la sección 4
+
+| # | Criterio de la compuerta | Veredicto | Detalle |
+|---|---|---|---|
+| **1** | El motor resuelve correctamente los **20 casos dorados** | **PASA como MOTOR. NO PASA como PRODUCTO** | 17 de 20 pasan sin reservas; el 19 es de A5 (Ola 2) y está declarado, no fingido; los **8, 9 y 10 solo pasan con andamiaje**, porque con los datos entregados **no existe ninguna regla de ReteICA** (V-4) — y con `rounding_rule` vacía (V-6) el motor, en producción, **no calcula ninguna retención de ningún tipo**. El detalle caso por caso está en «Casos dorados — VEREDICTO REAL» |
+| **2** | El parser extrae un XML real DIAN, incluido el `Invoice` embebido en **base64 dentro del `AttachedDocument`** | **PASA** | Verificado por A14 sobre el fixture de A4 y sobre **tres variantes hostiles propias** que ningún fixture cubría: base64 **partido en líneas de 76 caracteres** (como lo emite un proveedor real), XML plano dentro de **CDATA**, y prefijos de namespace ajenos (`ns2/ns3/ns4`). Más dos ataques: **billion laughs** (no expande, no cuelga: <5 s) y **XXE a un archivo local** (va a cuarentena y no filtra el archivo). El tipo resultante es el documento **interno**, el hash es el del archivo **recibido**, y los montos son `bigint`. **Reserva declarada:** ningún XML es una captura real de la DIAN (ver la última fila del registro de vulnerabilidades) |
+| **3** | Ni un solo valor tributario en código | **PASA** | Siete reglas, 32 pruebas, **cero hallazgos** en `src/`, `app/` y `db/migrations/`. El detector quedó **más sensible** que en la Ola 0, no menos: D-038 (exención de escalas ganada contra el esquema), D-039 (`db/seeds` fuera del barrido, y a cambio auditado como dato puro) y D-040 (hueco real que encontró el propio canario) |
+| **4** | Un cambio de tarifa en la tabla paramétrica cambia el resultado **sin tocar código ni redesplegar** | **PASA** | Probado dos veces por A14, con `tax_rule` y con `uvt_value`: cerrar la vigencia e insertar la nueva cambia lo que resuelve un hecho posterior, **no** cambia lo que resuelve un hecho anterior, y deja la traza ya registrada **idéntica byte a byte**. Ni una línea de código tocada |
+
+### Por qué la Ola 1 queda BLOQUEADA y no cerrada
+
+**El motivo no es el motor: el motor está bien.** El motivo es que el criterio 1 dice «el motor resuelve
+correctamente los 20 casos dorados», y con el repositorio **exactamente como se entrega**, el motor no
+resuelve **ninguno**: `rounding_rule` está vacía y sin regla de redondeo toda resolución va a revisión
+manual. A14 tuvo que insertar una regla de redondeo en su propia prueba de punta a punta para que el
+pipeline produjera un asiento. Un contador que instalara esto hoy vería el 100 % de sus facturas en
+revisión manual.
+
+Y aunque se cargue el redondeo, tres casos dorados (8, 9 y 10) siguen sin funcionar porque no hay ni una
+fila de `tax_rule` de tipo `reteica`: el 2‰ de Medellín está cargado, verificado y con su norma, pero en
+la tabla que el motor no lee para retener.
+
+**Las dos cosas son de A1, están dentro del alcance de la Ola 1, y ninguna exige inventar un valor
+tributario.** Por eso son bloqueo y no deuda: son trabajo asignado que falta, no datos que nadie pueda
+verificar.
+
+### Lo que SÍ queda cerrado y no hay que rehacer
+
+- **El motor de A3 es correcto**, y lo es contra una auditoría que no le cree su propia respuesta: cada
+  retención se verifica contra la fila de `tax_rule` que dice haber usado y su valor se **recalcula en
+  SQL**. Los cinco ejes operan; el motor **se niega a calcular** cuando falta un parámetro en vez de
+  suponerlo, en los siete puntos donde podría haber supuesto.
+- **El parser de A4 aguanta** las tres formas realistas del `AttachedDocument` y dos ataques clásicos.
+- **La cola de A6 no duplica**: dos trabajadores no se llevan el mismo trabajo (`FOR UPDATE SKIP
+  LOCKED`), dos ciclos en paralelo sobre la misma factura dejan **un** asiento, encolar diez veces deja
+  **un** trabajo, y la sesión de negocio **no puede** reclamar, completar ni fabricar trabajos (`42501`).
+- **El ledger sigue siendo inmutable** sobre lo que ahora construye A6: ocho vectores de `UPDATE`/`DELETE`
+  contra un asiento publicado por el pipeline, los ocho `LG001`, y la fotografía idéntica al final.
+- **El aislamiento aguanta las nueve tablas nuevas** de la Ola 1, en lectura y en escritura.
+- **La costura A3↔A6, que no probaba nadie, está probada y en verde** (D-045).
+
+### Estado de la suite al cerrar la verificación de A14
+
+`npm test` → **429 pruebas en verde, 21 archivos, CERO fallos y CERO `todo`.** `npm run typecheck`
+limpio. Al empezar A14 había 346 en verde, 22 `todo` y 2 fallos.
+
+| Archivo | Pruebas | Agente |
+|---|---|---|
+| `tests/adversarial/compuerta-ola0.test.ts` | 40 | A14 (Ola 0) |
+| `tests/adversarial/evasion.test.ts` | 33 | A14 (Ola 0) + 1 de A4 |
+| `tests/adversarial/valores-tributarios.test.ts` | **32** | **A14 — reescrita en la Ola 1** |
+| `tests/adversarial/casos-dorados.test.ts` | **26** | **A14 — los 20 casos, verificados con oráculo propio en SQL** |
+| `tests/adversarial/compuerta-ola1.test.ts` | **32** | **A14 — nueva: compuerta de la Ola 1 y ataques a lo nuevo** |
+| `tests/golden/casos-dorados.test.ts` | 25 | A3 (auditada por A14, se conserva) |
+| `tests/gates/*` (esquema, ola0, seguridad, autenticación, ingest) | 134 | A2, A12, A4 |
+| `tests/services/*`, `tests/ingest/*`, `tests/seeds/*` | 107 | A6, A4, A1 |
 
 ---
 
@@ -763,14 +1004,26 @@ ISO 27001 / SOC 2, y habilitación DIAN. Están declarados como no hechos en `do
 
 ## Pendiente de verificación normativa humana
 
-Ningún dato cargado todavía (A1 no ha corrido). Ya se sabe, por las advertencias de la sección 17, que quedarán marcados como pendientes:
+Estado tras la Ola 1. **A1 no inventó ni un valor**, y eso se comprobó: las 27 filas de `tax_rule`
+cargadas declaran su `norma_respaldo`, y las que la sección 17 marca como de referencia llevan
+`requiere_verificacion_humana = true`. Censo real de lo cargado por los seeds: `uvt_value` 2,
+`tax_concept` 22, `tax_rule` 27 (18 retefuente, 4 autorretención, 3 IVA, 2 ReteIVA, **0 ReteICA**),
+`municipality` 6, `municipality_ica_rule` 4, `ciiu_activity` 7, `account` 111, `niif_mapping` 68,
+`exogena_format` 12, **`rounding_rule` 0, `smmlv_value` 0, `tax_calendar` 0**.
 
 | Dato | Motivo | Estado |
 |---|---|---|
-| ReteICA Bucaramanga (bases ~25/~50 UVT) | Marcado *(verificar)* en sección 7.5 | pendiente |
-| ReteICA Cartagena (bases por actividad) | Marcado *(verificar)* en sección 7.5 | pendiente |
-| Tabla completa de autorretención por CIIU | Sección 7.3 da 4 valores de ejemplo, no la tabla | pendiente |
-| Tarifas Decreto 572 de 2025 | En etapa cautelar; fallo de fondo abierto (exp. 30229) | vigente, con riesgo documentado |
+| Tarifas de retefuente **anteriores** al 1-jul-2026 | La sección 7.2 solo trae la tabla posterior al Decreto 572 | pendiente. Afecta al caso dorado 16 en su forma literal; A14 lo verificó con el borde real 30-jun/1-jul, que es el mismo fenómeno con datos verdaderos |
+| Tarifas de ICA **por actividad** de Bogotá (más allá del 7,66‰ de profesiones liberales) y **todas** las de Cali | La sección 7.5 no trae la tabla del Decreto 352 de 2002 ni ningún número del Acuerdo 0321 de 2011 | pendiente. Ver V-5: además hace falta la decisión de esquema de A2 sobre el código municipal de 5 dígitos |
+| ReteICA Bucaramanga (bases ~25/~50 UVT) y Cartagena | Marcados *(verificar)* en la sección 7.5 | pendiente |
+| Tabla completa de autorretención por CIIU | La sección 7.3 da 4 valores de ejemplo, no la tabla | pendiente, y las 4 filas cargadas llevan `requiere_verificacion_humana` |
+| Tabla progresiva de retención por salarios (art. 383 ET) | La sección 7 da el umbral y el rango, no los tramos marginales | pendiente. Ningún caso dorado la ejercita |
+| SMMLV y auxilio de transporte por año | La sección 7 no trae valores | pendiente. Ningún caso dorado la ejercita |
+| Calendario tributario (`tax_calendar`) | La sección 7.7 da las ventanas de exógena pero no el escalonamiento por dígito de NIT | pendiente. Ningún caso dorado la ejercita |
+| Honorarios PN al 11% por acumulado anual > 3.300 UVT | Exige un acumulado por tercero y año gravable que hoy no tiene dónde vivir | **declarado por A3, no resuelto en silencio.** Ningún caso dorado lo ejercita |
+| PUC y mapeo NIIF cargados | Reconstruidos de memoria por A1, no transcritos del Decreto 2650 ni del 2420 | pendiente de cotejo antes de producción |
+| Tarifas Decreto 572 de 2025 | En etapa cautelar; fallo de fondo abierto (exp. 30229) | vigente, con riesgo documentado. La Regla 3 lo absorbe sin migración ni redespliegue — probado |
+| Un XML **real** de la DIAN | Los 11 fixtures son construidos a mano; el CUFE no es criptográficamente auténtico | pendiente antes de producción. A14 amplió la cobertura con variantes hostiles, pero ninguna sustituye una captura real |
 
 ---
 
@@ -779,74 +1032,71 @@ Ningún dato cargado todavía (A1 no ha corrido). Ya se sabe, por las advertenci
 Sin reporte de A15 todavía. Techo: USD 20/mes (fase inicial) → USD 50/mes (con clientes).
 Referencia de costo de IA: USD 0,01–0,02 por factura antes de caché.
 
-**A12 no gastó un peso del presupuesto:** cero dependencias nuevas. scrypt, HMAC y AES-256-GCM
-salen de `node:crypto`; el TOTP son ~120 líneas de especificación pública verificadas contra los
-vectores de los RFC (D-027). `package.json` no cambió.
+**Ni A12 ni la Ola 1 gastaron presupuesto en dependencias.** `package.json` sumó en la Ola 1 una sola
+dependencia (`fast-xml-parser`, para el parser UBL de A4); scrypt, HMAC y AES-256-GCM siguen saliendo de
+`node:crypto`. La cola de A6 vive **en la misma PostgreSQL**: sin Redis y sin broker, tal como exige la
+sección 5.
 
 ---
 
 ## Próximo paso
 
-**A14 verificó la compuerta y la Ola 0 queda CERRADA.** Las cuatro pruebas pasan contra el motor,
-verificadas con pruebas propias en `tests/adversarial/`. Falta únicamente el **commit de cierre, que lo
-hace A0** (A14 no hace commits). Después de eso, despachar la **Ola 1** (A1, A3, A4, A6).
+**La Ola 1 NO se cierra. Faltan dos cosas, las dos de A1, las dos dentro del alcance de la ola, y
+ninguna exige inventar un valor tributario.**
 
-**Condiciones que A0 debe trasladar a la Ola 1 antes de darla por despachada:**
-1. ~~**D-032 es precondición de cierre de la Ola 1, y le toca a A2**~~ → **HECHO** (migración 018,
-   D-037). El bloqueo de la Ola 1 está levantado: A1, A3, A4 y A6 pueden arrancar. Lo que deben saber
-   al escribir contra el esquema: una fila **solo puede referenciar filas de su propia empresa, de su
-   propia firma, o globales del catálogo**; el cruce lo rechaza el motor con `AL001`. En particular, el
-   PUC global que puebla A1 (`tenant_id IS NULL`) sigue siendo imputable por todas las empresas —
-   verificado.
-2. ~~**D-033 conviene cerrarlo en la misma pasada, también A2**~~ → **HECHO** (migración 018).
-3. **A1 debe correr sus seeds con `asAdmin` / rol privilegiado** (D-015 y D-025), y dejar como
-   pendientes los datos que la sección 17 marca sin verificar, en vez de inventarlos.
-4. **A14 implementa los 20 casos dorados al cerrar la Ola 1**, que es cuando la sección 12 dice que
-   deben estar implementados. Hoy están enumerados como `todo`, no simulados.
+### Bloqueos de cierre — en orden de impacto
 
-Lo que queda listo y **no** hay que rehacer:
-- El esquema completo de la sección 15, con RLS de doble nivel activa y forzada (A2).
-- El contexto de tenant derivado de un token de sesión verificado, con `app.tenant_id` inerte (A12, D-021).
-- Los cinco roles con permisos impuestos por el motor (A12, D-025).
-- El harness `tests/helpers/db.ts` + `tests/helpers/fixtures.ts` que usarán todos los agentes.
-- Los nueve documentos de cumplimiento en `docs/`, listos para revisión jurídica.
-- Las tablas paramétricas **vacías y listas** para que A1 las puebla en la Ola 1. Ni A2 ni A12 cargaron
-  un solo valor tributario, a propósito.
+1. **A1 — cargar `rounding_rule`.** Sin ella el motor manda **todo** a revisión manual y el producto no
+   calcula ni una retención. Está en el catálogo obligatorio de la sección 6.3 y **no es un valor
+   normativo**: es un parámetro operativo («al peso, a la decena»). Si hay duda sobre el múltiplo o el
+   modo, se carga con `requiere_verificacion_humana = true` y se anota en `notas` — eso es declarar, no
+   inventar. (V-6)
+2. **A1 — materializar las reglas de ReteICA en `tax_rule`** (y su `tax_concept` de tipo `reteica`) para
+   los municipios cuya tarifa **ya está verificada y cargada**, empezando por Medellín. La tarifa **se
+   copia** de `municipality_ica_rule.tarifa_general` con la norma encadenada; no hay nada que inventar.
+   Sin esto, el ReteICA no existe en el producto y los casos dorados 8, 9 y 10 solo pasan con el
+   andamiaje de la suite. (V-4)
 
-**Lo que A12 pidió que A14 verificara por su cuenta — resultado, punto por punto:**
+Cuando A1 entregue esas dos cosas, **A14 vuelve a correr la compuerta** — no hace falta rehacer nada
+más: las pruebas ya están escritas y ya miden exactamente esto. Dos de ellas afirman **en positivo** que
+hoy hay cero reglas de ReteICA y cero reglas de redondeo, así que **fallarán en cuanto A1 las cargue**, y
+ese fallo es la señal de que hay que revisar y cerrar.
 
-1. Fijar `app.tenant_id` a mano no da acceso a nada (cierre de D-020) → **CONFIRMADO** contra el motor,
-   saltándose `withSessionContext` y forjando la GUC directamente.
-2. Ningún rol de aplicación tiene privilegio sobre las tablas del esquema `app` → **CONFIRMADO** para
-   `app_user` y para `app_auth`, por barrido del catálogo.
-3. `app_user` no puede ejecutar `app.abrir_sesion` → **CONFIRMADO**, y además se cerró por prueba el
-   inventario completo de funciones `SECURITY DEFINER` que `app_user` sí puede ejecutar: una función
-   DEFINER nueva y ejecutable por la aplicación ahora **rompe la prueba** en vez de colarse.
-4. El rol `solo_lectura` no escribe en ninguna tabla protegida → **CONFIRMADO** (ya lo cubría A12; A14
-   añadió que `app.tiene_permiso` no se puede consultar «en nombre de» otra sesión).
-5. El `audit_log` registra el acceso denegado y el intento fallido con IP → **CONFIRMADO**, y **además
-   se encontró y cerró D-031**: `app_auth` podía forjar registros en cualquier firma.
-6. Ninguna prueba de aislamiento pasa por un falso PASS → **CONFIRMADO, con matices**, ver D-035 y
-   D-036. El residuo de D-024 quedó **medido en una prueba** en vez de confiado a un documento: la
-   suite ahora afirma explícitamente que `session_user` es superusuario en este harness, de modo que
-   apuntar `DATABASE_URL` a un Postgres real mal configurado lo dice en voz alta.
+### Lo siguiente en la fila, que no bloquea el cierre pero sí a otros
 
-**Lo que hereda A15 (despliegue), y sin lo cual la 14.1 no está completa:**
+3. **A2 — decidir el esquema del código de actividad de ICA municipal** (`ciiu_activity` exige 4 dígitos;
+   Bogotá usa `74901`, de 5). A1 hizo bien en no truncarlo. Hasta que A2 decida —ampliar el CHECK o
+   modelar una tabla aparte— la pata de ReteICA por actividad de Bogotá y Cali es inalcanzable. (V-5)
+4. **A12 + A4 — mover el `GRANT` de `app.resolver_empresa_por_buzon`** de `app_user` al rol de sistema
+   del canal de correo, en cuanto ese rol exista, y revocarlo de `app_user`. (V-1, D-042)
+5. **A12 + A6/A13 — la sesión de sistema del canal de correo.** Hoy el correo entra pero nadie puede
+   escribir por él sin una sesión real. (V-9)
+6. **A7 — dos campos editables en la bandeja** que hoy dejan dos casos dorados sin canal real: el **AIU
+   por línea** (V-7) y el **municipio de la operación** cuando difiere del domicilio del proveedor (V-8).
 
-- Conectar la aplicación con un rol de login que **sea** `app_user`, sin `SUPERUSER`, sin `BYPASSRLS` y
-  sin ser dueño de las tablas. Lista de verificación en `docs/cifrado-y-proteccion-de-datos.md` §4.1.
-- `sslmode=verify-full` en la cadena de conexión, TLS y HSTS en el borde.
-- Confirmar y archivar la constancia del cifrado en reposo del proveedor en el plan contratado.
-- **Ejecutar la prueba de restauración desde respaldo** y verificar la reproducción exacta. Hoy es el
-  único punto del "día uno" que está afirmado y no verificado.
-- Limitación de tasa por IP en el endpoint de autenticación.
+### Advertencias para la Ola 2, que salen de esta verificación
 
-**Lo que hereda A7/A8 (interfaz):** hacer el MFA **obligatorio** para los roles con permiso de
-aprobación, publicación o edición de parámetros. Hoy está disponible, no exigido.
+- **A5**, al construir la clasificación: el caso dorado 19 está a medio verificar y la mitad que falta es
+  suya. Lo que ya está probado es que **hoy no hay ninguna ruta de red en todo `src/`** y que la segunda
+  factura del mismo proveedor con la misma descripción se resuelve desde `memoria_clasificacion` sin
+  crear filas nuevas. Cuando exista el LLM, la prueba tiene que **contar llamadas**, no suponerlas.
+- **A5**, además: `src/ai/` hará **fallar** el canario de inventario de módulos de `src/` (D-044). Es a
+  propósito. Se declara el módulo en la lista y se comprueba que el barrido de la Regla 2 lo cubre.
+- **A8**, al construir la interfaz de parametrización: el mecanismo que necesita **ya está probado** —
+  cerrar vigencia + insertar la nueva cambia el cálculo de los hechos posteriores y no toca lo publicado,
+  sin redesplegar. Lo que falta es la pantalla, no el motor.
+- **Cualquiera que toque el ledger o la cola**: las garantías las impone la base, no el TypeScript, y hay
+  una prueba por cada una que se salta el servicio y ataca la tabla directamente. Si una migración nueva
+  añade una FK, tiene que llevar su guardia de alcance (D-037) y su trigger de auditoría, o los barridos
+  de `tests/gates/esquema.test.ts` y `tests/adversarial/evasion.test.ts` la cazan.
 
-Nada más arranca hasta que A14 confirme las cuatro pruebas de la compuerta de Ola 0:
+### Lo que queda listo y no hay que rehacer
 
-1. `UPDATE` sobre `journal_entry` publicado falla **en la BD**.
-2. Asiento desbalanceado rechazado **por la BD**.
-3. Consulta sin filtro de tenant devuelve **cero** filas de otro tenant, con RLS activo.
-4. Insertar vigencia nueva no altera la anterior; consulta con fecha pasada resuelve la regla vigente entonces.
+- El esquema completo con RLS de doble nivel activa y forzada, y el ledger inmutable (A2, Ola 0).
+- El contexto de tenant derivado de un token verificado, con `app.tenant_id` inerte (A12, D-021).
+- **El motor determinista de A3**, auditado contra la base y no contra sí mismo.
+- **El parser UBL de A4**, incluido el `AttachedDocument` en base64, en CDATA y con prefijos ajenos.
+- **La cola y los servicios de A6**, con idempotencia impuesta por `UNIQUE` y concurrencia por
+  `FOR UPDATE SKIP LOCKED`.
+- **Los 27 registros normativos de A1**, todos con norma de respaldo.
+- El harness `tests/helpers/` y las cinco suites adversariales de A14.

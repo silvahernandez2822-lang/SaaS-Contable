@@ -4,19 +4,36 @@
  * «Ninguna tarifa, base mínima, valor de UVT, salario mínimo, porcentaje, tope
  *  o calendario puede estar escrito en el código fuente.»
  *
- * El barrido corre sobre `src/`, `app/` y `db/migrations/`, que es donde puede
- * esconderse un valor. Se ignoran los COMENTARIOS: un comentario que explique
- * «2,5% se guarda como 0.025000» documenta el formato, no fija una tarifa. Lo
- * que se persigue es el literal ejecutable.
+ * QUÉ SE BARRE Y QUÉ NO (revisado por A14 al cerrar la Ola 1, D-039):
  *
- * En la Ola 0 esto tiene que dar CERO por partida doble: además de la Regla 2,
- * es que A1 todavía no ha poblado NADA. Un solo hallazgo hoy significa que
- * alguien inventó un dato normativo, que es lo que la advertencia 17.5 llama
- * peor que un dato faltante: el faltante se ve, el inventado no.
+ *  · `src/`, `app/` y `db/migrations/` SÍ se barren. Ahí no puede vivir ni un
+ *    valor normativo: son código y estructura.
+ *  · `db/seeds/` NO se barre, y es deliberado: desde la Ola 1 ahí viven las
+ *    tarifas REALES que cargó A1. Un `INSERT INTO tax_rule (... 0.040000 ...)`
+ *    en un archivo de seeds es el dato EN SU SITIO — es exactamente lo que la
+ *    Regla 2 exige (que el valor viva en una tabla paramétrica, no en el
+ *    código). Lo prohibido es el valor quemado en una ruta ejecutable.
+ *
+ *    Para que esa exclusión no sea una puerta trasera, se comprueba aparte que
+ *    `db/seeds/` sea SOLO datos: únicamente archivos `.sql`, sin una sola línea
+ *    de código (`CREATE FUNCTION`, `DO $$`), y sin `UPDATE`/`DELETE` sobre las
+ *    tablas paramétricas —que además violaría la Regla 3, porque editar un
+ *    parámetro inserta una vigencia nueva y jamás actualiza la anterior—.
+ *
+ * Se ignoran los COMENTARIOS: un comentario que explique «2,5% se guarda como
+ * 0.025000» documenta el formato, no fija una tarifa. Lo que se persigue es el
+ * literal ejecutable.
+ *
+ * Las seis reglas del detector viven en `REGLAS`, una sola vez, y las usan
+ * tanto el barrido real como el CANARIO: el canario les pasa código con
+ * tarifas y UVT de verdad y exige que las cacen. Si alguien afloja una regla
+ * para que el barrido calle, el canario falla.
  */
 import { describe, expect, it } from 'vitest';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import { createTestDb } from '../helpers/db.js';
+import { ESCALA_TARIFA, ESCALA_UVT } from '../../src/domain/dinero.js';
 
 const RAIZ = new URL('../../', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
 const DIRECTORIOS = ['src', 'app', 'db/migrations'];
@@ -49,7 +66,7 @@ function recolectar(dir: string, acumulado: Linea[]): void {
   try {
     entradas = readdirSync(dir);
   } catch {
-    return; // `app/` todavía no existe: no es un fallo, es la Ola 0.
+    return; // `app/` todavía no existe: lo construye A7 en la Ola 2.
   }
   for (const entrada of entradas) {
     const ruta = join(dir, entrada);
@@ -73,78 +90,312 @@ function informar(hallazgos: Linea[]): string[] {
   return hallazgos.map((l) => `${l.archivo}:${l.numero}  ${l.texto.trim()}`);
 }
 
+// =============================================================================
+// LAS SEIS REGLAS DEL DETECTOR — una sola definición, dos usos (barrido y canario)
+// =============================================================================
+
+/**
+ * ÚNICA EXENCIÓN de la regla de constantes, y por qué NO es aflojarla
+ * (adjudicación de A14, D-038).
+ *
+ * Forma exacta que se exime: `ESCALA_<ALGO> = 10n ** <n>n`. Es decir, un
+ * identificador que empieza por `ESCALA_` cuyo valor es literalmente una
+ * potencia de diez en BigInt. Nada más.
+ *
+ * Un factor de escala de punto fijo NO es un valor tributario: es la
+ * definición de la columna (`numeric(9,6)` de `tax_rule.tarifa`), no el
+ * contenido de ninguna fila. Si mañana se anula el Decreto 572, la escala no
+ * cambia; si la columna pasara a `numeric(9,8)`, cambiaría sin que cambiara
+ * ninguna tarifa. Eso es representación, no regla.
+ *
+ * Y la exención no se concede de palabra: se GANA. La prueba
+ * «toda constante de escala eximida coincide con la escala real de su columna»
+ * lee `information_schema` y exige que cada constante eximida sea exactamente
+ * 10^(escala declarada en la base). Una constante que se llamara `ESCALA_` sin
+ * serlo —o que dejara de coincidir con su columna— hace fallar esa prueba.
+ * Así que la exención está acotada por la forma (potencia de diez) Y por el
+ * hecho verificable (coincide con el esquema).
+ */
+const EXENCION_ESCALA = /(?:const|let|var)\s+(ESCALA_[A-Z0-9_]*)\s*=\s*10n\s*\*\*\s*\d+n\s*;?\s*$/;
+
+export interface ReglaDetector {
+  id: string;
+  descripcion: string;
+  detecta(texto: string): boolean;
+}
+
+export const REGLAS: readonly ReglaDetector[] = [
+  {
+    id: 'fraccion',
+    descripcion: 'fracción decimal con pinta de tarifa (0,xxx) fuera de un comentario',
+    // 2,5% se escribe 0.025000; 2 por mil, 0.002000. Cualquier `0.<algo>` en
+    // código ejecutable es sospechoso por definición.
+    detecta: (t) => /(^|[^\w.])0\.\d+/.test(t),
+  },
+  {
+    id: 'porcentaje',
+    descripcion: 'porcentaje literal',
+    detecta: (t) => /\d+([.,]\d+)?\s*%/.test(t),
+  },
+  {
+    id: 'numero_junto_a_palabra_tributaria',
+    descripcion: 'entero de cinco cifras o más a menos de 60 caracteres de una palabra tributaria',
+    detecta: (t) => {
+      const palabra =
+        /(uvt|smmlv|salario_?minimo|salario minimo|retefuente|reteica|reteiva|autorretenci|tarifa|base_?minima|tope|sancion)/i;
+      if (!palabra.test(t)) return false;
+      const m = palabra.exec(t)!;
+      const ventana = t.slice(Math.max(0, m.index - 60), m.index + 60);
+      return /(^|[^\w.])\d{5,}(?![\w.])/.test(ventana);
+    },
+  },
+  {
+    id: 'magnitud_conocida',
+    descripcion: 'magnitud conocida de UVT o de salario mínimo, esté donde esté',
+    // Valores reales de referencia de los últimos años, en pesos y en centavos.
+    // Que aparezca cualquiera de ellos en el código es un dato normativo
+    // quemado, aunque la variable se llame `x`.
+    detecta: (t) => {
+      const magnitudes = [
+        '42412', '47065', '49799', '52374', // UVT 2023-2026, en pesos
+        '4241200', '4706500', '4979900', '5237400', // los mismos, en centavos
+        '1160000', '1300000', '1423500', // SMMLV
+        '116000000', '130000000', '142350000',
+      ];
+      return magnitudes.some((m) => new RegExp(`(^|[^\\d])${m}([^\\d]|$)`).test(t));
+    },
+  },
+  {
+    id: 'multiplo_de_uvt',
+    descripcion: 'entero que es múltiplo exacto de una UVT o de un SMMLV conocido (umbral precalculado)',
+    // HUECO QUE ENCONTRÓ EL PROPIO CANARIO DE A14 al cerrar la Ola 1 (D-040):
+    // `if (base > 104748) retener();` no lo cazaba ninguna de las seis reglas
+    // anteriores — no es fracción, no es porcentaje, no hay palabra tributaria
+    // cerca y no es una magnitud de UVT sino DOS. Y 104.748 es exactamente la
+    // base mínima de servicios de la sección 12. La forma más natural de
+    // quemar una base mínima es precalcularla, así que se caza el múltiplo.
+    detecta: (t) => {
+      const BASES = [42412, 47065, 49799, 52374, 1160000, 1300000, 1423500];
+      const numeros = t.match(/(?<![\w.])\d{5,}(?![\w.])/g) ?? [];
+      return numeros.some((n) => {
+        const v = Number(n);
+        if (!Number.isSafeInteger(v)) return false;
+        return BASES.some((u) => {
+          for (const unidad of [u, u * 100]) {
+            if (v >= unidad && v % unidad === 0 && v / unidad <= 100_000) return true;
+          }
+          return false;
+        });
+      });
+    },
+  },
+  {
+    id: 'constante_o_default',
+    descripcion: 'constante o DEFAULT que fije un valor tributario',
+    // Tres formas: una constante cuyo NOMBRE es tributario y lleva número,
+    // cualquier constante cuyo VALOR es una fracción decimal, o un DEFAULT con
+    // fracción. `LONGITUD_CLAVE = 32` no es una tarifa; `TARIFA_SERVICIOS =
+    // 0.04` sí. Única exención: los factores de escala de punto fijo, con la
+    // forma exacta de EXENCION_ESCALA y verificados contra el esquema.
+    detecta: (t) => {
+      const nombreTributario =
+        /(const|let|var)\s+\w*(UVT|SMMLV|TARIFA|RETEFUENTE|RETEICA|RETEIVA|SALARIO|BASE_MINIMA|TOPE)\w*\s*(:\s*[\w<>[\]]+\s*)?=\s*[\d.]/i;
+      const valorFraccion = /(const|let|var)\s+\w+\s*(:\s*[\w<>[\]]+\s*)?=\s*0?\.\d/i;
+      const defaultFraccion = /DEFAULT\s+0?\.\d/i;
+      const sospechosa =
+        nombreTributario.test(t) || valorFraccion.test(t) || defaultFraccion.test(t);
+      if (!sospechosa) return false;
+      return !EXENCION_ESCALA.test(t.trim());
+    },
+  },
+  {
+    id: 'insert_normativo',
+    descripcion: 'INSERT de datos normativos en código o migraciones (su sitio es db/seeds)',
+    detecta: (t) =>
+      /INSERT\s+INTO\s+(uvt_value|smmlv_value|tax_rule|tax_concept|municipality_ica_rule|ciiu_activity|rounding_rule|tax_calendar)\b/i.test(
+        t,
+      ),
+  },
+];
+
+function hallazgosDe(regla: ReglaDetector): Linea[] {
+  return LINEAS.filter((l) => regla.detecta(l.texto));
+}
+
+// =============================================================================
 describe('A14 · Regla de Oro 2 — ni un valor tributario quemado en el código', () => {
   it('el barrido encontró código que analizar (si no, la prueba no probaría nada)', () => {
     expect(LINEAS.length).toBeGreaterThan(1500);
     expect(new Set(LINEAS.map((l) => l.archivo)).size).toBeGreaterThan(15);
+    // Y barre de verdad lo que la Ola 1 añadió, no solo lo de la Ola 0.
+    const modulos = new Set(
+      LINEAS.map((l) => l.archivo.split('/').slice(0, 2).join('/')),
+    );
+    for (const esperado of ['src/domain', 'src/ingest', 'src/services', 'db/migrations']) {
+      expect([...modulos]).toContain(esperado);
+    }
   });
 
-  it('ninguna fracción decimal con pinta de tarifa (0,xxx) fuera de un comentario', () => {
-    // 2,5% se escribe 0.025000; 2 por mil, 0.002000. Cualquier `0.<algo>` en
-    // código ejecutable es sospechoso por definición.
-    const patron = /(^|[^\w.])0\.\d+/;
-    const hallazgos = LINEAS.filter((l) => patron.test(l.texto));
-    expect(informar(hallazgos)).toEqual([]);
-  });
-
-  it('ningún porcentaje literal', () => {
-    const patron = /\d+([.,]\d+)?\s*%/;
-    const hallazgos = LINEAS.filter((l) => patron.test(l.texto));
-    expect(informar(hallazgos)).toEqual([]);
-  });
-
-  it('ningún número grande cerca de una palabra tributaria', () => {
-    // Un entero de cinco cifras o más a menos de 60 caracteres de "uvt",
-    // "tarifa", "retefuente", "salario"... es un valor normativo disfrazado.
-    const palabra =
-      /(uvt|smmlv|salario_?minimo|salario minimo|retefuente|reteica|reteiva|autorretenci|tarifa|base_?minima|tope|sancion)/i;
-    const numeroGrande = /(^|[^\w.])\d{5,}(?![\w.])/;
-    const hallazgos = LINEAS.filter((l) => {
-      if (!palabra.test(l.texto)) return false;
-      const m = palabra.exec(l.texto)!;
-      const ventana = l.texto.slice(Math.max(0, m.index - 60), m.index + 60);
-      return numeroGrande.test(ventana);
+  for (const regla of REGLAS) {
+    it(`ningún hallazgo de la regla «${regla.descripcion}»`, () => {
+      expect(informar(hallazgosDe(regla))).toEqual([]);
     });
-    expect(informar(hallazgos)).toEqual([]);
-  });
+  }
+});
 
-  it('ninguna magnitud conocida de UVT o de salario mínimo, esté donde esté', () => {
-    // Valores reales de referencia de los últimos años, en pesos y en centavos.
-    // Que aparezca cualquiera de ellos en el código es un dato normativo
-    // quemado, aunque la variable se llame `x`.
-    const magnitudes = [
-      '42412', '47065', '49799', '52374', // UVT 2023-2026, en pesos
-      '4241200', '4706500', '4979900', '5237400', // los mismos, en centavos
-      '1160000', '1300000', '1423500', // SMMLV
-      '116000000', '130000000', '142350000',
+// =============================================================================
+describe('A14 · el detector sigue cazando tarifas de verdad (canario)', () => {
+  /** Cada muestra es código que un agente podría escribir, y que DEBE ser cazado. */
+  const VENENO: readonly { texto: string; porQue: string }[] = [
+    { texto: 'const TARIFA_SERVICIOS = 0.04;', porQue: 'tarifa quemada, nombre delator' },
+    { texto: 'const x = 0.025;', porQue: 'tarifa quemada con nombre inocente' },
+    { texto: 'const UVT_2026 = 5237400;', porQue: 'UVT en centavos' },
+    { texto: 'const limite = 52374 * 10;', porQue: 'UVT en pesos disfrazada de multiplicación' },
+    { texto: 'if (base > 104748) retener();', porQue: '2 UVT precalculadas' },
+    { texto: 'if (monto >= 523740) aplicar();', porQue: '10 UVT precalculadas (compras)' },
+    { texto: 'const umbral = 785610;', porQue: '15 UVT precalculadas (base de Medellín)' },
+    { texto: 'return base > 157122;', porQue: '3 UVT precalculadas (base de servicios de Cali)' },
+    { texto: 'const techo = 4975530;', porQue: '95 UVT precalculadas (umbral de salarios)' },
+    { texto: 'const RETEIVA_PORCENTAJE = 15;', porQue: 'porcentaje con nombre tributario' },
+    { texto: 'return monto * 15 / 100; // 15%', porQue: 'porcentaje literal' },
+    { texto: "INSERT INTO tax_rule (tarifa) VALUES (0.04);", porQue: 'dato normativo en migración' },
+    { texto: 'const baseMinimaUvt = 104748;', porQue: 'base mínima en pesos junto a la palabra' },
+    // Los tres que intentan colarse POR LA EXENCIÓN de escala:
+    { texto: 'const ESCALA_TARIFA = 0.04;', porQue: 'usa el prefijo eximido con valor de tarifa' },
+    { texto: 'const ESCALA_UVT = 5237400n;', porQue: 'usa el prefijo eximido con valor de UVT' },
+    {
+      texto: 'const ESCALA_TARIFA_SERVICIOS = 4n; // 4%',
+      porQue: 'prefijo eximido, valor que no es potencia de diez',
+    },
+  ];
+
+  for (const muestra of VENENO) {
+    it(`caza «${muestra.texto}» (${muestra.porQue})`, () => {
+      const cazadores = REGLAS.filter((r) => r.detecta(muestra.texto)).map((r) => r.id);
+      expect(cazadores.length).toBeGreaterThan(0);
+    });
+  }
+
+  it('y NO caza lo que legítimamente no es tributario', () => {
+    const INOCENTES = [
+      'const LONGITUD_CLAVE = 32;',
+      'const BACKOFF_MAXIMO_SEGUNDOS = 3600;',
+      'const MAX_INTENTOS = 5;',
+      'export const ESCALA_TARIFA = 10n ** 6n;',
+      'export const ESCALA_UVT = 10n ** 4n;',
     ];
-    const hallazgos = LINEAS.filter((l) =>
-      magnitudes.some((m) => new RegExp(`(^|[^\\d])${m}([^\\d]|$)`).test(l.texto)),
-    );
-    expect(informar(hallazgos)).toEqual([]);
+    for (const texto of INOCENTES) {
+      const cazadores = REGLAS.filter((r) => r.detecta(texto)).map((r) => r.id);
+      expect(`${texto} -> ${cazadores.join(',')}`).toBe(`${texto} -> `);
+    }
+  });
+});
+
+// =============================================================================
+describe('A14 · la exención de las constantes de escala se GANA contra el esquema', () => {
+  it('toda constante ESCALA_* eximida coincide con la escala real de su columna en la base', async () => {
+    const db = await createTestDb();
+    try {
+      const escalas = await db.asAdmin(async (tx) => {
+        const { rows } = await tx.query<{ columna: string; numeric_scale: number }>(
+          `SELECT table_name || '.' || column_name AS columna, numeric_scale
+             FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND (table_name, column_name) IN (('tax_rule','tarifa'), ('tax_rule','base_minima_uvt'))`,
+        );
+        return new Map(rows.map((r) => [r.columna, Number(r.numeric_scale)]));
+      });
+
+      // Si estas dos constantes dejaran de ser la escala de su columna, el
+      // motor truncaría o desplazaría valores paramétricos en silencio. La
+      // exención de la Regla 2 se cae con ellas.
+      expect(escalas.get('tax_rule.tarifa')).toBe(6);
+      expect(escalas.get('tax_rule.base_minima_uvt')).toBe(4);
+      expect(ESCALA_TARIFA).toBe(10n ** BigInt(escalas.get('tax_rule.tarifa')!));
+      expect(ESCALA_UVT).toBe(10n ** BigInt(escalas.get('tax_rule.base_minima_uvt')!));
+    } finally {
+      await db.close();
+    }
   });
 
-  it('ninguna constante ni DEFAULT que fije un valor tributario', () => {
-    // Dos formas: una constante cuyo NOMBRE es tributario y lleva número, o
-    // cualquier constante / DEFAULT cuyo VALOR es una fracción decimal.
-    // `LONGITUD_CLAVE = 32` no es una tarifa; `TARIFA_SERVICIOS = 0.04` sí.
-    const nombreTributario =
-      /(const|let|var)\s+\w*(UVT|SMMLV|TARIFA|RETEFUENTE|RETEICA|RETEIVA|SALARIO|BASE_MINIMA|TOPE)\w*\s*(:\s*[\w<>[\]]+\s*)?=\s*[\d.]/i;
-    const valorFraccion = /(const|let|var)\s+\w+\s*(:\s*[\w<>[\]]+\s*)?=\s*0?\.\d/i;
-    const defaultFraccion = /DEFAULT\s+0?\.\d/i;
-    const hallazgos = LINEAS.filter(
-      (l) => nombreTributario.test(l.texto) || valorFraccion.test(l.texto) || defaultFraccion.test(l.texto),
+  it('las constantes eximidas en el código son EXACTAMENTE las dos declaradas', () => {
+    // Si aparece una tercera constante que reclama la exención, esta prueba
+    // falla y A14 tiene que adjudicarla. La lista blanca no se amplía sola.
+    const eximidas = LINEAS.filter((l) => EXENCION_ESCALA.test(l.texto.trim())).map(
+      (l) => `${l.archivo}  ${l.texto.trim()}`,
     );
-    expect(informar(hallazgos)).toEqual([]);
+    expect(eximidas).toEqual([
+      'src/domain/dinero.ts  export const ESCALA_TARIFA = 10n ** 6n;',
+      'src/domain/dinero.ts  export const ESCALA_UVT = 10n ** 4n;',
+    ]);
+  });
+});
+
+// =============================================================================
+describe('A14 · db/seeds es DATO, no código: la exclusión del barrido no es una puerta trasera', () => {
+  const SEEDS = join(RAIZ, 'db/seeds');
+
+  function archivosDeSeeds(dir: string, acc: string[] = []): string[] {
+    for (const entrada of readdirSync(dir)) {
+      const ruta = join(dir, entrada);
+      if (statSync(ruta).isDirectory()) archivosDeSeeds(ruta, acc);
+      else acc.push(ruta);
+    }
+    return acc;
+  }
+
+  const ARCHIVOS = archivosDeSeeds(SEEDS);
+
+  it('hay seeds que auditar y todos son .sql — ni un archivo ejecutable', () => {
+    expect(ARCHIVOS.length).toBeGreaterThan(10);
+    const noSql = ARCHIVOS.filter((a) => !a.endsWith('.sql')).map((a) => relative(RAIZ, a));
+    expect(noSql).toEqual([]);
   });
 
-  it('las tablas paramétricas están CREADAS pero VACÍAS: A2 crea el continente, A1 traerá el contenido', () => {
-    // El complemento del grep. Si alguien poblara una tarifa desde una
-    // migración, el grep de arriba lo vería; esto verifica lo contrario: que
-    // nadie haya metido un INSERT de datos normativos en ninguna parte.
-    const patron =
-      /INSERT\s+INTO\s+(uvt_value|smmlv_value|tax_rule|tax_concept|municipality_ica_rule|ciiu_activity|rounding_rule|tax_calendar)\b/i;
-    const hallazgos = LINEAS.filter((l) => patron.test(l.texto));
-    expect(informar(hallazgos)).toEqual([]);
+  it('ningún seed define lógica: nada de CREATE FUNCTION, DO $$ ni triggers', () => {
+    const conCodigo: string[] = [];
+    for (const a of ARCHIVOS) {
+      const contenido = readFileSync(a, 'utf8');
+      if (/CREATE\s+(OR\s+REPLACE\s+)?(FUNCTION|PROCEDURE|TRIGGER)|^\s*DO\s+\$\$/im.test(contenido)) {
+        conCodigo.push(relative(RAIZ, a));
+      }
+    }
+    expect(conCodigo).toEqual([]);
+  });
+
+  it('ningún seed hace UPDATE ni DELETE sobre una tabla paramétrica (Regla 3: se inserta vigencia, no se actualiza)', () => {
+    const mutantes: string[] = [];
+    for (const a of ARCHIVOS) {
+      const lineas = sinComentarios(readFileSync(a, 'utf8'));
+      lineas.forEach((texto, i) => {
+        if (/^\s*(UPDATE|DELETE\s+FROM|TRUNCATE)\s+/i.test(texto)) {
+          mutantes.push(`${relative(RAIZ, a)}:${i + 1}  ${texto.trim()}`);
+        }
+      });
+    }
+    expect(mutantes).toEqual([]);
+  });
+
+  it('los seeds SÍ traen tarifas reales: si estuvieran vacíos, el barrido de arriba no probaría nada', () => {
+    // El complemento indispensable. «Cero valores tributarios en el código» es
+    // trivialmente cierto si tampoco hay valores en ninguna parte. Esta prueba
+    // exige que el dato exista, y exista en su sitio.
+    const conTarifa = ARCHIVOS.filter((a) => /0\.\d{4,}/.test(readFileSync(a, 'utf8')));
+    expect(conTarifa.length).toBeGreaterThan(0);
+  });
+
+  it('toda fila normativa de los seeds declara su norma de respaldo (Regla 6 y advertencia 17.5)', () => {
+    // Un valor tributario sin norma es un valor inventado con buena letra.
+    const tablas = ['tax_rule', 'uvt_value', 'municipality_ica_rule'];
+    for (const a of ARCHIVOS) {
+      const contenido = readFileSync(a, 'utf8');
+      for (const tabla of tablas) {
+        const patron = new RegExp(`INSERT\\s+INTO\\s+${tabla}\\b`, 'i');
+        if (!patron.test(contenido)) continue;
+        expect(`${relative(RAIZ, a)} declara norma_respaldo`).toBe(
+          `${relative(RAIZ, a)} ${/norma_respaldo/i.test(contenido) ? 'declara' : 'NO declara'} norma_respaldo`,
+        );
+      }
+    }
   });
 });

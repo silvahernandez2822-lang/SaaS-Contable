@@ -480,6 +480,19 @@ async function causarFactura(
     return { estado: 'revision_manual', motivos: motivosResolucion };
   }
 
+  // SAVEPOINT antes de escribir NADA del resultado (corrección de A14 al cerrar
+  // la Ola 1, D-043). Cubre la traza de retenciones, el placeholder de
+  // aprobación y el asiento: si otro worker gana la carrera, se deshace todo
+  // lo que este intento alcanzó a escribir y no quedan filas huérfanas de
+  // `retention_applied` sin asiento.
+  //
+  // Antes de esta corrección la violación de `journal_entry_idem_uq` abortaba
+  // la transacción entera y el `catch` de más abajo —que consulta y completa el
+  // trabajo— moría con 25P02 «current transaction is aborted»: la rama de
+  // carrera era código muerto. El invariante «un solo asiento por documento»
+  // nunca estuvo en riesgo (lo impone el UNIQUE); el manejo elegante sí.
+  await tx.exec('SAVEPOINT causacion_asiento');
+
   const idsRetencion = await persistirRetenciones(
     tx,
     { tenantId: doc.tenant_id, companyId: doc.company_id, sourceDocumentId: doc.id, journalEntryId: null },
@@ -557,7 +570,9 @@ async function causarFactura(
       },
       partidas,
     );
+    await tx.exec('RELEASE SAVEPOINT causacion_asiento');
   } catch (error) {
+    await tx.exec('ROLLBACK TO SAVEPOINT causacion_asiento');
     // Carrera: otro worker ya causó este documento entre el chequeo de estado
     // de arriba y este INSERT. `journal_entry_idem_uq` es la que lo atrapa.
     if (isPostgresError(error) && error.code === SQLSTATE.UNIQUE_VIOLATION) {
