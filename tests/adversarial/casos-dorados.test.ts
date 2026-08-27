@@ -788,28 +788,80 @@ describe('A14 · el andamiaje declarado no puede estar fabricando ningún PASS',
     expect(comparacion.norma).toMatch(/Acuerdo/i);
   });
 
-  it('LA CONSECUENCIA REAL DEL ANDAMIAJE: con SOLO los seeds de A1, ReteICA no existe en producción', async () => {
-    // Esta prueba no falla: DECLARA el hueco y lo mide. Si algún día A1
-    // materializa las reglas de ReteICA en tax_rule, esta prueba falla y hay
-    // que actualizarla — que es exactamente lo que se quiere que pase.
+  it('LA CONSECUENCIA REAL DEL DESBLOQUEO (V-4/V-6): con SOLO los seeds de A1, Medellín y el redondeo por defecto SÍ existen en producción', async () => {
+    // Hasta el desbloqueo de la compuerta esta prueba afirmaba, en positivo,
+    // que con solo los seeds de A1 había CERO reglas de ReteICA y CERO reglas
+    // de redondeo (V-4 y V-6). A1 cargó `db/seeds/tanda2/090_rounding_rule.sql`
+    // y `100_reteica_medellin.sql`: ahora se afirma, también en positivo y sin
+    // aflojar la vara, el estado real que dejan — ni un rounding_rule ni una
+    // regla de ReteICA de más. Bogotá y Cali siguen en CERO (V-5: el código de
+    // actividad de 5 dígitos de Bogotá no cabe en el CHECK de 4 de
+    // ciiu_activity, y Cali no tiene tabla de tarifas por actividad en la
+    // sección 7). Si algún día se materializan, ESTA prueba fallará y habrá
+    // que volver a actualizarla — que es exactamente el punto.
     const db = await createTestDb();
     try {
       const { seed } = await import('../../src/db/seed.js');
       const { fileURLToPath } = await import('node:url');
       const dir = fileURLToPath(new URL('../../db/seeds', import.meta.url));
-      const conteos = await db.asAdmin(async (tx) => {
+      const resultado = await db.asAdmin(async (tx) => {
         await seed(tx, { dir });
-        const { rows } = await tx.query<{ reglas_ica: number; conceptos_ica: number; redondeos: number }>(
+        const { rows: conteos } = await tx.query<{
+          reglas_ica: number;
+          conceptos_ica: number;
+          redondeos: number;
+        }>(
           `SELECT (SELECT count(*)::int FROM tax_rule WHERE tipo = 'reteica')      AS reglas_ica,
                   (SELECT count(*)::int FROM tax_concept WHERE tipo = 'reteica')   AS conceptos_ica,
                   (SELECT count(*)::int FROM rounding_rule)                        AS redondeos`,
         );
-        return rows[0]!;
+        const { rows: medellin } = await tx.query<{
+          tarifa: string;
+          tarifa_a1: string;
+          norma: string;
+          ciiu_activity_id: string | null;
+        }>(
+          `SELECT r.tarifa::text AS tarifa, mir.tarifa_general::text AS tarifa_a1, r.norma_respaldo AS norma,
+                  r.ciiu_activity_id
+             FROM tax_rule r
+             JOIN municipality m ON m.id = r.municipality_id
+             JOIN municipality_ica_rule mir ON mir.municipality_id = m.id
+                  AND mir.tenant_id IS NULL AND mir.company_id IS NULL
+            WHERE r.tipo = 'reteica' AND m.codigo_dane = '05001'
+              AND r.tenant_id IS NULL AND r.company_id IS NULL`,
+        );
+        const { rows: bogotaCali } = await tx.query<{ n: number }>(
+          `SELECT count(*)::int AS n FROM tax_rule r
+             JOIN municipality m ON m.id = r.municipality_id
+            WHERE r.tipo = 'reteica' AND m.codigo_dane IN ('11001', '76001')`,
+        );
+        const { rows: redondeo } = await tx.query<{
+          modo: string;
+          multiplo: string;
+          aplica_a: string;
+          alcance_global: boolean;
+        }>(
+          `SELECT modo, multiplo::text, aplica_a, (tenant_id IS NULL AND company_id IS NULL) AS alcance_global
+             FROM rounding_rule`,
+        );
+        return { conteos: conteos[0]!, medellin: medellin[0], bogotaCali: bogotaCali[0]!.n, redondeo: redondeo[0] };
       });
-      // Estado REAL del producto tal como se entrega la Ola 1.
-      expect(conteos.reglas_ica).toBe(0);
-      expect(conteos.conceptos_ica).toBe(0);
-      expect(conteos.redondeos).toBe(0);
+      // Exactamente lo que A1 materializó: ni Bogotá ni Cali (V-5 sigue abierta).
+      expect(resultado.conteos.reglas_ica).toBe(1);
+      expect(resultado.conteos.conceptos_ica).toBe(1);
+      expect(resultado.conteos.redondeos).toBe(1);
+      expect(resultado.bogotaCali).toBe(0);
+      // La regla de Medellín es la tarifa GENERAL del municipio (sin actividad),
+      // copiada byte a byte de municipality_ica_rule, con la norma encadenada.
+      expect(resultado.medellin?.tarifa).toBe(resultado.medellin?.tarifa_a1);
+      expect(resultado.medellin?.ciiu_activity_id).toBeNull();
+      expect(resultado.medellin?.norma).toMatch(/Acuerdo/i);
+      // La regla de redondeo es GLOBAL (de menor prioridad: cualquier empresa
+      // puede sobreescribirla) y su modo es uno de los cinco que implementa el
+      // motor (src/domain/dinero.ts), no uno inventado por el seed.
+      expect(resultado.redondeo?.alcance_global).toBe(true);
+      expect(resultado.redondeo?.aplica_a).toBe('todos');
+      expect(['half_up', 'half_even', 'truncar', 'techo', 'piso']).toContain(resultado.redondeo?.modo);
     } finally {
       await db.close();
     }
@@ -894,26 +946,45 @@ describe('A14 · canario anti-falso-PASS (actualizado en la Ola 1)', () => {
 
   it('el motor se NIEGA a calcular cuando falta el parámetro, en vez de suponerlo', async () => {
     // La conducta que separa un motor tributario honesto de uno peligroso.
-    // Base de datos limpia, con seeds pero SIN la rounding_rule del escenario.
+    // Antes del desbloqueo de V-6 esto se comprobaba con la tabla `rounding_rule`
+    // vacía tras aplicar SOLO los seeds de A1 — hoy A1 carga un valor por
+    // defecto GLOBAL (`db/seeds/tanda2/090_rounding_rule.sql`), así que ese
+    // estado de tabla vacía ya no ocurre con los seeds puestos. Sin base de
+    // datos, en cambio, sigue siendo exactamente ese estado: recién aplicado el
+    // ESQUEMA (sin ningún seed) la tabla está vacía —lo mismo que verifica en
+    // paralelo el canario "las migraciones NO traen datos normativos"— y ese
+    // sigue siendo el estado real de un despliegue nuevo antes de correr los
+    // seeds. Se comprueba aquí, en la fuente del motor, que ese vacío sigue
+    // teniendo un motivo de rechazo explícito en el catálogo (no un valor
+    // supuesto), y además, contra el motor real, que ANTES de la vigencia del
+    // parámetro por defecto que sí cargó A1 (2000-01-01) el motor tampoco
+    // encuentra ninguna regla: la vigencia es real, no un comodín eterno.
+    expect(MOTIVO.SIN_REDONDEO).toBe('sin_regla_de_redondeo_vigente');
+
     const db = await createTestDb();
     try {
-      const { seed } = await import('../../src/db/seed.js');
-      const { fileURLToPath } = await import('node:url');
-      const dir = fileURLToPath(new URL('../../db/seeds', import.meta.url));
-      await db.asAdmin(async (tx) => {
-        await seed(tx, { dir });
-      });
-      // Sin rounding_rule cargada, cualquier resolución tiene que decir por qué
-      // no calcula. Se comprueba que la tabla está vacía (medida arriba) y que
-      // el motor tiene un motivo específico para ese caso en su catálogo.
-      expect(MOTIVO.SIN_REDONDEO).toBe('sin_regla_de_redondeo_vigente');
-      const vacias = await db.asAdmin(async (tx) => {
+      const vaciaSinSeeds = await db.asAdmin(async (tx) => {
         const { rows } = await tx.query<{ n: number }>(`SELECT count(*)::int AS n FROM rounding_rule`);
         return rows[0]!.n;
       });
-      expect(vacias).toBe(0);
+      expect(vaciaSinSeeds).toBe(0);
     } finally {
       await db.close();
     }
+
+    // Contra el escenario ya sembrado (con los seeds reales de A1, incluida la
+    // regla global desde 2000-01-01): un hecho económico ANTERIOR a esa
+    // vigencia no encuentra ninguna regla de redondeo, y uno posterior sí.
+    const { antes, despues } = await e.db.asTenant(e.tenantId, e.companyId, async (tx) => {
+      const repo = new RepositorioTributarioSql(tx);
+      const empresa = await repo.empresa(e.companyId);
+      if (!empresa) throw new Error('El escenario no tiene la empresa de A3.');
+      return {
+        antes: await repo.redondeo(empresa, 'retefuente', '1999-12-31'),
+        despues: await repo.redondeo(empresa, 'retefuente', FECHA),
+      };
+    });
+    expect(antes).toBeNull();
+    expect(despues).not.toBeNull();
   }, 120_000);
 });

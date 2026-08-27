@@ -283,3 +283,132 @@ Con esto, A1 considera cerrada su parte de la Ola 1 sobre lo que la sección 7
 efectivamente trae. `npm run seed` aplica los 17 archivos (9 de tanda 1, 8 de
 tanda 2) de punta a punta sin error contra una base recién migrada. No hice
 `git commit` (instrucción expresa) ni toqué `ESTADO_PROYECTO.md`.
+
+---
+
+## Desbloqueo de la compuerta de la Ola 1 (V-4 y V-6) — segunda entrada de A1
+
+A14 bloqueó la Ola 1 por dos huecos de datos, los dos míos: `rounding_rule`
+vacía (V-6) y ninguna fila `tax_rule`/`tax_concept` de tipo `reteica` (V-4).
+Ninguna de las dos cargas exigió inventar un valor tributario. Se añadieron
+dos archivos nuevos a la tanda 2 (después del `080_exogena_formatos.sql` que
+ya existía, sin tocar ningún archivo anterior).
+
+### 1. `db/seeds/tanda2/090_rounding_rule.sql` — cierre de V-6
+
+Cargué **una fila global** (`tenant_id`/`company_id` NULL) en `rounding_rule`:
+
+| Columna | Valor | Por qué |
+|---|---|---|
+| `codigo` | `peso_half_up` | mismo código que ya usaba el andamiaje de A3, para que quien compare ambos reconozca la intención |
+| `modo` | `half_up` | uno de los **cinco** modos que de verdad implementa el motor (`MODOS_REDONDEO` en `src/domain/dinero.ts`: `half_up`, `half_even`, `truncar`, `techo`, `piso`); leí ese archivo antes de escribir la fila, como pedía la instrucción, y no inventé un sexto modo |
+| `multiplo` | `100` (centavos) | redondeo **al peso**: el peso colombiano no circula en fracciones |
+| `aplica_a` | `todos` | válido para cualquier tipo de retención mientras no exista una regla más específica |
+| `vigente_desde` | `2000-01-01` | cota amplia, deliberadamente anterior a cualquier hecho económico de los casos dorados |
+| `requiere_verificacion_humana` | `false` | **no aplica aquí**: no es un dato normativo (sección 6.3 lo llama explícitamente "reglas de redondeo... al peso, a la decena", y la Regla de Oro 5 lo describe como "parámetro configurable", no como tarifa/base/UVT/tope/calendario). La bandera de verificación humana es para dudas sobre HECHOS del mundo (una tarifa, una fecha); aquí no hay un hecho que verificar, hay una elección de producto que cualquier firma puede sobreescribir con su propia fila |
+| `norma_respaldo` | Texto que dice explícitamente **"PARÁMETRO OPERATIVO, no norma tributaria"**, cita la sección 6.3 y la Regla de Oro 5, y aclara que el modo salió del catálogo real de `dinero.ts` | Es la única columna de la tabla que exige el contrato del proyecto (toda fila lleva su respaldo); como no hay norma que citar, cito el criterio de producto que justifica el valor, en vez de inventar una cita legal que no existe |
+
+Es la regla de **menor prioridad** de resolución (`PRIORIDAD_ALCANCE` en
+`src/domain/repositorio.ts` prefiere primero `company_id`, luego
+`tenant_id`): una firma o una empresa que necesite otro modo (p. ej.
+redondeo a la decena) inserta su propia fila con su propio alcance y esa
+gana, sin tocar esta fila ni el motor.
+
+### 2. `db/seeds/tanda2/100_reteica_medellin.sql` — cierre de V-4 (Medellín únicamente)
+
+No escribí ningún número nuevo. El archivo hace dos cosas:
+
+1. Crea `tax_concept` (`tipo = 'reteica'`, `codigo =
+   'reteica_tarifa_general_municipio'`), identidad estable sin tarifa
+   (D-013), para los municipios cuya tarifa de ICA **no** depende de la
+   actividad económica del proveedor.
+2. Inserta en `tax_rule` una fila `tipo = 'reteica'` para Medellín cuya
+   `tarifa` sale de un `INSERT ... SELECT` contra
+   `municipality_ica_rule.tarifa_general` filtrando por `codigo_dane =
+   '05001'` — la misma fila que yo mismo cargué en la tanda 1
+   (`090_municipio_ica_reglas.sql`, Acuerdo 066 de 2017, tarifa 2‰). También
+   copio de esa misma fila `vigente_desde`, `vigente_hasta` y
+   `requiere_verificacion_humana`, y encadeno la norma:
+   `'Tarifa copiada de municipality_ica_rule (' || mir.norma_respaldo ||
+   ')'`. Si alguna vez cambia el valor o la vigencia de la fila de origen, el
+   único cambio correcto es una fila nueva aquí también (append-only,
+   D-012); no hay ningún número escrito a mano que se pueda desincronizar en
+   silencio.
+   - `ciiu_activity_id` queda `NULL` a propósito: Medellín usa tarifa
+     general de municipio, no de actividad, y así es como
+     `RepositorioTributarioSql.reglasIca` espera encontrarla
+     (`IS NOT DISTINCT FROM`).
+   - `account_id` apunta a la cuenta PUC `2368` ("IMPUESTO DE INDUSTRIA Y
+     COMERCIO RETENIDO"), ya cargada en la tanda 1.
+
+**Bogotá y Cali quedan explícitamente sin tocar**, tal como me indicó quien
+me encargó el desbloqueo: Bogotá resuelve por actividad y su código
+municipal (`74901`, Decreto 352 de 2002) tiene 5 dígitos contra el `CHECK`
+de 4 de `ciiu_activity` — desajuste de esquema que le corresponde decidir a
+A2 (V-5), no a mí; truncar el código habría colgado una tarifa real de un
+código que describe otra actividad, que es justo la clase de invención que
+prohíbe la advertencia 17.5. Cali tampoco se cargó: además del mismo
+problema de fondo para resolver por actividad, la sección 7 no trae la
+tabla del Acuerdo 0321 de 2011. Las dos siguen en la lista de pendientes de
+verificación humana / de esquema.
+
+### Las dos aserciones de A14 que actualicé
+
+Encontré las dos pruebas que afirman en positivo "hoy hay cero reglas de
+ReteICA y cero reglas de redondeo" en `tests/adversarial/casos-dorados.test.ts`
+(no en `tests/adversarial/compuerta-ola1.test.ts`, que es donde se me indicó
+buscarlas; lo dejo anotado por si hay un desajuste de nombres entre agentes,
+pero el contenido es exactamente el que se describió: las dos pruebas que
+miden V-4/V-6 en positivo). No toqué ninguna otra aserción de A14.
+
+1. **`'LA CONSECUENCIA REAL DEL ANDAMIAJE: con SOLO los seeds de A1, ReteICA
+   no existe en producción'`** → renombrada a **`'LA CONSECUENCIA REAL DEL
+   DESBLOQUEO (V-4/V-6): con SOLO los seeds de A1, Medellín y el redondeo
+   por defecto SÍ existen en producción'`**. Antes afirmaba `reglas_ica === 0
+   && conceptos_ica === 0 && redondeos === 0`. Ahora afirma, con la misma
+   exactitud (nada de `toBeGreaterThan`, para no aflojar la vara):
+   `reglas_ica === 1`, `conceptos_ica === 1`, `redondeos === 1`, que Bogotá y
+   Cali siguen en `0` (V-5 sigue abierta), que la tarifa de la fila de
+   Medellín es **byte a byte** la de `municipality_ica_rule`, que
+   `ciiu_activity_id` es `NULL`, que la norma cita "Acuerdo", y que la regla
+   de redondeo es global, `aplica_a = 'todos'` y su modo está en la lista
+   cerrada de cinco que implementa el motor.
+2. **`'el motor se NIEGA a calcular cuando falta el parámetro, en vez de
+   suponerlo'`**: la premisa original ("con los seeds de A1 puestos, la
+   tabla está vacía") dejó de ser cierta a propósito — ahora siempre hay una
+   regla global. La reescribí para seguir demostrando la misma conducta por
+   dos caminos que sí siguen siendo ciertos: (a) recién aplicado el
+   **esquema**, sin ningún seed, `rounding_rule` sigue en cero, y el motivo
+   `MOTIVO.SIN_REDONDEO` sigue existiendo en el catálogo; (b) contra el
+   motor real y el escenario ya sembrado, una fecha de hecho económico
+   **anterior** a la vigencia del parámetro (`1999-12-31`, antes del
+   `2000-01-01` de mi fila) no encuentra ninguna regla de redondeo
+   (`repo.redondeo(...)` devuelve `null`), mientras que una fecha posterior
+   sí la encuentra. Deja constancia de que la vigencia es real y no un
+   comodín eterno, en vez de solo repetir un conteo de tabla que ya no
+   refleja el estado del producto.
+
+### Resultado de `npm test` y `npm run typecheck`
+
+`npm run typecheck`: sin salida, sin error (pasa).
+
+`npm test`: **21 archivos, 429 pruebas, 429 en verde, 0 fallos, 0 `todo`** —
+el mismo número de pruebas que antes del desbloqueo (actualicé aserciones
+dentro de las dos pruebas existentes; no añadí ni quité ningún `it`).
+
+### Pendientes de verificación humana que quedan abiertos tras este desbloqueo
+
+- **Tarifas de ICA por actividad de Bogotá** (más allá de la general) y
+  **toda la tabla de Cali** (Acuerdo 0321 de 2011): bloqueadas por el
+  desajuste de dígitos del código municipal de Bogotá contra el `CHECK` de
+  `ciiu_activity` (V-5). Decisión de esquema pendiente de A2.
+- **ReteICA de Bucaramanga y Cartagena**: la sección 7.5 las marca
+  *(verificar)* y no traen números que yo pueda copiar; no cargué ninguna
+  fila de `municipality_ica_rule` ni de `tax_rule` para esos dos municipios
+  en ninguna tanda. Siguen como pendiente de verificación humana contra el
+  acuerdo municipal vigente de cada ciudad — no las inventé ni las
+  aproximé con un valor de referencia.
+- Todo lo demás que ya estaba pendiente en la primera entrada de este
+  reporte (tarifas de retefuente anteriores al 1-jul-2026, tabla progresiva
+  de salarios, SMMLV, calendario tributario, cotejo del PUC/NIIF, XML real
+  de la DIAN) sigue exactamente igual: esta segunda carga no lo tocó.
