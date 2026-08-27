@@ -853,6 +853,12 @@ describe('A14 · el andamiaje declarado no puede estar fabricando ningún PASS',
       expect(resultado.bogotaCali).toBe(0);
       // La regla de Medellín es la tarifa GENERAL del municipio (sin actividad),
       // copiada byte a byte de municipality_ica_rule, con la norma encadenada.
+      //
+      // ENDURECIDO POR A14 (D-046): la fila TIENE que existir. Sin esta línea,
+      // `resultado.medellin?.tarifa` y `?.tarifa_a1` serían ambos `undefined` si
+      // la consulta no devolviera nada, y la comparación pasaría en el vacío.
+      expect(resultado.medellin).toBeDefined();
+      expect(typeof resultado.medellin!.tarifa).toBe('string');
       expect(resultado.medellin?.tarifa).toBe(resultado.medellin?.tarifa_a1);
       expect(resultado.medellin?.ciiu_activity_id).toBeNull();
       expect(resultado.medellin?.norma).toMatch(/Acuerdo/i);

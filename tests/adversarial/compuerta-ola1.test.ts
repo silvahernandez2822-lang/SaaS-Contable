@@ -30,6 +30,7 @@ import { crearEscenario, type Escenario } from '../helpers/fixtures.js';
 import { SQLSTATE, type SqlClient } from '../../src/db/types.js';
 import { withAdminContext } from '../../src/db/tenant-context.js';
 import { procesarAdjuntoXml } from '../../src/ingest/index.js';
+import { MODOS_REDONDEO } from '../../src/domain/dinero.js';
 import { guardarDocumentoProcesado, resolverEmpresaPorBuzon } from '../../src/ingest/persistencia.js';
 import {
   aprobarAsiento,
@@ -1169,15 +1170,16 @@ describe('A14 · LA COSTURA QUE NADIE PROBÓ: el pipeline completo CON retencion
         `UPDATE company SET es_agente_retencion_iva = true, es_responsable_iva = true WHERE id = $1`,
         [e.companyId],
       );
-      // Regla de redondeo: parámetro operativo, no tributario. A1 no la cargó
-      // todavía — ver la vulnerabilidad V-2 del registro de A14.
-      await tx.query(
-        `INSERT INTO rounding_rule (tenant_id, company_id, codigo, nombre, modo, multiplo, aplica_a,
-                                    vigente_desde, norma_respaldo, requiere_verificacion_humana)
-         VALUES ($1,$2,'peso_half_up','Redondeo al peso','half_up',100,'todos','2000-01-01',
-                 'PARÁMETRO OPERATIVO de la prueba de A14, no una norma tributaria.', true)`,
-        [e.tenantId, e.companyId],
+      // NO se inserta ninguna regla de redondeo. Antes del desbloqueo de V-6
+      // esta prueba TENÍA que insertar una a mano para que el motor produjera
+      // un asiento: esa fue la razón por la que A14 bloqueó la Ola 1. Ahora la
+      // carga A1 en `db/seeds/tanda2/090_rounding_rule.sql` y esta prueba corre
+      // con los datos del repositorio tal como se entrega. Si alguien borrara
+      // ese seed, esta prueba falla — que es exactamente lo que debe pasar.
+      const redondeosDeA1 = await tx.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM rounding_rule`,
       );
+      expect(redondeosDeA1.rows[0]!.n).toBeGreaterThan(0);
 
       const conceptoId = uuid();
       await tx.query(
@@ -1449,4 +1451,416 @@ describe('A14 · caso dorado 19 — la mitad que se puede verificar hoy (la otra
     expect(contenido).toContain('memoria_clasificacion');
     expect(contenido).not.toMatch(/\b(fetch|openai|anthropic|@ai-sdk|node:https?)\b/);
   });
+});
+
+// =============================================================================
+describe('A14 · CASO DORADO 8 SIN ANDAMIAJE: ReteICA de Medellín con los seeds del repositorio', () => {
+  /**
+   * Cuando A14 bloqueó la Ola 1, este caso solo pasaba porque la suite de A3
+   * MATERIALIZABA a mano una `tax_rule` de tipo `reteica` copiando la tarifa de
+   * `municipality_ica_rule`. A1 cargó esa fila en
+   * `db/seeds/tanda2/100_reteica_medellin.sql`, así que ahora tiene que pasar
+   * SIN que ninguna prueba inserte una regla tributaria.
+   *
+   * Aquí no se escribe ni se copia ninguna tarifa: solo se crean la empresa, el
+   * tercero y el `concepto_causacion` —configuración de negocio, no parámetros
+   * normativos— y se deja que el motor resuelva con lo que hay en la base.
+   */
+  it('$1.000.000 de servicio en Medellín produce ReteICA de $2.000 (2 por mil), asiento publicado, sin insertar ninguna regla', async () => {
+    const { seed } = await import('../../src/db/seed.js');
+    const dirSeeds = fileURLToPath(new URL('../../db/seeds', import.meta.url));
+    const e = await crearEscenario(db);
+    const fecha = '2026-07-15';
+
+    const cuentaReteica = await db.asAdmin(async (tx) => {
+      await seed(tx, { dir: dirSeeds });
+
+      // Control: la regla de ReteICA que se va a usar viene de los SEEDS y
+      // nadie la insertó en esta prueba.
+      const { rows: reglas } = await tx.query<{ n: number; origen: string }>(
+        `SELECT count(*)::int AS n, min(r.norma_respaldo) AS origen
+           FROM tax_rule r JOIN municipality m ON m.id = r.municipality_id
+          WHERE r.tipo = 'reteica' AND m.codigo_dane = '05001'
+            AND r.tenant_id IS NULL AND r.company_id IS NULL`,
+      );
+      expect(reglas[0]!.n).toBe(1);
+      // La cadena de norma no perdió el origen: sigue citando el acuerdo.
+      expect(reglas[0]!.origen).toMatch(/Acuerdo 066 de 2017/i);
+
+      const { rows: medellin } = await tx.query<{ id: string }>(
+        `SELECT id FROM municipality WHERE tenant_id IS NULL AND codigo_dane = '05001'`,
+      );
+      const { rows: cuenta2368 } = await tx.query<{ id: string }>(
+        `SELECT id FROM account WHERE tenant_id IS NULL AND company_id IS NULL AND codigo = '2368'`,
+      );
+      const { rows: tcIca } = await tx.query<{ id: string }>(
+        `SELECT id FROM tax_concept
+          WHERE tenant_id IS NULL AND company_id IS NULL AND tipo = 'reteica'`,
+      );
+      expect(tcIca).toHaveLength(1);
+
+      await tx.query(
+        `INSERT INTO fiscal_period (tenant_id, company_id, anio, mes, fecha_inicio, fecha_fin, estado)
+         VALUES ($1,$2,2026,7,'2026-07-01','2026-07-31','abierto')`,
+        [e.tenantId, e.companyId],
+      );
+      await tx.query(
+        `UPDATE source_document SET fecha_hecho_economico = $2::date, estado = 'parseado' WHERE id = $1`,
+        [e.sourceDocumentId, fecha],
+      );
+      // La empresa es agente de retención de ICA y el proveedor opera en Medellín.
+      await tx.query(`UPDATE company SET es_agente_retencion_ica = true WHERE id = $1`, [e.companyId]);
+      await tx.query(`UPDATE third_party SET municipality_id = $2 WHERE id = $1`, [
+        e.thirdPartyId,
+        medellin[0]!.id,
+      ]);
+
+      const conceptoId = uuid();
+      await tx.query(
+        `INSERT INTO concepto_causacion (
+           id, tenant_id, company_id, codigo, nombre, naturaleza,
+           cuenta_gasto_id, cuenta_iva_descontable_id, cuenta_contrapartida_id,
+           tax_concept_reteica_id, tipo_operacion_ica,
+           aplica_retefuente, aplica_reteiva, aplica_reteica, aplica_autorretencion)
+         VALUES ($1,$2,$3,'A14-ICA','Servicio con ReteICA municipal','compra',
+                 $4,$5,$6,$7,'servicios',false,false,true,false)`,
+        [
+          conceptoId,
+          e.tenantId,
+          e.companyId,
+          e.cuentas.gasto,
+          e.cuentas.ivaDescontable,
+          e.cuentas.proveedores,
+          tcIca[0]!.id,
+        ],
+      );
+      await tx.query(
+        `INSERT INTO memoria_clasificacion (tenant_id, company_id, third_party_id, patron_descripcion, concepto_causacion_id)
+         VALUES ($1,$2,$3,'servicio prestado en medellín',$4)`,
+        [e.tenantId, e.companyId, e.thirdPartyId, conceptoId],
+      );
+      await tx.query(
+        `INSERT INTO extraction (tenant_id, company_id, source_document_id, datos_extraidos, origen)
+         VALUES ($1,$2,$3,$4::jsonb,'parser_ubl')`,
+        [
+          e.tenantId,
+          e.companyId,
+          e.sourceDocumentId,
+          JSON.stringify({
+            tipoDocumento: 'Invoice',
+            emisor: { nit: '900123456', nombre: 'Proveedor de Medellín' },
+            adquirente: { nit: null, nombre: null },
+            lineas: [
+              { numero: 1, descripcion: 'Servicio prestado en Medellín', subtotal: '100000000', impuestos: [] },
+            ],
+          }),
+        ],
+      );
+      return cuenta2368[0]!.id;
+    });
+
+    const job = await db.asTenant(e.tenantId, e.companyId, (tx) => encolarCausacion(tx, e.sourceDocumentId));
+    const r = await db.asAdmin((tx) => procesarJobCausacion(tx, { id: job.id, sourceDocumentId: e.sourceDocumentId }));
+    if (r.estado !== 'causado') {
+      throw new Error(
+        `El ReteICA de Medellín NO se causó con los seeds: ${r.estado} — ${JSON.stringify(
+          'motivos' in r ? r.motivos : null,
+        )}`,
+      );
+    }
+
+    const partidas = await db.asAdmin(async (tx) => {
+      const { rows } = await tx.query<{ account_id: string; side: string; monto: string }>(
+        `SELECT account_id, side, monto::text FROM journal_line WHERE journal_entry_id = $1 ORDER BY linea`,
+        [r.journalEntryId],
+      );
+      return rows;
+    });
+    const ica = partidas.find((p) => p.account_id === cuentaReteica);
+    expect(ica?.side).toBe('credito');
+    expect(Number(ica?.monto)).toBe(200_000); // 2.000 pesos = 2 por mil de 1.000.000
+    expect(partidas.map((p) => Number(p.monto)).reduce((a, b) => a + b, 0)).toBe(
+      100_000_000 + 200_000 + (100_000_000 - 200_000),
+    );
+
+    // La traza cita la norma del acuerdo municipal, encadenada desde A1.
+    const traza = await db.asAdmin(async (tx) => {
+      const { rows } = await tx.query<{
+        tipo: string;
+        valor: string;
+        norma_respaldo: string;
+        ciiu_activity_id: string | null;
+      }>(
+        `SELECT tipo, valor::text, norma_respaldo, ciiu_activity_id FROM retention_applied
+          WHERE source_document_id = $1`,
+        [e.sourceDocumentId],
+      );
+      return rows;
+    });
+    expect(traza).toHaveLength(1);
+    expect(traza[0]!.tipo).toBe('reteica');
+    expect(Number(traza[0]!.valor)).toBe(200_000);
+    expect(traza[0]!.norma_respaldo).toMatch(/Acuerdo 066 de 2017/i);
+    // Medellín usa tarifa general: no se consultó la actividad del tercero.
+    expect(traza[0]!.ciiu_activity_id).toBeNull();
+
+    await db.asTenant(
+      e.tenantId,
+      e.companyId,
+      (tx) =>
+        aprobarAsiento(tx, {
+          journalEntryId: r.journalEntryId!,
+          decision: 'aprobado',
+          userId: e.userId,
+          ip: '192.0.2.14',
+        }),
+      { userId: e.userId },
+    );
+    const estado = await db.asAdmin(async (tx) => {
+      const { rows } = await tx.query<{ estado: string }>(`SELECT estado FROM journal_entry WHERE id = $1`, [
+        r.journalEntryId,
+      ]);
+      return rows[0]!.estado;
+    });
+    expect(estado).toBe('posted');
+  }, 180_000);
+
+  it('Bogotá y Cali SIGUEN sin poder calcular ReteICA con los seeds: el motor se niega, no inventa (V-5)', async () => {
+    // A1 no tocó Bogotá ni Cali, y hace bien: el código municipal 74901 no cabe
+    // en el CHECK de 4 dígitos de `ciiu_activity` (decisión de esquema de A2) y
+    // la sección 7.5 no trae ni un número del acuerdo de Cali. Se mide el
+    // estado real para que nadie lo dé por resuelto junto con Medellín.
+    const conteo = await db.asAdmin(async (tx) => {
+      const { rows } = await tx.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM tax_rule r
+           JOIN municipality m ON m.id = r.municipality_id
+          WHERE r.tipo = 'reteica' AND m.codigo_dane IN ('11001','76001')
+            AND r.tenant_id IS NULL AND r.company_id IS NULL`,
+      );
+      return rows[0]!.n;
+    });
+    expect(conteo).toBe(0);
+  });
+});
+
+// =============================================================================
+describe('A14 · el respaldo "parámetro operativo" no puede convertirse en una puerta trasera', () => {
+  /**
+   * A1 cargó `rounding_rule` con `norma_respaldo` que dice, con todas las
+   * letras, que es un PARÁMETRO OPERATIVO y no una norma tributaria, porque no
+   * hay decreto que citar. A14 lo acepta, pero no de palabra: lo acepta porque
+   * la excepción está ACOTADA POR EL ESQUEMA. En `rounding_rule` no hay dónde
+   * escribir una tarifa aunque se quisiera —no existe la columna— y el modo
+   * está restringido por un CHECK a los cinco que el motor implementa de
+   * verdad. Si algún día alguien añadiera a esta tabla una columna capaz de
+   * llevar un valor tributario, esta prueba falla y la excepción se vuelve a
+   * discutir.
+   */
+  it('rounding_rule no tiene ni una columna donde quepa una tarifa, una base o una UVT', async () => {
+    const columnas = await db.asAdmin(async (tx) => {
+      const { rows } = await tx.query<{ column_name: string; data_type: string }>(
+        `SELECT column_name, data_type FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'rounding_rule'
+          ORDER BY ordinal_position`,
+      );
+      return rows;
+    });
+    const nombres = columnas.map((c) => c.column_name).sort();
+    expect(nombres).toEqual([
+      'aplica_a',
+      'clave_vigencia',
+      'codigo',
+      'company_id',
+      'created_at',
+      'created_by',
+      'id',
+      'modo',
+      'multiplo',
+      'nombre',
+      'norma_respaldo',
+      'notas',
+      'requiere_verificacion_humana',
+      'tenant_id',
+      'vigente_desde',
+      'vigente_hasta',
+    ]);
+    // La única columna numérica es `multiplo`, y es el ESCALÓN del redondeo en
+    // centavos (100 = al peso), no un valor que multiplique ninguna base. No
+    // hay `numeric` en toda la tabla: una tarifa no cabe.
+    const numericas = columnas.filter((c) => c.data_type === 'numeric').map((c) => c.column_name);
+    expect(numericas).toEqual([]);
+  });
+
+  it('el CHECK de `modo` admite exactamente los cinco modos que el motor implementa, ni uno más', async () => {
+    const modosEnLaBase = await db.asAdmin(async (tx) => {
+      const { rows } = await tx.query<{ def: string }>(
+        `SELECT pg_get_constraintdef(c.oid) AS def
+           FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid
+          WHERE t.relname = 'rounding_rule' AND c.contype = 'c'
+            AND pg_get_constraintdef(c.oid) ILIKE '%modo%'`,
+      );
+      return rows.map((r) => r.def).join(' ');
+    });
+    for (const modo of MODOS_REDONDEO) {
+      expect(`${modo} admitido: ${modosEnLaBase.includes(`'${modo}'`)}`).toBe(`${modo} admitido: true`);
+    }
+    // Y ninguno de más: se cuenta cuántos literales admite el CHECK.
+    const literales = modosEnLaBase.match(/'[a-z_]+'/g) ?? [];
+    expect(new Set(literales).size).toBe(MODOS_REDONDEO.length);
+  });
+
+  it('SIN regla de redondeo vigente a la fecha del hecho, el motor SE NIEGA a causar y dice por qué', async () => {
+    // La prueba de comportamiento que faltaba. Antes del desbloqueo bastaba con
+    // que la tabla estuviera vacía; ahora A1 carga un valor por defecto, así
+    // que para provocar la ausencia hay que CERRAR su vigencia — el único
+    // UPDATE que D-012 permite. Base de datos propia para no envenenar las
+    // demás pruebas del archivo.
+    const db2 = await createTestDb();
+    try {
+      const { seed } = await import('../../src/db/seed.js');
+      const dirSeeds = fileURLToPath(new URL('../../db/seeds', import.meta.url));
+      const e2 = await crearEscenario(db2);
+
+      await db2.asAdmin(async (tx) => {
+        await seed(tx, { dir: dirSeeds });
+
+        // Se cierra la vigencia de TODA regla de redondeo antes de la fecha del
+        // hecho. No se borra nada: se cierra, como manda la Regla 3.
+        const { rows: cerradas } = await tx.query<{ n: number }>(
+          `WITH cerrada AS (
+             UPDATE rounding_rule SET vigente_hasta = DATE '2020-12-31'
+              WHERE vigente_hasta IS NULL OR vigente_hasta > DATE '2020-12-31'
+             RETURNING 1)
+           SELECT count(*)::int AS n FROM cerrada`,
+        );
+        expect(cerradas[0]!.n).toBeGreaterThan(0);
+
+        const { rows: tcRf } = await tx.query<{ id: string }>(
+          `SELECT id FROM tax_concept WHERE tenant_id IS NULL AND company_id IS NULL
+              AND tipo = 'retefuente' AND codigo = 'servicios_generales'`,
+        );
+        await tx.query(
+          `INSERT INTO fiscal_period (tenant_id, company_id, anio, mes, fecha_inicio, fecha_fin, estado)
+           VALUES ($1,$2,2026,7,'2026-07-01','2026-07-31','abierto')`,
+          [e2.tenantId, e2.companyId],
+        );
+        await tx.query(
+          `UPDATE source_document SET fecha_hecho_economico = DATE '2026-07-15', estado = 'parseado' WHERE id = $1`,
+          [e2.sourceDocumentId],
+        );
+        const conceptoId = uuid();
+        await tx.query(
+          `INSERT INTO concepto_causacion (
+             id, tenant_id, company_id, codigo, nombre, naturaleza,
+             cuenta_gasto_id, cuenta_iva_descontable_id, cuenta_contrapartida_id,
+             tax_concept_retefuente_id, aplica_retefuente, aplica_reteiva, aplica_reteica, aplica_autorretencion)
+           VALUES ($1,$2,$3,'A14-SINREDONDEO','Servicio sin regla de redondeo','compra',
+                   $4,$5,$6,$7,true,false,false,false)`,
+          [
+            conceptoId,
+            e2.tenantId,
+            e2.companyId,
+            e2.cuentas.gasto,
+            e2.cuentas.ivaDescontable,
+            e2.cuentas.proveedores,
+            tcRf[0]!.id,
+          ],
+        );
+        await tx.query(
+          `INSERT INTO memoria_clasificacion (tenant_id, company_id, third_party_id, patron_descripcion, concepto_causacion_id)
+           VALUES ($1,$2,$3,'servicio sin redondeo',$4)`,
+          [e2.tenantId, e2.companyId, e2.thirdPartyId, conceptoId],
+        );
+        await tx.query(
+          `INSERT INTO extraction (tenant_id, company_id, source_document_id, datos_extraidos, origen)
+           VALUES ($1,$2,$3,$4::jsonb,'parser_ubl')`,
+          [
+            e2.tenantId,
+            e2.companyId,
+            e2.sourceDocumentId,
+            JSON.stringify({
+              tipoDocumento: 'Invoice',
+              emisor: { nit: '900123456', nombre: 'Proveedor' },
+              adquirente: { nit: null, nombre: null },
+              lineas: [{ numero: 1, descripcion: 'Servicio sin redondeo', subtotal: '100000000', impuestos: [] }],
+            }),
+          ],
+        );
+      });
+
+      const job = await db2.asTenant(e2.tenantId, e2.companyId, (tx) =>
+        encolarCausacion(tx, e2.sourceDocumentId),
+      );
+      const r = await db2.asAdmin((tx) =>
+        procesarJobCausacion(tx, { id: job.id, sourceDocumentId: e2.sourceDocumentId }),
+      );
+
+      // El motor NO redondea "como sea" ni deja de redondear: se niega y lo dice.
+      expect(r.estado).toBe('revision_manual');
+      if (r.estado !== 'revision_manual') return;
+      expect(r.motivos.map((m) => m.codigo)).toContain('sin_regla_de_redondeo_vigente');
+
+      // Y no dejó ni un asiento ni una retención a medias.
+      const rastro = await db2.asAdmin(async (tx) => {
+        const { rows } = await tx.query<{ asientos: number; retenciones: number }>(
+          `SELECT (SELECT count(*)::int FROM journal_entry WHERE source_document_id = $1)     AS asientos,
+                  (SELECT count(*)::int FROM retention_applied WHERE source_document_id = $1) AS retenciones`,
+          [e2.sourceDocumentId],
+        );
+        return rows[0]!;
+      });
+      expect(rastro.asientos).toBe(0);
+      expect(rastro.retenciones).toBe(0);
+    } finally {
+      await db2.close();
+    }
+  }, 180_000);
+});
+
+// =============================================================================
+describe('A14 · el valor por defecto de A1 es SOBREESCRIBIBLE por la firma, sin tocar código', () => {
+  it('una empresa que carga su propia regla de redondeo le gana a la global, y el resultado cambia', async () => {
+    // A1 justificó su fila global diciendo que es "la de menor prioridad" y que
+    // cualquier firma puede sobreescribirla. A14 no lo da por bueno: lo prueba,
+    // y lo prueba con un modo y un múltiplo DISTINTOS, para que el efecto sea
+    // visible en el número y no solo en el identificador de la regla.
+    const db2 = await createTestDb();
+    try {
+      const { seed } = await import('../../src/db/seed.js');
+      const { RepositorioTributarioSql } = await import('../../src/domain/index.js');
+      const dirSeeds = fileURLToPath(new URL('../../db/seeds', import.meta.url));
+      const e2 = await crearEscenario(db2);
+      await db2.asAdmin(async (tx) => {
+        await seed(tx, { dir: dirSeeds });
+      });
+
+      const leer = async (): Promise<{ modo: string; multiplo: string } | null> =>
+        db2.asTenant(e2.tenantId, e2.companyId, async (tx) => {
+          const repo = new RepositorioTributarioSql(tx);
+          const empresa = await repo.empresa(e2.companyId);
+          if (!empresa) throw new Error('sin empresa');
+          const r = await repo.redondeo(empresa, 'retefuente', '2026-07-15');
+          return r === null ? null : { modo: r.modo, multiplo: String(r.multiplo) };
+        });
+
+      // Con solo los seeds: la global de A1, al peso y media hacia arriba.
+      expect(await leer()).toEqual({ modo: 'half_up', multiplo: '100' });
+
+      // La empresa carga la suya: redondeo al MIL y truncando. Ni una línea de
+      // código tocada, ni un redespliegue.
+      await db2.asAdmin(async (tx) => {
+        await tx.query(
+          `INSERT INTO rounding_rule (tenant_id, company_id, codigo, nombre, modo, multiplo, aplica_a,
+                                      vigente_desde, norma_respaldo, requiere_verificacion_humana)
+           VALUES ($1,$2,'mil_truncado','Redondeo al mil, truncando','truncar',100000,'todos',
+                   '2026-01-01','PARÁMETRO OPERATIVO de la prueba de A14.', true)`,
+          [e2.tenantId, e2.companyId],
+        );
+      });
+
+      expect(await leer()).toEqual({ modo: 'truncar', multiplo: '100000' });
+    } finally {
+      await db2.close();
+    }
+  }, 180_000);
 });
