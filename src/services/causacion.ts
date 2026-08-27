@@ -44,6 +44,12 @@ import { exigirPermiso, PERMISOS } from '../auth/permisos.js';
 import { patronesDeMemoria } from '../ai/normalizar.js';
 import { proyectarLineasParaCausacion, type DatosExtraidos, type LineaExtraida } from './ingest.js';
 import { completarJob, type DocumentProcessingJob } from './cola.js';
+// V-7/V-8 (Ola 1), cerradas por A7 en la Ola 2: correcciones humanas de AIU
+// por línea y de municipio de la operación, capturadas en la bandeja de
+// revisión ANTES de que este archivo vuelva a intentar la causación
+// (`document_correction`, migración 070). A6 no cambia: sigue sin calcular
+// nada; esto solo alimenta la entrada con datos que un humano ya confirmó.
+import { obtenerCorreccionesVigentes } from './bandeja.js';
 
 // =============================================================================
 // TIPOS DE RESULTADO
@@ -150,23 +156,35 @@ interface GrupoConceptoCausacion {
   conceptoId: string;
   baseGravable: number;
   valorIva: number;
+  /** V-7 (Ola 1, cerrada por A7 en la Ola 2): AIU capturado a mano por línea,
+   * sumado por concepto igual que la base y el IVA. `null` si ninguna línea
+   * del grupo trae una corrección de AIU guardada. */
+  valorAiu: number | null;
 }
 
+/**
+ * `aiuPorLinea` viene de `obtenerCorreccionesVigentes` (`./bandeja.js`, A7,
+ * V-7): el parser de A4 no discrimina AIU por línea, así que ese dato SOLO
+ * existe si un humano lo capturó en la bandeja de revisión.
+ */
 function agruparLineasPorConcepto(
   lineas: readonly LineaExtraida[],
   conceptoPorLinea: ReadonlyMap<number, string>,
+  aiuPorLinea: ReadonlyMap<number, number> = new Map(),
 ): GrupoConceptoCausacion[] {
   const mapa = new Map<string, GrupoConceptoCausacion>();
   for (const l of lineas) {
     const conceptoId = conceptoPorLinea.get(l.numero);
     if (!conceptoId) continue;
     const base = l.baseGravable ?? 0;
+    const aiuLinea = aiuPorLinea.get(l.numero) ?? null;
     const previo = mapa.get(conceptoId);
     if (previo) {
       previo.baseGravable += base;
       previo.valorIva += l.valorIva;
+      if (aiuLinea !== null) previo.valorAiu = (previo.valorAiu ?? 0) + aiuLinea;
     } else {
-      mapa.set(conceptoId, { conceptoId, baseGravable: base, valorIva: l.valorIva });
+      mapa.set(conceptoId, { conceptoId, baseGravable: base, valorIva: l.valorIva, valorAiu: aiuLinea });
     }
   }
   return [...mapa.values()];
@@ -469,13 +487,20 @@ async function causarFactura(
     `SELECT municipality_id FROM third_party WHERE id = $1`,
     [doc.third_party_id],
   );
-  const municipioOperacionId = terceroRows[0]?.municipality_id ?? null;
+  // V-8 (Ola 1, cerrada por A7 en la Ola 2): el municipio de la operación NO
+  // es el del tercero por defecto cuando un humano lo corrigió explícitamente
+  // en la bandeja de revisión (sección 7.5: el ICA depende de dónde se prestó
+  // el servicio, no del domicilio del proveedor). Sin corrección, se sigue
+  // usando el del tercero — declarado y probado, no silenciado (V-8).
+  const correcciones = await obtenerCorreccionesVigentes(tx, doc.id);
+  const municipioOperacionId = correcciones.municipioOperacionId ?? terceroRows[0]?.municipality_id ?? null;
 
-  const grupos = agruparLineasPorConcepto(datos.lineas, conceptoPorLinea);
+  const grupos = agruparLineasPorConcepto(datos.lineas, conceptoPorLinea, correcciones.aiuPorLinea);
   const lineasFactura: LineaFactura[] = grupos.map((g) => ({
     conceptoId: g.conceptoId,
     baseGravable: g.baseGravable,
     valorIva: g.valorIva,
+    valorAiu: g.valorAiu,
   }));
 
   const entradaFactura: EntradaFactura = {

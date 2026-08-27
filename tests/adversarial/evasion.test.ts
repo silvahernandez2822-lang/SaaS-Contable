@@ -546,9 +546,20 @@ describe('A14 · barrido estructural de puertas laterales', () => {
     // necesario porque un parámetro puede ser compartido entre las empresas de
     // una firma (`company_id IS NULL`, D-015) y su impacto real no lo ve una
     // sesión con una sola empresa seleccionada.
+    //
+    // Añadida en la Ola 2 por A7 (migración 070_a7_bandeja_causacion.sql):
+    // `app.empresas_accesibles()`, para la bandeja multi-empresa (sección 4).
+    // Mismo patrón: SECURITY DEFINER + row_security=off porque
+    // `user_company_access` exige ya conocer la empresa (RLS estricta) para
+    // poder listarla, y el punto de esta función es precisamente listar las
+    // empresas ANTES de elegir una. No acepta ningún parámetro: solo lee el
+    // `user_id`/`tenant_id` de la sesión ya verificada y exige
+    // `documento.leer`. No cruza firmas: filtra siempre por
+    // `app.current_tenant_id()`.
     expect(inventario).toEqual([
       'app.cerrar_sesion',
       'app.current_company_id',
+      'app.empresas_accesibles',
       'app.fecha_minima_vigencia_municipio_ica',
       'app.fecha_minima_vigencia_tax_rule',
       'app.fecha_minima_vigencia_tenant',

@@ -18,6 +18,29 @@ export interface RetencionResumen {
   aplicada: boolean;
   motivoNoAplica: string | null;
   normaRespaldo: string;
+  // A7, Ola 2 (sección 4, "diferenciador de producto, no detalle técnico"):
+  // la regla de oro 6 exige que cada asiento responda "qué regla y qué
+  // vigencia se aplicó". `retention_applied` ya guarda estos dos campos
+  // desde la Ola 1 (D-017); lo único que faltaba era exponerlos aquí.
+  vigenteDesde: string;
+  vigenteHasta: string | null;
+  /** Municipio usado para el cálculo (solo ReteICA). Visible a propósito: es
+   * la trazabilidad de V-8 — si el humano corrigió el municipio antes de
+   * causar, este es el que de verdad se usó, no el del tercero por defecto. */
+  municipioNombre: string | null;
+  conceptoCodigo: string | null;
+  conceptoNombre: string | null;
+}
+
+export interface PartidaResumen {
+  id: string;
+  linea: number;
+  cuentaCodigo: string;
+  cuentaNombre: string;
+  side: 'debito' | 'credito';
+  monto: string;
+  descripcion: string | null;
+  retentionAppliedId: string | null;
 }
 
 export interface AsientoResumen {
@@ -27,6 +50,7 @@ export interface AsientoResumen {
   tipo: string;
   postedAt: string | null;
   reversedBy: string | null;
+  partidas: PartidaResumen[];
 }
 
 export interface EstadoDocumento {
@@ -71,10 +95,15 @@ export async function consultarEstadoDocumento(
   const job = await estadoJobDeDocumento(tx, sourceDocumentId);
 
   const { rows: retenciones } = await tx.query<RetencionResumen>(
-    `SELECT id, tipo, base::text, tarifa::text, valor::text, aplicada, motivo_no_aplica AS "motivoNoAplica",
-            norma_respaldo AS "normaRespaldo"
-       FROM retention_applied WHERE source_document_id = $1
-      ORDER BY tipo, id`,
+    `SELECT ra.id, ra.tipo, ra.base::text, ra.tarifa::text, ra.valor::text, ra.aplicada,
+            ra.motivo_no_aplica AS "motivoNoAplica", ra.norma_respaldo AS "normaRespaldo",
+            ra.regla_vigente_desde::text AS "vigenteDesde", ra.regla_vigente_hasta::text AS "vigenteHasta",
+            m.nombre AS "municipioNombre", cc.codigo AS "conceptoCodigo", cc.nombre AS "conceptoNombre"
+       FROM retention_applied ra
+       LEFT JOIN municipality m ON m.id = ra.municipality_id
+       LEFT JOIN concepto_causacion cc ON cc.id = ra.concepto_causacion_id
+      WHERE ra.source_document_id = $1
+      ORDER BY ra.tipo, ra.id`,
     [sourceDocumentId],
   );
 
@@ -92,6 +121,20 @@ export async function consultarEstadoDocumento(
   );
   const a = asientoRows[0];
 
+  let partidas: PartidaResumen[] = [];
+  if (a) {
+    const { rows: partidaRows } = await tx.query<PartidaResumen>(
+      `SELECT jl.id, jl.linea, acc.codigo AS "cuentaCodigo", acc.nombre AS "cuentaNombre",
+              jl.side, jl.monto::text, jl.descripcion, jl.retention_applied_id AS "retentionAppliedId"
+         FROM journal_line jl
+         JOIN account acc ON acc.id = jl.account_id
+        WHERE jl.journal_entry_id = $1
+        ORDER BY jl.linea`,
+      [a.id],
+    );
+    partidas = partidaRows;
+  }
+
   return {
     sourceDocumentId: doc.id,
     estado: doc.estado,
@@ -104,7 +147,15 @@ export async function consultarEstadoDocumento(
     job,
     retenciones,
     asiento: a
-      ? { id: a.id, numero: a.numero, estado: a.estado, tipo: a.tipo, postedAt: a.posted_at, reversedBy: a.reversed_by }
+      ? {
+          id: a.id,
+          numero: a.numero,
+          estado: a.estado,
+          tipo: a.tipo,
+          postedAt: a.posted_at,
+          reversedBy: a.reversed_by,
+          partidas,
+        }
       : null,
   };
 }

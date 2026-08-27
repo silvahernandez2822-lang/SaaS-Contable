@@ -38,7 +38,26 @@ export type {
 } from './causacion.js';
 
 export { consultarEstadoDocumento, listarPendientesDeAprobacion } from './consulta.js';
-export type { EstadoDocumento, RetencionResumen, AsientoResumen } from './consulta.js';
+export type { EstadoDocumento, RetencionResumen, AsientoResumen, PartidaResumen } from './consulta.js';
+
+export {
+  listarEmpresasAccesibles,
+  obtenerCorreccionesVigentes,
+  guardarCorreccionAiu,
+  guardarCorreccionMunicipio,
+  reprocesarDocumento,
+  listarPendientesRevision,
+  listarMunicipiosParaCorreccion,
+} from './bandeja.js';
+export type {
+  EmpresaAccesible,
+  CorreccionesVigentes,
+  GuardarCorreccionAiuInput,
+  GuardarCorreccionMunicipioInput,
+  MotivoRevision,
+  DocumentoEnRevision,
+  MunicipioOpcion,
+} from './bandeja.js';
 
 export { ejecutarCicloCola, vaciarCola } from './worker.js';
 export type { ResultadoCiclo } from './worker.js';

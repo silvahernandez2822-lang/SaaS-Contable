@@ -1113,6 +1113,12 @@ describe('A14 · la vía del buzón: ¿se puede cruzar de firma por ahí? (adjud
     expect(inventario).toEqual([
       'app.cerrar_sesion',
       'app.current_company_id',
+      // A7, Ola 2 (migración 070): `app.empresas_accesibles()`, para la
+      // bandeja multi-empresa (sección 4). SECURITY DEFINER + row_security=off,
+      // mismo motivo que current_company_id: resolver "qué empresas puedo
+      // ver" sin tener ya una empresa elegida. Sin parámetros, exige
+      // `documento.leer`, filtra por `app.current_tenant_id()`.
+      'app.empresas_accesibles',
       // A8, Ola 2 (migración 080): agregados de firma para el simulador de
       // impacto y la fecha mínima de vigencia del módulo de parametrización
       // (sección 6.2). SECURITY DEFINER + row_security=off, mismo patrón que
