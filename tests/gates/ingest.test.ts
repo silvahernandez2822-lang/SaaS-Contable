@@ -11,9 +11,13 @@
  *   2. El caso crítico de la sección 10.2 — Invoice embebido en base64 dentro
  *      de un AttachedDocument — sobrevive el viaje completo hasta quedar
  *      guardado como `source_document` correcto.
- *   3. Resolver la empresa dueña de un buzón, ANTES de que exista sesión, es
- *      posible sin darle a `app_user` un privilegio general sobre `company`
- *      (que su RLS de tenant estricto nunca concedería sin sesión).
+ *   3. `app.resolver_empresa_por_buzon` ya NO es ejecutable por `app_user`
+ *      (A12, migración 100, cierre de V-1). Lo que este punto demostraba en la
+ *      Ola 1 -que se podía resolver el buzón sin sesión, sin dar a `app_user`
+ *      un privilegio general sobre `company`- resultó tener un costo que no
+ *      compensaba: el buzón ES el parámetro que identifica al tenant, así que
+ *      con ese GRANT una firma resolvía el buzón de otra. El canal vivo (A13)
+ *      autentica el tenant con un token de integración ANTES de mirar buzones.
  *   4. El registro del correo (`email_ingest_log`) para un buzón NO reconocido
  *      queda invisible para cualquier tenant, tal como `audit_log`.
  */
@@ -59,26 +63,44 @@ afterAll(async () => {
 
 // =============================================================================
 describe('resolverEmpresaPorBuzon — antes de que exista sesión', () => {
-  it('resuelve tenant/company de un buzón reconocido, sin ninguna sesión abierta', async () => {
-    // db.asAdmin corre como superusuario, pero el SET LOCAL ROLE de abajo
-    // degrada la conexión a app_user DENTRO de esa transacción, y aquí no se
-    // llama emitirSesion en ningún momento: no hay app.session_token.
+  it('la aplicación (app_user) ya NO puede llamarla: 42501, aunque el buzón sea el suyo', async () => {
+    // ESTA PRUEBA CAMBIÓ DE VEREDICTO, no de caso (A12, migración 100, cierre
+    // de V-1). Cuando A4 la escribió, demostraba lo que entonces se quería:
+    // que `app_user` podía resolver el buzón sin sesión abierta. La medición de
+    // A14 mostró que ese mismo GRANT permitía resolver el buzón de OTRA firma,
+    // así que se retiró. El camino de correo vivo (A13, migración 090) no lo
+    // necesita: autentica el tenant con un token de integración antes de mirar
+    // ningún buzón.
     await db.asAdmin(async (tx) => {
       await tx.exec('SET LOCAL ROLE app_user');
 
-      // Prueba de control: sin sesión, una consulta DIRECTA a `company` no ve
-      // absolutamente nada (RLS de tenant estricto, 012_rls.sql). Es la razón
-      // de ser de app.resolver_empresa_por_buzon.
+      // La razón de ser original de la función sigue siendo cierta y por eso
+      // se conserva el control: sin sesión, una consulta DIRECTA a `company`
+      // no ve absolutamente nada (RLS de tenant estricto, 012_rls.sql). Lo
+      // que cambió no es ese hecho, sino quién tiene derecho a esquivarlo.
       const directa = await tx.query('SELECT id FROM company');
       expect(directa.rows).toEqual([]);
 
-      const { rows } = await tx.query<{ company_id: string; tenant_id: string }>(
+      await esperarErrorPg(
+        () => tx.query('SELECT * FROM app.resolver_empresa_por_buzon($1)', [buzon]),
+        '42501',
+        'llamar a app.resolver_empresa_por_buzon como app_user',
+      );
+    });
+  });
+
+  it('sigue existiendo y resolviendo para el dueño de la función (migraciones y tareas de plataforma)', async () => {
+    // Se conserva la cobertura del comportamiento: la función no se borró, se
+    // le quitó el GRANT. Desde `asAdmin` (sin SET ROLE) sigue devolviendo solo
+    // (company_id, tenant_id) de una empresa activa.
+    const { rows } = await db.asAdmin((tx) =>
+      tx.query<{ company_id: string; tenant_id: string }>(
         'SELECT * FROM app.resolver_empresa_por_buzon($1)',
         [buzon],
-      );
-      expect(rows).toHaveLength(1);
-      expect(rows[0]).toEqual({ company_id: e.companyId, tenant_id: e.tenantId });
-    });
+      ),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual({ company_id: e.companyId, tenant_id: e.tenantId });
   });
 
   it('un buzón que no existe no resuelve nada (ni error, ni una fila)', async () => {

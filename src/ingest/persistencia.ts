@@ -53,6 +53,16 @@ export interface EmpresaResuelta {
  * EXACTAMENTE la situación de un correo recién llegado, cuyo tenant es lo que
  * se está averiguando— vería cero filas. Es el mismo problema, y la misma
  * solución, que D-023 ya resolvió para el login con `app.buscar_credencial`.
+ *
+ * NO LA LLAME DESDE UN CAMINO DE PETICIÓN: desde la migración 100 (A12, cierre
+ * de V-1) la función no tiene EXECUTE para `app_user` ni `app_auth`, así que
+ * aquí solo funciona bajo `withAdminContext` (migraciones, seeds, tareas de
+ * plataforma). El GRANT se retiró porque el buzón ES el parámetro que
+ * identifica al tenant: con él, una sesión de una firma resolvía el
+ * `tenant_id`/`company_id` de otra. El canal de correo vivo
+ * (`src/integraciones/ingest-correo.ts`, A13) no la usa: autentica el tenant
+ * con un token de integración y luego resuelve la empresa con un SELECT
+ * normal sobre `company`, bajo su RLS de tenant.
  */
 export async function resolverEmpresaPorBuzon(
   tx: SqlClient,

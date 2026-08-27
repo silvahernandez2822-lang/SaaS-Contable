@@ -135,6 +135,16 @@ async function asegurarRolesAplicacion(db: DbHandle): Promise<void> {
     -- en el harness o el banco de pruebas queda más permisivo que producción).
     REVOKE ALL ON FUNCTION app.autenticar_token_integracion(text) FROM PUBLIC, ${ROL_APLICACION};
 
+    -- A12 (100, cierre de V-1): app.resolver_empresa_por_buzon ya no es
+    -- ejecutable por ningún rol de aplicación. Su GRANT original (032) se
+    -- concedió con el argumento de que "no cruza firmas"; A14 midió que sí,
+    -- porque el buzón ES el parámetro que identifica al tenant. El espejo
+    -- aquí es obligatorio (D-034): sin él, el GRANT masivo ON ALL FUNCTIONS
+    -- de arriba se lo devuelve y el banco de pruebas seguiría demostrando la
+    -- fuga que producción ya no tiene.
+    REVOKE ALL ON FUNCTION app.resolver_empresa_por_buzon(text)
+      FROM PUBLIC, ${ROL_APLICACION}, app_auth;
+
     REVOKE ALL ON FUNCTION app.instalar_permiso_escritura(text, text)
       FROM PUBLIC, ${ROL_APLICACION}, app_auth;
     REVOKE ALL ON FUNCTION app.instalar_triggers_vigencia(text)  FROM ${ROL_APLICACION};

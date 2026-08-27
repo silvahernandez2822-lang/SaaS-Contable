@@ -1025,7 +1025,16 @@ describe('A14 · rompiendo la cola de A6: concurrencia y trabajos ajenos', () =>
 
 // =============================================================================
 describe('A14 · la vía del buzón: ¿se puede cruzar de firma por ahí? (adjudicación de app.resolver_empresa_por_buzon)', () => {
-  it('MEDIDO: desde la sesión de la firma B, la función devuelve el company_id y el tenant_id de la firma A', async () => {
+  it('V-1 CERRADA: desde la sesión de la firma B, la función ya no se puede ni llamar (42501)', async () => {
+    // HISTORIA DE ESTA PRUEBA — se conserva el mismo caso, con el veredicto
+    // invertido. En la Ola 1 medía el hallazgo en positivo: `app_user` tenía
+    // EXECUTE (migración 032, A4), así que desde la sesión de la firma B, con
+    // el buzón de una empresa de la firma A, la función devolvía el
+    // `tenant_id`/`company_id` de A — un oráculo de identificadores ajenos.
+    // La migración 100 (A12, cierre de V-1) le quitó el GRANT a todo rol de
+    // aplicación, así que ahora el mismo intento ni siquiera llega a
+    // ejecutarse. Lo que antes se documentaba como fuga, hoy se fija como
+    // imposible: si alguien vuelve a conceder EXECUTE, esta prueba falla.
     const a = await crearEscenario(db);
     const b = await crearEscenario(db);
 
@@ -1037,14 +1046,16 @@ describe('A14 · la vía del buzón: ¿se puede cruzar de firma por ahí? (adjud
       return rows[0]!.buzon_email;
     });
 
-    const visto = await db.asTenant(b.tenantId, b.companyId, (tx) => resolverEmpresaPorBuzon(tx, buzonDeA));
+    await esperarErrorPg(
+      () => db.asTenant(b.tenantId, b.companyId, (tx) => resolverEmpresaPorBuzon(tx, buzonDeA)),
+      '42501',
+      'preguntarle a app.resolver_empresa_por_buzon por el buzón de otra firma',
+    );
 
-    // ESTE ES EL HALLAZGO, y la prueba lo fija en positivo para que no se
-    // olvide: la función SÍ contesta a una sesión de otra firma. Devuelve
-    // identificadores, no datos. Ver D-042 en ESTADO_PROYECTO.md.
-    expect(visto).toEqual({ tenantId: a.tenantId, companyId: a.companyId });
-
-    // Lo que NO se puede hacer con esos identificadores: leer una sola fila.
+    // Y la segunda capa sigue en su sitio, que es lo que mantuvo la severidad
+    // baja mientras la primera estuvo abierta: aunque los identificadores de A
+    // se obtengan por cualquier otra vía, desde la sesión de B no se lee una
+    // sola fila de A.
     const filas = await db.asTenant(b.tenantId, b.companyId, async (tx) => {
       const { rows } = await tx.query<{ n: number }>(
         `SELECT (SELECT count(*)::int FROM company WHERE id = $1)
@@ -1142,7 +1153,11 @@ describe('A14 · la vía del buzón: ¿se puede cruzar de firma por ahí? (adjud
       // firma en sesión (nunca el secreto: ya no existe en claro en ningún
       // lado). Mismo patrón de filtro que crear_token_integracion.
       'app.listar_tokens_integracion',
-      'app.resolver_empresa_por_buzon',
+      // `app.resolver_empresa_por_buzon` SALIÓ de esta lista en la migración
+      // 100 (A12, cierre de V-1): la función sigue existiendo, pero ya no
+      // tiene EXECUTE para ningún rol de aplicación. Es una BAJA del
+      // inventario, y las bajas también se revisan: si vuelve a aparecer aquí,
+      // alguien reabrió V-1.
       'app.revocar_sesiones_de_usuario',
       // A13, Ola 2 (migración 090): revoca un token de integración —
       // respuesta a incidente. Mismo patrón de filtro que

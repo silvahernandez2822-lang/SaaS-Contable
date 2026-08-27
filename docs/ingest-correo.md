@@ -99,6 +99,23 @@ tenant. `032_ingest_resolver_buzon.sql` agrega `app.resolver_empresa_por_buzon`
 tenant_id)` de una empresa activa con ese buzón exacto), mismo patrón ya
 auditado que `app.buscar_credencial` para el login (D-023).
 
+**ACTUALIZACIÓN — V-1 cerrada (A12, migración 100).** Esa función **ya no es
+ejecutable por la aplicación**: se le retiró el `EXECUTE` a `app_user` (y no lo
+tiene `app_auth`). El motivo: el buzón **es** el parámetro que identifica al
+tenant, así que con aquel `GRANT` una sesión de la firma B, preguntando por el
+buzón de una empresa de la firma A, obtenía el `tenant_id`/`company_id` de A.
+Nunca hubo datos legibles con esos identificadores (la RLS aguantó), pero era un
+oráculo innecesario. La función se conserva, sin `GRANT` para ningún rol de
+aplicación, ejecutable solo por el dueño del esquema (migraciones y tareas de
+plataforma).
+
+El camino vivo de correo **ya no necesita resolver el buzón antes de la
+sesión**: `src/integraciones/ingest-correo.ts` (A13, migración 090) autentica
+primero al tenant con un token de integración, abre sesión real por
+`app.abrir_sesion` y solo entonces resuelve la empresa con un `SELECT` corriente
+sobre `company`, bajo su RLS. La seguridad del canal dejó de depender de que un
+buzón sea secreto.
+
 ## 9. Cómo se escribe de verdad en la base — nota de coordinación para A6
 
 Toda escritura en `source_document`, `extraction`, `email_ingest_log` (para un

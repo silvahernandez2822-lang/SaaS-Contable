@@ -535,15 +535,21 @@ describe('A14 · barrido estructural de puertas laterales', () => {
     // Lista cerrada. Una función DEFINER nueva y ejecutable por la aplicación
     // es un agujero potencial y tiene que pasar por aquí, no colarse.
     //
-    // Añadida en la Ola 1 por A4: `app.resolver_empresa_por_buzon` (migración
-    // 032_ingest_resolver_buzon.sql). Mismo patrón ya auditado que
-    // `app.buscar_credencial` para app_auth (D-023): resuelve `company` por
-    // `buzon_email` ANTES de que exista sesión, porque `company` tiene RLS de
-    // tenant estricto y sin sesión no se vería ninguna fila. Superficie
-    // expuesta: solo (company_id, tenant_id) de una empresa ACTIVA que
-    // coincida exacto con el buzón — nunca NIT, razón social ni ningún otro
-    // dato. No cruza firmas: no acepta ningún parámetro que identifique un
-    // tenant u otra empresa, así que no hay firma que falsificar.
+    // RETIRADA de esta lista en la Ola 2 por A12 (migración 100, cierre de
+    // V-1): `app.resolver_empresa_por_buzon`, que A4 había añadido en la Ola 1
+    // (migración 032). El argumento con el que se concedió —"no cruza firmas,
+    // porque no acepta ningún parámetro que identifique un tenant"— resultó
+    // FALSO al medirlo: el parámetro que identifica al tenant es el buzón, y
+    // A14 comprobó que desde la sesión de una firma se obtenían el `tenant_id`
+    // y el `company_id` de otra. Nunca hubo datos legibles con esos
+    // identificadores (RLS aguantó, segunda capa), pero era un oráculo
+    // innecesario. Hoy la función no tiene EXECUTE para ningún rol de
+    // aplicación y el canal de correo vivo (A13, migración 090) no la usa:
+    // autentica el tenant con un token de integración y resuelve la empresa
+    // con un SELECT normal bajo RLS. Se deja escrito porque la lección es
+    // reutilizable: "no recibe el tenant como parámetro" NO equivale a "no
+    // cruza firmas" — hay que mirar qué otra cosa del parámetro identifica al
+    // tenant.
     //
     // Añadidas en la Ola 2 por A8 (migración 080_a8_parametrizacion_simulador.sql):
     // el simulador de impacto y la fecha mínima de vigencia del módulo de
@@ -585,7 +591,9 @@ describe('A14 · barrido estructural de puertas laterales', () => {
       // A13, Ola 2 (migración 090): lista los tokens de integración de la
       // firma en sesión, nunca el secreto. Mismo filtro que crear_token_integracion.
       'app.listar_tokens_integracion',
-      'app.resolver_empresa_por_buzon',
+      // BAJA del inventario en la migración 100 (A12, cierre de V-1):
+      // `app.resolver_empresa_por_buzon` existe, pero sin EXECUTE para ningún
+      // rol de aplicación. Ver el bloque de arriba.
       'app.revocar_sesiones_de_usuario',
       // A13, Ola 2 (migración 090): revoca un token de integración (incidente).
       'app.revocar_token_integracion',
