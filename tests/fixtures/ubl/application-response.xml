@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  FIXTURE CONSTRUIDO A MANO, NO ES UNA CAPTURA DE PRODUCCIÓN. Ver
+  docs/reportes/ola1-a4.md. Acuse/evento RADIAN sobre invoice-simple.xml. A4
+  solo lo extrae y lo registra: generar eventos RADIAN de verdad es trabajo
+  reservado, no implementado (sección 10.4).
+-->
+<ApplicationResponse xmlns="urn:oasis:names:specification:ubl:schema:xsd:ApplicationResponse-2"
+                      xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+                      xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:UBLVersionID>2.1</cbc:UBLVersionID>
+  <cbc:ID>AR-SETP990000001</cbc:ID>
+  <cbc:IssueDate>2026-06-16</cbc:IssueDate>
+  <cbc:IssueTime>08:30:00-05:00</cbc:IssueTime>
+
+  <cac:SenderParty>
+    <cac:PartyTaxScheme>
+      <cbc:CompanyID schemeID="1" schemeName="31">800987654</cbc:CompanyID>
+    </cac:PartyTaxScheme>
+    <cac:PartyLegalEntity>
+      <cbc:RegistrationName>Empresa Cliente Fixture SAS</cbc:RegistrationName>
+    </cac:PartyLegalEntity>
+  </cac:SenderParty>
+
+  <cac:ReceiverParty>
+    <cac:PartyTaxScheme>
+      <cbc:CompanyID schemeID="1" schemeName="31">900123456</cbc:CompanyID>
+    </cac:PartyTaxScheme>
+    <cac:PartyLegalEntity>
+      <cbc:RegistrationName>Proveedor Fixture SAS</cbc:RegistrationName>
+    </cac:PartyLegalEntity>
+  </cac:ReceiverParty>
+
+  <cac:DocumentResponse>
+    <cac:Response>
+      <cbc:ResponseCode>030</cbc:ResponseCode>
+      <cbc:Description>Acuse de recibo (fixture)</cbc:Description>
+    </cac:Response>
+    <cac:DocumentReference>
+      <cbc:ID>SETP990000001</cbc:ID>
+      <cbc:UUID>b72bdb621c3e9ea07789eab738ada6fdbc37d7b81694472e54397c38d8b4fc65ea40182c21688f687bd7b71c30ba5932</cbc:UUID>
+    </cac:DocumentReference>
+  </cac:DocumentResponse>
+</ApplicationResponse>

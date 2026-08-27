@@ -144,6 +144,17 @@ async function asegurarRolesAplicacion(db: DbHandle): Promise<void> {
     REVOKE ALL   ON FUNCTION app.usuario_pertenece(uuid, uuid) FROM PUBLIC, ${ROL_APLICACION};
     GRANT EXECUTE ON FUNCTION app.usuario_pertenece(uuid, uuid) TO app_auth;
 
+    -- A6 (040): reclamar/completar/fallar un trabajo de la cola son del
+    -- worker de plataforma (withAdminContext), nunca de la sesión de negocio.
+    -- Sin este REVOKE, el GRANT masivo de arriba le devolvería a
+    -- ${ROL_APLICACION} la capacidad de fabricar "completado" sobre el
+    -- trabajo de otra firma sin pasar por RLS (D-034: todo REVOKE nuevo de
+    -- una migración hay que espejarlo aquí o el banco de pruebas queda más
+    -- permisivo que producción).
+    REVOKE ALL ON FUNCTION app.reclamar_siguiente_job(text)    FROM PUBLIC, ${ROL_APLICACION}, app_auth;
+    REVOKE ALL ON FUNCTION app.completar_job(uuid, jsonb)      FROM PUBLIC, ${ROL_APLICACION}, app_auth;
+    REVOKE ALL ON FUNCTION app.fallar_job(uuid, text, integer) FROM PUBLIC, ${ROL_APLICACION}, app_auth;
+
     -- A12: alcance de app_auth, exactamente autenticar y nada más.
     REVOKE ALL ON ALL TABLES IN SCHEMA public FROM app_auth;
     GRANT SELECT ON "user"    TO app_auth;

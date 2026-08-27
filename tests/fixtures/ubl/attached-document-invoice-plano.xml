@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  FIXTURE CONSTRUIDO A MANO, NO ES UNA CAPTURA DE PRODUCCIÓN. Ver
+  docs/reportes/ola1-a4.md. Este es EL CASO CRÍTICO de la sección 10.2: el
+  Invoice real viaja embebido dentro de cac:Attachment/cac:ExternalReference/
+  cbc:Description, y aquí viene codificado en base64 (el caso más frecuente
+  en la práctica según el mega-prompt). desempaquetar.ts debe decodificarlo
+  ANTES de que validar.ts/extraer.ts puedan hacer nada con él.
+-->
+<AttachedDocument xmlns="urn:oasis:names:specification:ubl:schema:xsd:AttachedDocument-2"
+                   xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+                   xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:UBLVersionID>2.1</cbc:UBLVersionID>
+  <cbc:ID>AD-SETP990000003</cbc:ID>
+  <cbc:IssueDate>2026-06-18</cbc:IssueDate>
+  <cbc:ParentDocumentID>SETP990000003</cbc:ParentDocumentID>
+  <cac:SenderParty>
+    <cac:PartyTaxScheme>
+      <cbc:CompanyID>900123456</cbc:CompanyID>
+    </cac:PartyTaxScheme>
+  </cac:SenderParty>
+  <cac:Attachment>
+    <cac:ExternalReference>
+      <cbc:Description><![CDATA[<?xml version="1.0" encoding="UTF-8"?>
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+         xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+         xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:UBLVersionID>2.1</cbc:UBLVersionID>
+  <cbc:CustomizationID>10</cbc:CustomizationID>
+  <cbc:ID>SETP990000003</cbc:ID>
+  <cbc:UUID schemeName="CUFE-SHA384">91e402dd2faf66d81a9091a52aa4ae1141ebf56b3cde345526e8d54ff31d8fd0521120a8b176f73cdb4a917a61c2d758</cbc:UUID>
+  <cbc:IssueDate>2026-06-18</cbc:IssueDate>
+  <cbc:IssueTime>09:00:00-05:00</cbc:IssueTime>
+  <cbc:InvoiceTypeCode>01</cbc:InvoiceTypeCode>
+  <cbc:DocumentCurrencyCode>COP</cbc:DocumentCurrencyCode>
+  <cac:AccountingSupplierParty>
+    <cac:Party>
+      <cac:PartyTaxScheme>
+        <cbc:CompanyID schemeID="1" schemeName="31">900123456</cbc:CompanyID>
+        <cac:TaxScheme><cbc:ID>01</cbc:ID><cbc:Name>IVA</cbc:Name></cac:TaxScheme>
+      </cac:PartyTaxScheme>
+      <cac:PartyLegalEntity>
+        <cbc:RegistrationName>Proveedor Fixture SAS</cbc:RegistrationName>
+      </cac:PartyLegalEntity>
+    </cac:Party>
+  </cac:AccountingSupplierParty>
+  <cac:AccountingCustomerParty>
+    <cac:Party>
+      <cac:PartyTaxScheme>
+        <cbc:CompanyID schemeID="1" schemeName="31">800987654</cbc:CompanyID>
+        <cac:TaxScheme><cbc:ID>01</cbc:ID><cbc:Name>IVA</cbc:Name></cac:TaxScheme>
+      </cac:PartyTaxScheme>
+      <cac:PartyLegalEntity>
+        <cbc:RegistrationName>Empresa Cliente Fixture SAS</cbc:RegistrationName>
+      </cac:PartyLegalEntity>
+    </cac:Party>
+  </cac:AccountingCustomerParty>
+  <cac:TaxTotal>
+    <cbc:TaxAmount currencyID="COP">95000.00</cbc:TaxAmount>
+    <cac:TaxSubtotal>
+      <cbc:TaxableAmount currencyID="COP">500000.00</cbc:TaxableAmount>
+      <cbc:TaxAmount currencyID="COP">95000.00</cbc:TaxAmount>
+      <cac:TaxCategory>
+        <cbc:Percent>19.00</cbc:Percent>
+        <cac:TaxScheme><cbc:ID>01</cbc:ID><cbc:Name>IVA</cbc:Name></cac:TaxScheme>
+      </cac:TaxCategory>
+    </cac:TaxSubtotal>
+  </cac:TaxTotal>
+  <cac:LegalMonetaryTotal>
+    <cbc:LineExtensionAmount currencyID="COP">500000.00</cbc:LineExtensionAmount>
+    <cbc:TaxExclusiveAmount currencyID="COP">500000.00</cbc:TaxExclusiveAmount>
+    <cbc:TaxInclusiveAmount currencyID="COP">595000.00</cbc:TaxInclusiveAmount>
+    <cbc:PayableAmount currencyID="COP">595000.00</cbc:PayableAmount>
+  </cac:LegalMonetaryTotal>
+  <cac:InvoiceLine>
+    <cbc:ID>1</cbc:ID>
+    <cbc:InvoicedQuantity unitCode="EA">1</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount currencyID="COP">500000.00</cbc:LineExtensionAmount>
+    <cac:TaxTotal>
+      <cbc:TaxAmount currencyID="COP">95000.00</cbc:TaxAmount>
+      <cac:TaxSubtotal>
+        <cbc:TaxableAmount currencyID="COP">500000.00</cbc:TaxableAmount>
+        <cbc:TaxAmount currencyID="COP">95000.00</cbc:TaxAmount>
+        <cac:TaxCategory>
+          <cbc:Percent>19.00</cbc:Percent>
+          <cac:TaxScheme><cbc:ID>01</cbc:ID><cbc:Name>IVA</cbc:Name></cac:TaxScheme>
+        </cac:TaxCategory>
+      </cac:TaxSubtotal>
+    </cac:TaxTotal>
+    <cac:Item>
+      <cbc:Description>Arrendamiento de equipos (fixture, embebido en AttachedDocument)</cbc:Description>
+    </cac:Item>
+    <cac:Price>
+      <cbc:PriceAmount currencyID="COP">500000.00</cbc:PriceAmount>
+    </cac:Price>
+  </cac:InvoiceLine>
+</Invoice>]]></cbc:Description>
+    </cac:ExternalReference>
+  </cac:Attachment>
+</AttachedDocument>

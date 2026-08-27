@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  FIXTURE ROTO A PROPÓSITO: cbc:Description trae texto que PARECE base64 por
+  su alfabeto (solo A-Za-z0-9+/=) pero decodifica a bytes que no son XML.
+  Caso de cuarentena `base64_invalido`.
+-->
+<AttachedDocument xmlns="urn:oasis:names:specification:ubl:schema:xsd:AttachedDocument-2"
+                   xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+                   xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:UBLVersionID>2.1</cbc:UBLVersionID>
+  <cbc:ID>AD-SETP990000095</cbc:ID>
+  <cbc:IssueDate>2026-06-15</cbc:IssueDate>
+  <cac:Attachment>
+    <cac:ExternalReference>
+      <cbc:Description>VGhpcyBpcyBub3QgYW4gaW52b2ljZSwganVzdCBwbGFpbiB0ZXh0IGVuY29kZWQgYXMgYmFzZTY0Lg==</cbc:Description>
+    </cac:ExternalReference>
+  </cac:Attachment>
+</AttachedDocument>

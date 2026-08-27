@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- FIXTURE ROTO A PROPÓSITO: la etiqueta cbc:ID nunca se cierra. -->
+<Invoice xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:ID>SETP990000099
+  <cbc:IssueDate>2026-06-15</cbc:IssueDate>
+</Invoice>

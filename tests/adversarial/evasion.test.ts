@@ -523,9 +523,20 @@ describe('A14 · barrido estructural de puertas laterales', () => {
 
     // Lista cerrada. Una función DEFINER nueva y ejecutable por la aplicación
     // es un agujero potencial y tiene que pasar por aquí, no colarse.
+    //
+    // Añadida en la Ola 1 por A4: `app.resolver_empresa_por_buzon` (migración
+    // 032_ingest_resolver_buzon.sql). Mismo patrón ya auditado que
+    // `app.buscar_credencial` para app_auth (D-023): resuelve `company` por
+    // `buzon_email` ANTES de que exista sesión, porque `company` tiene RLS de
+    // tenant estricto y sin sesión no se vería ninguna fila. Superficie
+    // expuesta: solo (company_id, tenant_id) de una empresa ACTIVA que
+    // coincida exacto con el buzón — nunca NIT, razón social ni ningún otro
+    // dato. No cruza firmas: no acepta ningún parámetro que identifique un
+    // tenant u otra empresa, así que no hay firma que falsificar.
     expect(inventario).toEqual([
       'app.cerrar_sesion',
       'app.current_company_id',
+      'app.resolver_empresa_por_buzon',
       'app.revocar_sesiones_de_usuario',
       'app.sesion_actual',
       'app.tiene_permiso',

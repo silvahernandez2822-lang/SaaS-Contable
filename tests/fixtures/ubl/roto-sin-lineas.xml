@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  FIXTURE ROTO A PROPÓSITO: trae ID, fecha, emisor, adquirente, CUFE y
+  totales, pero CERO InvoiceLine. Caso de cuarentena `estructura_ubl_invalida`.
+-->
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+         xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+         xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:ID>SETP990000097</cbc:ID>
+  <cbc:UUID schemeName="CUFE-SHA384">0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a</cbc:UUID>
+  <cbc:IssueDate>2026-06-15</cbc:IssueDate>
+  <cac:AccountingSupplierParty>
+    <cac:Party>
+      <cac:PartyTaxScheme><cbc:CompanyID>900123456</cbc:CompanyID></cac:PartyTaxScheme>
+    </cac:Party>
+  </cac:AccountingSupplierParty>
+  <cac:AccountingCustomerParty>
+    <cac:Party>
+      <cac:PartyTaxScheme><cbc:CompanyID>800987654</cbc:CompanyID></cac:PartyTaxScheme>
+    </cac:Party>
+  </cac:AccountingCustomerParty>
+  <cac:LegalMonetaryTotal>
+    <cbc:PayableAmount currencyID="COP">100000.00</cbc:PayableAmount>
+  </cac:LegalMonetaryTotal>
+</Invoice>

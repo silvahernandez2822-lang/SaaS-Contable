@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  FIXTURE ROTO A PROPÓSITO: estructura por lo demás válida, pero SIN
+  cbc:UUID. Es el caso de cuarentena `cufe_faltante` — el motivo por el que
+  la sección 10.2 llama a esto "el caso crítico del que depende todo".
+-->
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+         xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+         xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:ID>SETP990000098</cbc:ID>
+  <cbc:IssueDate>2026-06-15</cbc:IssueDate>
+  <cac:AccountingSupplierParty>
+    <cac:Party>
+      <cac:PartyTaxScheme>
+        <cbc:CompanyID>900123456</cbc:CompanyID>
+      </cac:PartyTaxScheme>
+    </cac:Party>
+  </cac:AccountingSupplierParty>
+  <cac:AccountingCustomerParty>
+    <cac:Party>
+      <cac:PartyTaxScheme>
+        <cbc:CompanyID>800987654</cbc:CompanyID>
+      </cac:PartyTaxScheme>
+    </cac:Party>
+  </cac:AccountingCustomerParty>
+  <cac:LegalMonetaryTotal>
+    <cbc:PayableAmount currencyID="COP">100000.00</cbc:PayableAmount>
+  </cac:LegalMonetaryTotal>
+  <cac:InvoiceLine>
+    <cbc:ID>1</cbc:ID>
+    <cbc:LineExtensionAmount currencyID="COP">100000.00</cbc:LineExtensionAmount>
+    <cac:Item><cbc:Description>Línea sin impuestos (fixture roto)</cbc:Description></cac:Item>
+    <cac:Price><cbc:PriceAmount currencyID="COP">100000.00</cbc:PriceAmount></cac:Price>
+  </cac:InvoiceLine>
+</Invoice>

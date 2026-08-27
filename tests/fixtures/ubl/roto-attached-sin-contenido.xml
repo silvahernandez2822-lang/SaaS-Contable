@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  FIXTURE ROTO A PROPÓSITO: AttachedDocument sin cac:Attachment. Caso de
+  cuarentena `contenedor_sin_documento_interno`.
+-->
+<AttachedDocument xmlns="urn:oasis:names:specification:ubl:schema:xsd:AttachedDocument-2"
+                   xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:UBLVersionID>2.1</cbc:UBLVersionID>
+  <cbc:ID>AD-SETP990000096</cbc:ID>
+  <cbc:IssueDate>2026-06-15</cbc:IssueDate>
+</AttachedDocument>

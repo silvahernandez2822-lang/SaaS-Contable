@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  FIXTURE CONSTRUIDO A MANO, NO ES UNA CAPTURA DE PRODUCCIÓN. Ver
+  docs/reportes/ola1-a4.md. Referencia, vía BillingReference, el CUFE de
+  invoice-simple.xml — sirve para probar la resolución de
+  documento_referenciado_id en persistencia.ts.
+-->
+<CreditNote xmlns="urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2"
+            xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+            xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:UBLVersionID>2.1</cbc:UBLVersionID>
+  <cbc:CustomizationID>10</cbc:CustomizationID>
+  <cbc:ID>NC-SETP990000001</cbc:ID>
+  <cbc:UUID schemeName="CUFE-SHA384">755c9b5402d4ddd1bf8246542a0bacbd50ddeadca9ac82a517d888009a1e06a67b64a0e9d811f9001279ff3c25b90eb8</cbc:UUID>
+  <cbc:IssueDate>2026-06-20</cbc:IssueDate>
+  <cbc:CreditNoteTypeCode>91</cbc:CreditNoteTypeCode>
+  <cbc:DocumentCurrencyCode>COP</cbc:DocumentCurrencyCode>
+
+  <cac:BillingReference>
+    <cac:InvoiceDocumentReference>
+      <cbc:ID>SETP990000001</cbc:ID>
+      <cbc:UUID>b72bdb621c3e9ea07789eab738ada6fdbc37d7b81694472e54397c38d8b4fc65ea40182c21688f687bd7b71c30ba5932</cbc:UUID>
+    </cac:InvoiceDocumentReference>
+  </cac:BillingReference>
+
+  <cac:AccountingSupplierParty>
+    <cac:Party>
+      <cac:PartyTaxScheme>
+        <cbc:CompanyID schemeID="1" schemeName="31">900123456</cbc:CompanyID>
+        <cac:TaxScheme><cbc:ID>01</cbc:ID><cbc:Name>IVA</cbc:Name></cac:TaxScheme>
+      </cac:PartyTaxScheme>
+      <cac:PartyLegalEntity>
+        <cbc:RegistrationName>Proveedor Fixture SAS</cbc:RegistrationName>
+      </cac:PartyLegalEntity>
+    </cac:Party>
+  </cac:AccountingSupplierParty>
+
+  <cac:AccountingCustomerParty>
+    <cac:Party>
+      <cac:PartyTaxScheme>
+        <cbc:CompanyID schemeID="1" schemeName="31">800987654</cbc:CompanyID>
+        <cac:TaxScheme><cbc:ID>01</cbc:ID><cbc:Name>IVA</cbc:Name></cac:TaxScheme>
+      </cac:PartyTaxScheme>
+      <cac:PartyLegalEntity>
+        <cbc:RegistrationName>Empresa Cliente Fixture SAS</cbc:RegistrationName>
+      </cac:PartyLegalEntity>
+    </cac:Party>
+  </cac:AccountingCustomerParty>
+
+  <cac:TaxTotal>
+    <cbc:TaxAmount currencyID="COP">38000.00</cbc:TaxAmount>
+    <cac:TaxSubtotal>
+      <cbc:TaxableAmount currencyID="COP">200000.00</cbc:TaxableAmount>
+      <cbc:TaxAmount currencyID="COP">38000.00</cbc:TaxAmount>
+      <cac:TaxCategory>
+        <cbc:Percent>19.00</cbc:Percent>
+        <cac:TaxScheme><cbc:ID>01</cbc:ID><cbc:Name>IVA</cbc:Name></cac:TaxScheme>
+      </cac:TaxCategory>
+    </cac:TaxSubtotal>
+  </cac:TaxTotal>
+
+  <cac:LegalMonetaryTotal>
+    <cbc:LineExtensionAmount currencyID="COP">200000.00</cbc:LineExtensionAmount>
+    <cbc:TaxExclusiveAmount currencyID="COP">200000.00</cbc:TaxExclusiveAmount>
+    <cbc:TaxInclusiveAmount currencyID="COP">238000.00</cbc:TaxInclusiveAmount>
+    <cbc:PayableAmount currencyID="COP">238000.00</cbc:PayableAmount>
+  </cac:LegalMonetaryTotal>
+
+  <cac:CreditNoteLine>
+    <cbc:ID>1</cbc:ID>
+    <cbc:CreditedQuantity unitCode="EA">1</cbc:CreditedQuantity>
+    <cbc:LineExtensionAmount currencyID="COP">200000.00</cbc:LineExtensionAmount>
+    <cac:TaxTotal>
+      <cbc:TaxAmount currencyID="COP">38000.00</cbc:TaxAmount>
+      <cac:TaxSubtotal>
+        <cbc:TaxableAmount currencyID="COP">200000.00</cbc:TaxableAmount>
+        <cbc:TaxAmount currencyID="COP">38000.00</cbc:TaxAmount>
+        <cac:TaxCategory>
+          <cbc:Percent>19.00</cbc:Percent>
+          <cac:TaxScheme><cbc:ID>01</cbc:ID><cbc:Name>IVA</cbc:Name></cac:TaxScheme>
+        </cac:TaxCategory>
+      </cac:TaxSubtotal>
+    </cac:TaxTotal>
+    <cac:Item>
+      <cbc:Description>Devolución parcial de servicios de consultoría (fixture)</cbc:Description>
+    </cac:Item>
+    <cac:Price>
+      <cbc:PriceAmount currencyID="COP">200000.00</cbc:PriceAmount>
+    </cac:Price>
+  </cac:CreditNoteLine>
+</CreditNote>
