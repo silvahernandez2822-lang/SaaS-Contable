@@ -9,6 +9,7 @@
   },
   "scripts": {
     "migrate": "tsx src/db/migrate-cli.ts",
+    "seed": "tsx src/db/seed-cli.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:gates": "vitest run tests/gates",
