@@ -12,7 +12,7 @@
  */
 import ExcelJS from 'exceljs';
 import { centavosANumeroPesos, tarifaATextoPorcentaje, type CentavosEntrada } from './formato';
-import type { ColumnaDatos, LibroExcelSpec } from './tipos';
+import type { ColumnaDatos, HojaAdicional, LibroExcelSpec } from './tipos';
 
 const NOMBRE_HOJA_DATOS = 'Datos';
 const NOMBRE_HOJA_PAPEL = 'Papel de trabajo';
@@ -158,7 +158,55 @@ function construirHojaParametros(wb: ExcelJS.Workbook, spec: LibroExcelSpec): vo
   }
 }
 
-/** Arma el libro completo con las cuatro hojas obligatorias, en este orden fijo. */
+/**
+ * Hoja EXTRA (A10, Ola 3). Mismo formateo de celda que "Papel de trabajo"
+ * —moneda con la máscara de presentación, tarifa como texto— porque una hoja
+ * adicional es siempre una hoja para LEER: el crudo filtrable sigue estando
+ * en "Datos", que no cambia.
+ */
+function construirHojaAdicional(wb: ExcelJS.Workbook, hoja: HojaAdicional): void {
+  const ws = wb.addWorksheet(hoja.nombre);
+
+  for (const linea of hoja.encabezadoTexto ?? []) {
+    ws.addRow([linea]);
+  }
+  if ((hoja.encabezadoTexto ?? []).length > 0) ws.addRow([]);
+
+  const filaEncabezado = ws.addRow(hoja.columnas.map((c) => c.header));
+  filaEncabezado.font = { bold: true };
+  filaEncabezado.eachCell((celda) => {
+    celda.border = { bottom: { style: 'thin' } };
+  });
+
+  for (const filaCruda of hoja.filas) {
+    const fila = filaCruda as Record<string, unknown>;
+    const valores = hoja.columnas.map((c) => {
+      const valor = fila[c.key];
+      if (c.tipo === 'moneda') return centavosANumeroPesos(valor as CentavosEntrada);
+      if (c.tipo === 'porcentaje') return tarifaATextoPorcentaje(valor as string | null);
+      return valor ?? '';
+    });
+    const filaHoja = ws.addRow(valores);
+    hoja.columnas.forEach((c, i) => {
+      if (c.tipo === 'moneda') filaHoja.getCell(i + 1).numFmt = MASCARA_MONEDA;
+    });
+  }
+
+  if ((hoja.pie ?? []).length > 0) {
+    ws.addRow([]);
+    for (const linea of hoja.pie ?? []) ws.addRow([linea]);
+  }
+
+  ws.columns.forEach((col, i) => {
+    const ancho = hoja.columnas[i]?.width;
+    if (ancho) col.width = ancho;
+  });
+}
+
+/**
+ * Arma el libro completo con las cuatro hojas obligatorias, en este orden
+ * fijo, y a continuación las hojas adicionales que declare el spec (A10).
+ */
 export function construirLibroExcel(spec: LibroExcelSpec): ExcelJS.Workbook {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'contable-co';
@@ -167,6 +215,7 @@ export function construirLibroExcel(spec: LibroExcelSpec): ExcelJS.Workbook {
   construirHojaPapelDeTrabajo(wb, spec);
   construirHojaTrazabilidad(wb, spec);
   construirHojaParametros(wb, spec);
+  for (const hoja of spec.hojasAdicionales ?? []) construirHojaAdicional(wb, hoja);
   return wb;
 }
 

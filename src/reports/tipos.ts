@@ -69,6 +69,29 @@ export interface ResumenPapelDeTrabajo {
   filas: readonly unknown[];
 }
 
+/**
+ * Hoja EXTRA de un libro, añadida por A10 (Ola 3) para los estados
+ * financieros y las notas. No sustituye a ninguna de las cuatro obligatorias
+ * de la sección 11.2: se agrega DESPUÉS de ellas, y `construirLibroExcel`
+ * sigue creando siempre Datos, Papel de trabajo, Trazabilidad y Parámetros.
+ *
+ * Existe porque un juego de estados financieros no cabe en una tabla: la
+ * desagregación de cada rubro, el desglose de gastos por naturaleza y los
+ * papeles de trabajo de las revelaciones que el contador debe redactar son
+ * tablas distintas del mismo entregable, y partirlas en cinco archivos haría
+ * el trabajo del contador más difícil, no más fácil.
+ */
+export interface HojaAdicional {
+  nombre: string;
+  /** Líneas de texto que van sobre la tabla (título, instrucciones, advertencias). */
+  encabezadoTexto?: string[];
+  columnas: ColumnaDatos[];
+  /** Cualquier fila cuyas propiedades se lean por `columna.key` (se accede con un cast interno). */
+  filas: readonly unknown[];
+  /** Nota al pie, para lo que el contador debe completar a mano. */
+  pie?: string[];
+}
+
 /** Especificación completa de un libro exportado: las cuatro hojas obligatorias. */
 export interface LibroExcelSpec {
   encabezado: EncabezadoReporte;
@@ -81,4 +104,6 @@ export interface LibroExcelSpec {
   /** Nota que se muestra cuando `trazabilidad` está vacía a propósito (el reporte no calcula tributos). */
   trazabilidadNota?: string;
   parametros: FilaParametro[];
+  /** Hojas extra, después de las cuatro obligatorias (A10). */
+  hojasAdicionales?: HojaAdicional[];
 }
