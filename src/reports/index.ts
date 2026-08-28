@@ -11,3 +11,6 @@ export * from './encabezado';
 export * from './parametros';
 export * from './consulta';
 export * from './libros';
+
+// A10 (Ola 3): estados financieros y notas, sobre el mismo constructor de Excel.
+export * from './estados/index';

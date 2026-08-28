@@ -98,3 +98,8 @@ export type {
   FilaMunicipioIca,
   EditarMunicipioIcaInput,
 } from './parametrizacion';
+
+// A10 (Ola 3): cierre de las cuentas de resultado. Asiento NUEVO de tipo
+// `cierre`, publicado con `app.publicar_asiento`; nada se muta (Regla de Oro 1).
+export { cerrarCuentasDeResultado, saldosACerrar, claveCierre } from './cierre';
+export type { CerrarResultadosInput, CuentaCerrada, ResultadoCierre } from './cierre';
