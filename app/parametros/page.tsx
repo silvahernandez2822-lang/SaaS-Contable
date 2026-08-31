@@ -52,6 +52,12 @@ export default async function PaginaParametros() {
             ReteICA — catálogo de municipios, bases mínimas y tarifa general
           </Link>
         </li>
+        <li>
+          <Link href="/terceros">
+            Terceros — maestro de proveedores, atributos fiscales versionados y actividad económica
+            por municipio (cierre de V-17)
+          </Link>
+        </li>
       </ul>
 
       <h2>Todavía NO editables desde esta interfaz</h2>
@@ -61,7 +67,6 @@ export default async function PaginaParametros() {
       </p>
       <ul>
         <li>Plan de cuentas (PUC) completo y su mapeo a NIIF para PYMES.</li>
-        <li>Catálogo de terceros y sus atributos fiscales (declarante, autorretenedor, agente de retención...).</li>
         <li>Catálogo CIIU y catálogo de municipios (alta de identidad nueva; ver más abajo la edición de sus reglas de ICA).</li>
         <li>Matriz de agentes de retención de ReteIVA por tipo de tercero.</li>
         <li>Calendario tributario (vencimientos por año, obligación y último dígito de NIT).</li>

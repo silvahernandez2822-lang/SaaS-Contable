@@ -103,3 +103,43 @@ export type {
 // `cierre`, publicado con `app.publicar_asiento`; nada se muta (Regla de Oro 1).
 export { cerrarCuentasDeResultado, saldosACerrar, claveCierre } from './cierre';
 export type { CerrarResultadosInput, CuentaCerrada, ResultadoCierre } from './cierre';
+
+// A8 (cierre de V-17): maestro de terceros — crear/editar el tercero (no
+// versionado) y sus atributos fiscales / actividad económica (versionados).
+export {
+  crearTercero,
+  editarTercero,
+  obtenerTercero,
+  listarTerceros,
+  puedeEditarTerceros,
+  listarMunicipiosParaSelector,
+  listarCiiuParaSelector,
+  calcularDigitoVerificacionNit,
+  registrarAtributosFiscales,
+  listarHistorialAtributosFiscales,
+  fechaMinimaVigenciaAtributosFiscales,
+  simularImpactoAtributosFiscales,
+  registrarActividad,
+  listarActividadesVigentes,
+  listarHistorialActividad,
+  fechaMinimaVigenciaActividad,
+  simularImpactoActividad,
+  hoyIso as hoyIsoTerceros,
+  AtributoFiscalIncompletoError,
+  ContextoSinEmpresaError,
+  TerceroInvalidoError,
+  TerceroNoEncontradoError,
+} from './terceros';
+export type {
+  TipoDocumentoTercero,
+  DatosTercero,
+  FilaTercero,
+  OpcionCatalogo,
+  RegimenTributario,
+  FuenteAtributoFiscal,
+  AtributosFiscalesInput,
+  FilaAtributoFiscal,
+  ImpactoTercero,
+  ActividadInput,
+  FilaActividad,
+} from './terceros';
