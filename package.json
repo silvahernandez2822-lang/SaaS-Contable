@@ -11,6 +11,7 @@
     "arranque": "tsx src/bootstrap/arranque-cli.ts",
     "migrate": "tsx src/db/migrate-cli.ts",
     "seed": "tsx src/db/seed-cli.ts",
+    "datos-ejemplo": "tsx src/bootstrap/datos-ejemplo-cli.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:gates": "vitest run tests/gates",

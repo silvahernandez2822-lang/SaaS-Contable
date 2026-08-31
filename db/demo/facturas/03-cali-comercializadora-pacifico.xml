@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  DATO DE EJEMPLO — NO ES UNA CAPTURA DE PRODUCCIÓN.
+
+  Variante de `tests/fixtures/ubl/invoice-simple.xml` (A4, Ola 1), reutilizada
+  aquí como dato de DEMOSTRACIÓN para `npm run datos-ejemplo` (A1). Proveedor
+  persona jurídica declarante en Cali, con una base gravable de $80.000 —por
+  debajo de la base mínima de 2 UVT de servicios generales (Decreto 572 de
+  2025, sección 7.2)—, así que NO debe practicarse retefuente. Sí lleva IVA
+  del 19%, y ReteIVA NO tiene base mínima (sección 7.4): con esta factura se
+  ve que los dos ejes son independientes — cero retefuente, pero sí ReteIVA.
+
+  Cali es, además, uno de los tres municipios con `municipality_ica_rule`
+  cargada (sección 7.5), pero el concepto de causación que usa esta factura
+  NO activa ReteICA a propósito: la tarifa de Cali se resuelve por actividad
+  económica y esa tabla (Acuerdo 0321 de 2011) no está cargada todavía —
+  ver la lista de pendientes de verificación normativa. Encender ReteICA
+  aquí solo demostraría un bloqueo, no un cálculo; el tercero igual queda con
+  su actividad económica registrada en Cali para cuando esa tabla exista.
+
+  Ninguna tarifa, base ni UVT usada por el motor sale de este archivo.
+-->
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+         xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+         xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:UBLVersionID>2.1</cbc:UBLVersionID>
+  <cbc:CustomizationID>10</cbc:CustomizationID>
+  <cbc:ID>DEMO-0003</cbc:ID>
+  <cbc:UUID schemeName="CUFE-SHA384">c33ca2a0d273af141ab048fa210388885586765e2e2e658c6610ab217cac61da5a3162cb88510de9f1fe4e21ea8839dd</cbc:UUID>
+  <cbc:IssueDate>2026-08-12</cbc:IssueDate>
+  <cbc:IssueTime>11:15:00-05:00</cbc:IssueTime>
+  <cbc:InvoiceTypeCode>01</cbc:InvoiceTypeCode>
+  <cbc:DocumentCurrencyCode>COP</cbc:DocumentCurrencyCode>
+
+  <cac:AccountingSupplierParty>
+    <cac:Party>
+      <cac:PartyTaxScheme>
+        <cbc:CompanyID schemeID="1" schemeName="31">830111222</cbc:CompanyID>
+        <cac:TaxScheme>
+          <cbc:ID>01</cbc:ID>
+          <cbc:Name>IVA</cbc:Name>
+        </cac:TaxScheme>
+      </cac:PartyTaxScheme>
+      <cac:PartyLegalEntity>
+        <cbc:RegistrationName>Comercializadora del Pacifico SAS</cbc:RegistrationName>
+      </cac:PartyLegalEntity>
+    </cac:Party>
+  </cac:AccountingSupplierParty>
+
+  <cac:AccountingCustomerParty>
+    <cac:Party>
+      <cac:PartyTaxScheme>
+        <cbc:CompanyID schemeID="1" schemeName="31">800000000</cbc:CompanyID>
+        <cac:TaxScheme>
+          <cbc:ID>01</cbc:ID>
+          <cbc:Name>IVA</cbc:Name>
+        </cac:TaxScheme>
+      </cac:PartyTaxScheme>
+      <cac:PartyLegalEntity>
+        <cbc:RegistrationName>Empresa Cliente (la que usted creó con npm run arranque)</cbc:RegistrationName>
+      </cac:PartyLegalEntity>
+    </cac:Party>
+  </cac:AccountingCustomerParty>
+
+  <cac:TaxTotal>
+    <cbc:TaxAmount currencyID="COP">15200.00</cbc:TaxAmount>
+    <cac:TaxSubtotal>
+      <cbc:TaxableAmount currencyID="COP">80000.00</cbc:TaxableAmount>
+      <cbc:TaxAmount currencyID="COP">15200.00</cbc:TaxAmount>
+      <cac:TaxCategory>
+        <cbc:Percent>19.00</cbc:Percent>
+        <cac:TaxScheme>
+          <cbc:ID>01</cbc:ID>
+          <cbc:Name>IVA</cbc:Name>
+        </cac:TaxScheme>
+      </cac:TaxCategory>
+    </cac:TaxSubtotal>
+  </cac:TaxTotal>
+
+  <cac:LegalMonetaryTotal>
+    <cbc:LineExtensionAmount currencyID="COP">80000.00</cbc:LineExtensionAmount>
+    <cbc:TaxExclusiveAmount currencyID="COP">80000.00</cbc:TaxExclusiveAmount>
+    <cbc:TaxInclusiveAmount currencyID="COP">95200.00</cbc:TaxInclusiveAmount>
+    <cbc:PayableAmount currencyID="COP">95200.00</cbc:PayableAmount>
+  </cac:LegalMonetaryTotal>
+
+  <cac:InvoiceLine>
+    <cbc:ID>1</cbc:ID>
+    <cbc:InvoicedQuantity unitCode="EA">1</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount currencyID="COP">80000.00</cbc:LineExtensionAmount>
+    <cac:TaxTotal>
+      <cbc:TaxAmount currencyID="COP">15200.00</cbc:TaxAmount>
+      <cac:TaxSubtotal>
+        <cbc:TaxableAmount currencyID="COP">80000.00</cbc:TaxableAmount>
+        <cbc:TaxAmount currencyID="COP">15200.00</cbc:TaxAmount>
+        <cac:TaxCategory>
+          <cbc:Percent>19.00</cbc:Percent>
+          <cac:TaxScheme>
+            <cbc:ID>01</cbc:ID>
+            <cbc:Name>IVA</cbc:Name>
+          </cac:TaxScheme>
+        </cac:TaxCategory>
+      </cac:TaxSubtotal>
+    </cac:TaxTotal>
+    <cac:Item>
+      <cbc:Description>Mantenimiento locativo menor (dato de ejemplo)</cbc:Description>
+    </cac:Item>
+    <cac:Price>
+      <cbc:PriceAmount currencyID="COP">80000.00</cbc:PriceAmount>
+    </cac:Price>
+  </cac:InvoiceLine>
+</Invoice>

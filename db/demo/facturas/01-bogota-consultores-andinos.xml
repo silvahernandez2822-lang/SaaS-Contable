@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  DATO DE EJEMPLO — NO ES UNA CAPTURA DE PRODUCCIÓN.
+
+  Variante de `tests/fixtures/ubl/invoice-simple.xml` (A4, Ola 1), reutilizada
+  aquí como dato de DEMOSTRACIÓN para `npm run datos-ejemplo` (A1, encargo de
+  datos de ejemplo). Se le cambió el NIT del emisor (para que coincida con el
+  tercero "Consultores Andinos SAS" que crea ese comando), la fecha de emisión
+  (para caer dentro de la vigencia del Decreto 572 de 2025, vigente desde el
+  1-jul-2026) y el CUFE (un SHA-384 de relleno, sin validez criptográfica real
+  — igual que el original de A4, ver su advertencia en `docs/reportes/ola1-a4.md`).
+  Los montos ($1.000.000 + IVA 19%) se dejaron IDÉNTICOS al original a propósito:
+  producen el mismo resultado que el caso dorado 1 de la sección 12
+  (retefuente 4% + ReteIVA 15% sobre el IVA), así que sirven para verificar
+  a ojo que el motor calculó bien.
+
+  Ninguna tarifa, base ni UVT usada por el motor sale de este archivo: todas
+  las que aplique salen de las tablas paramétricas que carga `npm run seed`.
+-->
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+         xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+         xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:UBLVersionID>2.1</cbc:UBLVersionID>
+  <cbc:CustomizationID>10</cbc:CustomizationID>
+  <cbc:ID>DEMO-0001</cbc:ID>
+  <cbc:UUID schemeName="CUFE-SHA384">92d17d5e454bbe880bc24c942c85f6638a36c10a94f776b01180a41682331ab01a2c0dfa3e9556ef85c7355ac0aad9b6</cbc:UUID>
+  <cbc:IssueDate>2026-08-05</cbc:IssueDate>
+  <cbc:IssueTime>09:30:00-05:00</cbc:IssueTime>
+  <cbc:InvoiceTypeCode>01</cbc:InvoiceTypeCode>
+  <cbc:DocumentCurrencyCode>COP</cbc:DocumentCurrencyCode>
+
+  <cac:AccountingSupplierParty>
+    <cac:Party>
+      <cac:PartyTaxScheme>
+        <cbc:CompanyID schemeID="1" schemeName="31">900123456</cbc:CompanyID>
+        <cac:TaxScheme>
+          <cbc:ID>01</cbc:ID>
+          <cbc:Name>IVA</cbc:Name>
+        </cac:TaxScheme>
+      </cac:PartyTaxScheme>
+      <cac:PartyLegalEntity>
+        <cbc:RegistrationName>Consultores Andinos SAS</cbc:RegistrationName>
+      </cac:PartyLegalEntity>
+    </cac:Party>
+  </cac:AccountingSupplierParty>
+
+  <!-- El receptor no lo usa el motor de causación (la empresa la decide la
+       sesión, no este XML): se deja un NIT genérico de relleno. -->
+  <cac:AccountingCustomerParty>
+    <cac:Party>
+      <cac:PartyTaxScheme>
+        <cbc:CompanyID schemeID="1" schemeName="31">800000000</cbc:CompanyID>
+        <cac:TaxScheme>
+          <cbc:ID>01</cbc:ID>
+          <cbc:Name>IVA</cbc:Name>
+        </cac:TaxScheme>
+      </cac:PartyTaxScheme>
+      <cac:PartyLegalEntity>
+        <cbc:RegistrationName>Empresa Cliente (la que usted creó con npm run arranque)</cbc:RegistrationName>
+      </cac:PartyLegalEntity>
+    </cac:Party>
+  </cac:AccountingCustomerParty>
+
+  <cac:TaxTotal>
+    <cbc:TaxAmount currencyID="COP">190000.00</cbc:TaxAmount>
+    <cac:TaxSubtotal>
+      <cbc:TaxableAmount currencyID="COP">1000000.00</cbc:TaxableAmount>
+      <cbc:TaxAmount currencyID="COP">190000.00</cbc:TaxAmount>
+      <cac:TaxCategory>
+        <cbc:Percent>19.00</cbc:Percent>
+        <cac:TaxScheme>
+          <cbc:ID>01</cbc:ID>
+          <cbc:Name>IVA</cbc:Name>
+        </cac:TaxScheme>
+      </cac:TaxCategory>
+    </cac:TaxSubtotal>
+  </cac:TaxTotal>
+
+  <cac:LegalMonetaryTotal>
+    <cbc:LineExtensionAmount currencyID="COP">1000000.00</cbc:LineExtensionAmount>
+    <cbc:TaxExclusiveAmount currencyID="COP">1000000.00</cbc:TaxExclusiveAmount>
+    <cbc:TaxInclusiveAmount currencyID="COP">1190000.00</cbc:TaxInclusiveAmount>
+    <cbc:PayableAmount currencyID="COP">1190000.00</cbc:PayableAmount>
+  </cac:LegalMonetaryTotal>
+
+  <cac:InvoiceLine>
+    <cbc:ID>1</cbc:ID>
+    <cbc:InvoicedQuantity unitCode="EA">1</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount currencyID="COP">1000000.00</cbc:LineExtensionAmount>
+    <cac:TaxTotal>
+      <cbc:TaxAmount currencyID="COP">190000.00</cbc:TaxAmount>
+      <cac:TaxSubtotal>
+        <cbc:TaxableAmount currencyID="COP">1000000.00</cbc:TaxableAmount>
+        <cbc:TaxAmount currencyID="COP">190000.00</cbc:TaxAmount>
+        <cac:TaxCategory>
+          <cbc:Percent>19.00</cbc:Percent>
+          <cac:TaxScheme>
+            <cbc:ID>01</cbc:ID>
+            <cbc:Name>IVA</cbc:Name>
+          </cac:TaxScheme>
+        </cac:TaxCategory>
+      </cac:TaxSubtotal>
+    </cac:TaxTotal>
+    <cac:Item>
+      <cbc:Description>Servicios de consultoria contable (dato de ejemplo)</cbc:Description>
+    </cac:Item>
+    <cac:Price>
+      <cbc:PriceAmount currencyID="COP">1000000.00</cbc:PriceAmount>
+    </cac:Price>
+  </cac:InvoiceLine>
+</Invoice>
