@@ -1,7 +1,19 @@
 # ESTADO_PROYECTO.md
 
 > Memoria única entre sesiones. Todo agente lo lee al empezar y lo actualiza al terminar.
-> Última actualización: 2026-08-31 — **A14, compuerta de la Ola 3 (A9, A10, A11), SEGUNDA PASADA.
+> Última actualización: 2026-08-31 — **A14, compuerta del LOTE POSTERIOR A LA OLA 3 (V-17/A8, V-18/A11,
+> arranque y repaso 14.1/A12, datos de ejemplo/A1, entorno y despliegue/A15). Veredicto: LOTE APROBADO,
+> con tres vulnerabilidades encontradas por A14 y CORREGIDAS por A14 en la misma pasada (V-20, V-21,
+> V-22).** A14 no verificó por reporte: corrió la secuencia completa del README contra un PostgreSQL de
+> verdad (`migrate` → `seed` → `arranque` → `datos-ejemplo` → `next dev`), inició sesión con la
+> contraseña que imprimió el arranque y recorrió las cinco pantallas. Lo grave que encontró: la base de
+> datos **inventaba ocho de las nueve banderas fiscales** de un tercero por `DEFAULT false` (V-20), justo
+> lo que D-014 y la advertencia 17.5 prohíben; y su propio detector de la Regla de Oro 2 **no barría el
+> código ejecutable de la raíz** del repositorio, donde A15 acaba de poner `instrumentation.ts` (V-21).
+> Suite: **914 en verde** (45 archivos), typecheck limpio, `next build` exit 0. Ver «Compuerta del lote
+> posterior a la Ola 3 — veredicto de A14».
+>
+> Registro histórico: 2026-08-31 — **A14, compuerta de la Ola 3 (A9, A10, A11), SEGUNDA PASADA.
 > Veredicto: OLA 3 CERRADA. Con ella se cierra la última ola del proyecto.** En la primera pasada
 > (2026-08-30) A14 bloqueó por V-16: los veinte libros existían y eran correctos, pero **no había por
 > dónde descargarlos**. A9 entregó `GET /api/reportes/:libro` y la pantalla `/reportes`; A14 **no le creyó
@@ -1189,6 +1201,154 @@ cálculo: es que lo construido no tiene por dónde entregarse. Otro era un defec
 
 ---
 
+## Compuerta del lote posterior a la Ola 3 — veredicto de A14 (2026-08-31)
+
+**Lote verificado:** V-17 (A8, maestro de terceros), V-18 (A11, advertencias en el Excel), arranque del
+sistema + repaso de la sección 14.1 (A12), datos de ejemplo (A1), entorno/ANALYZE/despliegue (A15).
+Estado del repositorio al empezar: `7d6a133`, 902 pruebas.
+
+**Veredicto: LOTE APROBADO.** Los tres criterios de compuerta pasan con las correcciones de A14
+incorporadas: `npm test` **914 en verde** (45 archivos), `npm run typecheck` limpio, `npx next build`
+exit 0 (19 rutas). Nada se dio por bueno por reporte ajeno: todo lo de abajo se ejecutó.
+
+### Cómo se verificó (harness, para que se pueda repetir)
+
+No había PostgreSQL ni Docker en la máquina. A14 levantó **PGlite servido por el protocolo de cable de
+Postgres** (`@electric-sql/pglite-socket`, instalado en el scratchpad, **nunca** como dependencia del
+proyecto) y apuntó `DATABASE_URL` ahí, para que los comandos —que son procesos Node distintos—
+compartieran de verdad la misma base. **Limitación del adaptador, no del producto:** admite una sola
+conexión a la vez, así que para recorrer las pantallas hubo que bajar temporalmente `max: 5` a `max: 1`
+en `src/db/client.ts`; **ese cambio se revirtió** y no forma parte de la entrega.
+
+### La secuencia del README, corrida como la correría el usuario
+
+Sobre una base **vacía**, en el orden exacto del README y con los valores de ejemplo del propio README:
+
+| Paso | Resultado |
+|---|---|
+| `npm run migrate` | 36 migraciones aplicadas + `ANALYZE`. Mensaje final claro |
+| `npm run seed` | 19 archivos de seed. Ni un dato de demostración |
+| `npm run arranque -- --firma-nit=... --firma="Mi Firma Contable SAS" ...` | Firma, empresa, usuario y acceso creados. Contraseña impresa una sola vez. **Las comillas de PowerShell/npm sobreviven**: la razón social quedó completa en la base, no truncada en la primera palabra |
+| `npm run datos-ejemplo` | 5 terceros, 2 conceptos, 3 memorias y **3 facturas causadas**, las tres en borrador `pendiente_aprobacion` |
+| `npm run dev` + inicio de sesión real | `/entrar` 200; `/` sin sesión → 307; con la cookie de sesión: `/`, `/bandeja`, `/terceros`, `/parametros` y `/reportes` responden **200**. La bandeja muestra las tres facturas con su valor y su estado; `/terceros` muestra los cinco terceros |
+| `GET /api/reportes/libro-mayor` con sesión | **200**, `.xlsx` real de 9.869 bytes |
+
+**Los tres asientos de ejemplo son exactamente los que A1 declaró**, verificados contra
+`retention_applied` y `journal_line`, y **reproducidos idénticos** en una segunda base limpia después de
+aplicar la migración de V-20:
+
+| Factura | Retenciones | Asiento |
+|---|---|---|
+| Bogotá — Consultores Andinos SAS (PJ declarante) | Retefuente 4% = $40.000 · ReteIVA 15% = $28.500 | 5 partidas, saldo 0, `draft` |
+| Medellín — María Fernanda Ríos (PN **no** declarante) | Retefuente **6%** = $60.000 · ReteICA 2‰ = $2.000 | 4 partidas, saldo 0, `draft` |
+| Cali — Comercializadora del Pacífico SAS | **Sin retefuente** (base $80.000 < $104.748, motivo persistido y citando la norma) · ReteIVA $2.280 | 4 partidas, saldo 0, `draft` |
+
+**Ninguno queda aprobado ni publicado.** La aprobación sigue siendo humana.
+
+**Defecto de instructivo: ninguno bloqueante.** Dos asperezas menores, anotadas, no bloqueantes:
+`--env-file-if-exists` imprime *«.env.local not found. Continuing without it.»* dos veces en cada
+comando (ruido para quien no programa), y el arranque reejecutado termina diciendo «entre con ese correo
+y esa contraseña» aunque en ese camino no imprimió ninguna. **La fricción real está documentada y es
+correcta:** sin `DATABASE_URL` cada comando vive en su propia base desechable, y el README lo explica
+con el ejemplo exacto en su sección 1.
+
+### Los ocho puntos del encargo, uno por uno
+
+| # | Punto | Veredicto |
+|---|---|---|
+| 1 | **Arranque de A12: las cuatro afirmaciones** | **CONFIRMADAS, las cuatro, atacándolas.** (a) *No crea vía de confianza nueva*: es un CLI bajo `withAdminContext`, exige la misma credencial superusuario/BYPASSRLS que `migrate`; cero superficie de red. (b) *No emite sesión ni cookie*: no hay una sola llamada a `abrirSesion` en `src/bootstrap/arranque.ts`; el usuario entra por `iniciarSesion`. (c) *Idempotente por NIT y correo*: reejecutado, «ya existía, sin tocar» en las cuatro filas. (d) *Jamás reescribe la contraseña*: reejecutado **con una contraseña intrusa** — la original sigue siendo la única válida y la intrusa es rechazada. Además: **adoptar el correo de otra firma se aborta** («un usuario nunca cambia de firma»). Y el `current_tenant_id()` sale **del token verificado**: dos firmas creadas por el mismo comando, cada sesión ve su propio tenant, y **fijar `app.tenant_id`/`app.company_id` a mano dentro de la transacción no cambia nada** (sigue viendo 1 empresa, la suya) |
+| 2 | **Los dos huecos de auditoría** | **CERRADOS Y VERIFICADOS POR EL LADO HOSTIL.** Se descargó el libro mayor por HTTP y quedó **una** fila `EXPORT` en `audit_log` con reporte, empresa, usuario, `db_user`, IP, agente y parámetros. La prueba fuerte: se **revocó** `EXECUTE` sobre `app.registrar_exportacion` (a `PUBLIC` y a `app_user`) y la misma descarga devolvió **500 sin un solo byte de archivo** — «exportar sin auditar» no es un estado alcanzable, porque el rastro va en la misma transacción que la lectura. `third_party` audita: sus `INSERT` aparecen en `audit_log`. Y `app/api/reportes/[libro]/route.ts` es el **único** importador de `src/reports/` fuera de `tests/` |
+| 3 | **La partición de `tercero.editar`** | **BIEN IMPUESTA, en el motor y sobre la fila resultante.** Con usuarios reales de cada rol: el auxiliar **sigue creando terceros** (V-17 no se rompió); el auxiliar es rechazado con `SE002` al registrar atributos fiscales **y** actividad; el contador registra actividad pero es rechazado al fijar `tarifa_ica_override`, **tanto por `INSERT` como por `UPDATE`** (el trigger mira `NEW.tarifa_ica_override`, no el verbo); el administrador tributario sí puede; solo lectura no puede ni crear el tercero. El reparto en `role_permission` coincide exactamente con lo declarado |
+| 4 | **D-014: ningún atributo fiscal asumido** | **HUECO REAL ENCONTRADO — V-20, corregido por A14.** Las tres capas de A8 (tipo, servicio, HTML) son todas de aplicación y funcionan: el servicio rechaza con `AtributoFiscalIncompletoError`. Pero por SQL directo bajo `app_user`, con el permiso legítimo, **la base rellenaba ocho de las nueve banderas y el régimen** por `DEFAULT`. Ver la ficha de V-20 |
+| 5 | **V-18: las cuatro hojas obligatorias** | **PASA.** La comprobación es de A14 y **A11 no la tocó**: los **veinte** libros, con round-trip real a `.xlsx`, siguen teniendo `['Datos','Papel de trabajo','Trazabilidad','Parámetros']` como las cuatro primeras hojas y el mismo número de hojas al releer. `activeTab` **no reordena**: solo selecciona la pestaña |
+| 6 | **Los datos de ejemplo no contaminan** | **PASA.** `src/db/seed.ts` recorre `DEFAULT_SEEDS_DIR = db/seeds` y nada más; `db/demo/` solo lo lee `src/bootstrap/datos-ejemplo.ts`. Demostrado en vivo: `npm run seed` aplicó 19 seeds y **cero** terceros de ejemplo; los terceros y las facturas aparecieron solo tras `npm run datos-ejemplo`. La guarda `--forzar-agente-retencion` existe y es real: sin ella el comando no enciende `es_agente_retencion_iva/ica` de una empresa que ya tiene terceros propios |
+| 7 | **El worker y el `ANALYZE`** | **PASA, verificado en vivo, no por lectura.** Se encoló una factura **sin** drenar la cola (estado `pendiente`), se levantó `npm run dev` y **el propio proceso web la procesó**: `document_processing_job.tomado_por = "web-25000"` (el patrón `web-${process.pid}` de `worker-host.ts`), estado `completado`, y el asiento nuevo apareció. El hueco que A15 describe era real y está cerrado. El `ANALYZE` de los cuatro CLI es una sentencia suelta que solo toca estadísticas del planificador: los importes de las tres facturas de ejemplo salieron **idénticos** en las dos bases |
+| 8 | **El detector, reenvenenado** | **A15 NO tocó la salvaguarda** (`tests/adversarial/valores-tributarios.test.ts` no cambia desde `39603ab`, commit del propio A14) y su rediseño con enteros es legítimo. Reenvenenado contra los módulos nuevos: `src/bootstrap/` **sí lo caza** (`0.04` y `52374 * 2`, cinco reglas disparadas). `instrumentation.ts` **NO lo cazaba** → V-21, corregido por A14 |
+
+### Vulnerabilidades de esta pasada
+
+| Id | Qué es | Gravedad | Estado | De quién |
+|---|---|---|---|---|
+| V-20 | **La base de datos inventaba ocho de las nueve banderas fiscales de un tercero.** `third_party_fiscal_attribute` nació en la migración 005 con `DEFAULT false` en `es_autorretenedor_renta`, `es_gran_contribuyente`, `es_regimen_simple`, `es_responsable_iva`, `es_agente_retencion_renta/iva/ica`, `es_autorretenedor_ica`, y `DEFAULT 'ordinario'` en `regimen_tributario`. Solo `es_declarante_renta` —el caso que D-014 nombra— quedó sin valor por omisión. A14 lo comprobó por el camino que A8 no cubrió: un `INSERT` directo bajo `app_user` con el permiso legítimo `tercero.atributos_fiscales`, omitiendo ocho columnas, **grabó la vigencia con los ocho valores inventados**. `es_responsable_iva = false` suprime el ReteIVA; `es_regimen_simple = false` descarta el tratamiento del caso dorado 13 | **Media-alta.** No hay fuga ni corrupción del ledger, y las tres capas de aplicación de A8 tapan el camino de la interfaz. Lo grave es de qué clase es: es exactamente la advertencia 17.5 —«un valor inventado es peor que uno faltante: el faltante se ve, el inventado no»— pero impuesta (o no) por el motor, que es donde el proyecto pone el resto de sus invariantes | **CORREGIDA por A14** (`160_a14_v20_atributos_fiscales_sin_default.sql`): se quita el `DEFAULT` de las diez columnas; siguen `NOT NULL`, así que omitir una falla con `23502` en vez de suponer. **12 pruebas de regresión** en `tests/adversarial/evasion.test.ts`: una por columna omitida (todas rechazadas por PostgreSQL, no por TypeScript), el barrido del catálogo, y el control positivo de que declarándolas todas el `INSERT` pasa. Las tres llamadas de prueba que se apoyaban en el `DEFAULT` ahora declaran las nueve **a la vista** | el `DEFAULT` era de **A2** (mig. 005); la afirmación de «tres capas» era de **A8** |
+| V-21 | **El detector de la Regla de Oro 2 no barría el código ejecutable de la raíz del repositorio.** `DIRECTORIOS = ['src','app','db/migrations']` dejaba fuera todo archivo `.ts`/`.mjs` de la raíz. Hasta este lote no había ninguno; A15 introdujo el primero (`instrumentation.ts`, el hook que Next.js ejecuta en cada arranque del servidor) y `next.config.*` entra por la misma puerta. Demostrado envenenando `instrumentation.ts` con `const TARIFA_SERVICIOS = 0.04` y `const UVT_2026 = 5237400`: **el detector no vio nada** | **Baja hoy** (no hay ningún valor tributario ahí), **alta como infraestructura**: una salvaguarda con un punto ciego deja de avisar exactamente donde nadie mira | **CORREGIDA por A14**: `recolectarRaiz()` barre la raíz sin recursión, saltando ocultos y `next-env.d.ts`. Verificado reenvenenando: ahora **sí** lo caza (tres hallazgos, cinco reglas), y limpio vuelve a 42/42. Se añadió la aserción de cobertura `expect(...).toContain('instrumentation.ts')`, para que sacarlo del barrido tumbe la prueba | infraestructura de QA de **A14**; el punto ciego lo destapó **A15** |
+| V-22 | **`npm run dev` reescribe `CLAUDE.md`.** Next.js 16 inyecta por su cuenta un bloque `BEGIN:nextjs-agent-rules` dentro de `CLAUDE.md` en cada arranque del servidor de desarrollo (`node_modules/next/dist/server/lib/generate-agent-files.js`) y el texto que inserta **invita a comitearlo**. `CLAUDE.md` es el archivo de reglas del proyecto: que una dependencia lo modifique sola es una escritura no pedida sobre la fuente de instrucciones, y además le ensucia el `git status` a quien sigue el paso 2.7 del README sin saber programar. A15 lo detectó y lo revirtió a mano, pero no lo desactivó | **Baja como riesgo técnico**, **no despreciable como integridad**: el contenido de `CLAUDE.md` deja de estar bajo control de quien lo escribió | **CORREGIDA por A14**: `next.config.ts` con `agentRules: false`, comentado con el motivo. Verificado: `npm run dev` con esa configuración deja `CLAUDE.md` **intacto** (`git status` limpio) y `npx next build` sigue en exit 0 | era de **A15** |
+
+### Observaciones que NO son vulnerabilidades, pero quedan asignadas
+
+- **`company.es_agente_retencion_renta` nace en `true` y las de IVA/ICA en `false`** (defecto del esquema
+  002, hallazgo que **A1 dejó anotado** y no tocó). Es una postura tributaria asumida para una empresa
+  recién creada. A14 **no lo corrige** aquí porque, a diferencia de los atributos del tercero, es
+  configuración de la propia empresa que el operador conoce; pero es la misma familia que V-20 y merece
+  decisión explícita. **A2 + A12.**
+- **`app.registrar_exportacion` conserva el `EXECUTE` de `PUBLIC`** que Postgres otorga al crear la
+  función (la migración 140 solo añadió el `GRANT` a `app_user`). No es una elevación —la función no es
+  `SECURITY DEFINER` y exige `reporte.exportar` dentro— y es el mismo patrón que ya tienen
+  `app.exigir_permiso` y `app.registrar_acceso_denegado`, pero se aparta del `REVOKE ALL ... FROM PUBLIC`
+  con el que se blindó `app.abrir_sesion`. **A12**, si quiere uniformar la higiene.
+- **`datos-ejemplo` abre una sesión real del administrador** (`abrirSesion`, 8 h) para escribir bajo RLS
+  en vez de por `withAdminContext`, lo cual es **lo correcto**; pero esa sesión queda viva y no se
+  revoca al terminar el comando. Sin consecuencia práctica (el token muere con el proceso y la base solo
+  guarda su `sha256`). **A1**, si quiere cerrarla al salir.
+- **Nada impide que un seed de demostración acabe en `db/seeds/`.** La separación de A1 es correcta por
+  construcción, pero no hay una prueba que la ate como sí la hay para «los seeds son datos, no código».
+  **A14** en una pasada futura.
+
+### Los 20 casos dorados, uno por uno (reejecución de esta pasada)
+
+Ejecutados **todos**, no una muestra: `tests/golden/casos-dorados.test.ts` (26 pruebas: los 20 casos más
+seis variantes hostiles) + `tests/golden/caso19-memoria.test.ts` (8 pruebas) = **34 en verde, cero
+fallos**, más las 42 del detector de la Regla 2. Los casos 1, 2, 3, 8, 15, 17, 18 y 20 se reverificaron
+**además** contra un PostgreSQL real, fuera del harness de pruebas.
+
+| # | Veredicto de esta pasada | Evidencia |
+|---|---|---|
+| 1 | **PASA** | Retefuente $40.000 + ReteIVA $28.500. **Reproducido fuera del harness**: es la factura de Bogotá de los datos de ejemplo, con las mismas cifras al centavo en dos bases limpias distintas |
+| 2 | **PASA** | Retefuente **6%** = $60.000 con `tax_rule_id` distinta. **Reproducido fuera del harness** (María Fernanda Ríos, PN no declarante) |
+| 3 | **PASA** | No retiene bajo $104.748 y el motivo queda escrito. **Reproducido fuera del harness**: la factura de Cali persiste el motivo citando el Decreto 572/2025 y la base mínima en UVT y en pesos |
+| 4 | **PASA** | No retiene bajo $523.740, con motivo persistido |
+| 5 | **PASA** | $15.000, auditado contra su fila de `tax_rule` |
+| 6 | **PASA** | $22.000 desde el primer peso, con base mínima 0 **como dato**, no como excepción de código |
+| 7 | **PASA** | Inmueble no retiene; mueble por el mismo valor sí ($16.000) |
+| 8 | **PASA** | ReteICA 2‰ en Medellín. **Reproducido fuera del harness**: $2.000 sobre $1.000.000, norma «Acuerdo 066 de 2017 (Medellín)» |
+| 9 | **PASA en lo que discrimina** | Base de servicios de Cali $157.122 frente a $785.610 de Medellín. La magnitud de la tarifa por actividad sigue en **V-5** (dato normativo faltante, no inventado) |
+| 10 | **PASA** | Aplica la actividad ejercida **en Cali**, no la de Bogotá; más la variante de dos actividades en el mismo municipio |
+| 11 | **PASA** | La base es el **AIU** ($500.000), no el total |
+| 12 | **PASA** | ReteIVA al 100%; y sin regla de exterior parametrizada el motor manda a revisión en vez de inventar |
+| 13 | **PASA** | Régimen SIMPLE: sin política parametrizada el motor **no decide** |
+| 14 | **PASA** | Retención por concepto y agregada; trocear un concepto en dos líneas **no** esquiva la base mínima |
+| 15 | **PASA** | Reversa proporcional por asiento nuevo. **Reforzado fuera del harness**: sobre un asiento publicado de verdad, `UPDATE`, `DELETE`, `UPDATE`/`DELETE`/`INSERT` de partidas y `TRUNCATE` fallan todos con `LG001`, y el asiento queda idéntico (4 partidas, saldo 0, descripción intacta) |
+| 16 | **PASA** | Manda la fecha del hecho económico, con el borde exacto 30-jun / 1-jul |
+| 17 | **PASA** | Cambio de tarifa con vigencia futura: lo publicado no cambia y lo nuevo usa la tarifa nueva. Ningún módulo de este lote reabre la puerta: los reportes son de solo lectura y el arranque y los datos de ejemplo no escriben en `tax_rule` |
+| 18 | **PASA** | Diez pasadas de la cola, un solo asiento, la misma fotografía las diez. **Reforzado fuera del harness**: reingerir el mismo XML no crea un segundo documento (deduplicación por hash/CUFE) |
+| 19 | **PASA** | Segunda factura del mismo proveedor con la misma descripción escrita distinta → `origen = 'memoria'`, **`llamadasLlm = 0`**, `costoMicrosUsd = 0`, la mina de D-052 intacta y `globalThis.fetch` sin una sola llamada. Con **otro** proveedor sí vuelve a preguntar: la memoria no se contagia |
+| 20 | **PASA** | **Reverificado fuera del harness con dos firmas creadas por el arranque**: desde la sesión de la firma A, `company`, `tenant`, `third_party`, `journal_entry`, `journal_line`, `source_document`, `audit_log`, `retention_applied`, `approval`, `"user"` y `user_company_access` devuelven **solo lo propio**; la empresa de B por id → **0 filas**; asientos de otro tenant → **0 filas**; pedir la empresa de B como `companyId` → `EmpresaNoAutorizadaError` con rastro `ACCESO_DENEGADO`; y **fijar `app.tenant_id`/`app.company_id` a mano dentro de la transacción no mueve una sola fila** |
+
+**Pruebas adicionales de integridad de la §12, reejecutadas contra PostgreSQL real:**
+
+| Prueba | Resultado |
+|---|---|
+| Grep de literales con pinta de tarifa o UVT en el código fuente | **Cero hallazgos** en `src`, `app`, `db/migrations` **y ahora la raíz** (42 pruebas del detector). Verificado que el detector sigue vivo inyectando veneno en dos módulos nuevos |
+| `UPDATE`/`DELETE` sobre asiento publicado | **Falla en la BD** (`LG001`), en las cinco variantes, incluido `TRUNCATE` |
+| Inserción de asiento desbalanceado | **Falla en la BD** (`LG002`, «descuadra en 1 centavos») al publicar; nada persiste |
+| Consulta de un tenant desde la sesión de otro | **Cero filas**, por RLS, en las once tablas probadas |
+| Reprocesar la misma factura 10 veces | Asiento **idéntico** las diez |
+| Cambiar una tarifa en parametrización | No altera asientos publicados; sí aplica a hechos posteriores a la nueva vigencia |
+| Segunda factura del mismo proveedor con la misma descripción | **Cero llamadas al LLM** |
+
+### Hallazgos heredados: estado tras este lote
+
+| Id | Estado |
+|---|---|
+| V-1 | **CERRADA** desde `19237ec` (revocado el GRANT de más sobre `resolver_empresa_por_buzon`). No se reabrió |
+| V-5 | **SIGUE ABIERTA.** Faltan las tarifas de ReteICA por actividad de Bogotá y Cali. A1 hizo lo correcto: no las inventó, y los datos de ejemplo **no** encienden ReteICA en esos dos municipios para no simular un cálculo que no existe. **Verificación normativa humana** |
+| V-11 | **SIGUE ABIERTA** (la IP del cliente en la aprobación desde la bandeja). **A7 + A15** |
+| V-17 | **CERRADA por A8** y verificada por A14 (crear y editar tercero desde `/terceros`, con dirección y municipio exigidos). La afirmación de «tres capas independientes» era falsa en la capa que faltaba: ver **V-20** |
+| V-18 | **CERRADA por A11** y verificada por A14: las cuatro hojas obligatorias siguen siendo las cuatro primeras en los veinte libros y `activeTab` no reordena nada |
+| D-023 / D-024 | Sin cambios: abiertas por diseño, con su alcance medido |
+| MFA sin pantalla de inscripción · prueba de restauración de respaldos · simulacro de incidente · revisión jurídica | **Siguen pendientes**, tal como A12 las declaró. **A12** (interfaz de MFA), **A15** (restauración), **verificación humana** (jurídico) |
+
+---
+
 ## Convenciones establecidas
 
 **Estructura de carpetas**
@@ -1196,6 +1356,8 @@ cálculo: es que lo construido no tiene por dónde entregarse. Otro era un defec
 ```
 db/migrations/NNN_nombre.sql   Migraciones SQL numeradas, inmutables una vez aplicadas
 db/seeds/                      Datos paramétricos (A1). Datos, nunca código
+db/demo/                       Datos de EJEMPLO (A1). NUNCA los carga `npm run seed`; solo `npm run datos-ejemplo`
+src/bootstrap/                 Arranque del sistema y datos de ejemplo (A12/A1). Solo CLI, nunca HTTP
 src/domain/                    Motor de reglas, tipos de dominio. Sin I/O
 src/services/                  Casos de uso y transacciones (A6)
 src/ingest/                    Correo + parser UBL 2.1 (A4)
@@ -1204,6 +1366,8 @@ src/reports/                   Libros, Excel, estados financieros, exógena (A9/
 src/db/                        Cliente, runner de migraciones, contexto de sesion (A2 + A12)
 src/auth/                      Contrasenas, TOTP, cifrado, sesiones, permisos (A12)
 app/                           Next.js App Router: UI y route handlers
+instrumentation.ts             Hook de arranque de Next: lanza el worker de la cola (A15)
+next.config.ts                 Configuración de Next. Hoy solo `agentRules: false` (V-22)
 tests/                         Vitest. tests/golden/ = los 20 casos dorados
 docs/                          Cumplimiento, ADRs, contratos de API
 ```
@@ -1947,6 +2111,64 @@ sin broker, tal como exige la sección 5.
 
 ## Próximo paso
 
+**LOTE POSTERIOR A LA OLA 3 APROBADO por A14 (2026-08-31).** Verificado punta a punta contra un
+PostgreSQL real, corriendo la secuencia completa del README como la correría el usuario que no
+programa. Los tres criterios pasan con las correcciones de A14 incorporadas: **914 pruebas en verde**
+(45 archivos), typecheck limpio, `npx next build` exit 0 (19 rutas). Falta únicamente el **commit de
+cierre, que lo hace A0** (A14 no hace commits).
+
+Ficheros que A14 tocó en esta pasada:
+
+- `db/migrations/160_a14_v20_atributos_fiscales_sin_default.sql` — **nuevo**: quita el `DEFAULT` de las
+  diez columnas fiscales de `third_party_fiscal_attribute` (V-20).
+- `next.config.ts` — **nuevo**: `agentRules: false`, para que `npm run dev` deje de reescribir
+  `CLAUDE.md` (V-22).
+- `tests/adversarial/valores-tributarios.test.ts` — el barrido de la Regla de Oro 2 alcanza el código
+  ejecutable de la raíz del repositorio, con su aserción de cobertura (V-21).
+- `tests/adversarial/evasion.test.ts` — 12 pruebas de regresión de V-20.
+- `tests/helpers/fixtures.ts`, `tests/golden/_escenario.ts`, `tests/gates/arranque.test.ts` — las tres
+  llamadas que se apoyaban en el `DEFAULT` ahora declaran las nueve banderas a la vista.
+- `ESTADO_PROYECTO.md`.
+
+### Lo que queda abierto, con dueño
+
+Ninguno bloquea una compuerta; todos son deuda conocida antes de producción.
+
+| Qué | Quién | Gravedad |
+|---|---|---|
+| **V-11** — la aprobación desde la bandeja revienta si el despliegue no reenvía la IP del cliente | **A7** + **A15** | Media |
+| **V-5** — no hay tarifas de ReteICA por actividad para Bogotá ni Cali (dato normativo faltante, no inventado) | **verificación humana** + **A1** | Media (dato) |
+| `company.es_agente_retencion_*` con valor por defecto: la misma familia de V-20, en la empresa en vez de en el tercero | **A2** + **A12** | Baja-media |
+| No hay pantalla de inscripción de MFA: hoy el secreto lo siembra un operador | **A12** | Media antes de producción |
+| Prueba de restauración de respaldos (de ella depende la «reproducción exacta» del punto 13 de la 14.1) | **A15** | Alta antes de producción |
+| Simulacro de incidente y revisión jurídica de los documentos de habeas data | **humano** + **A12** | Alta antes de producción |
+| Prueba de carga de 5.000 facturas en cola (§12) | **A6** + **A13** + **A15** | Sin dueño efectivo desde la Ola 2 |
+| Datos normativos pendientes de verificación humana (ver su sección) | **humano** + **A1** | Alta antes de producción |
+
+### Advertencias que salen de esta verificación, para quien retome
+
+- **Tres capas de aplicación no son tres capas** (V-20). Si la garantía tiene que sostenerse, la última
+  capa es el motor: mientras la columna tenga `DEFAULT`, el `INSERT` que omite el dato no falla, lo
+  inventa. Un `DEFAULT` es la forma en que un dato faltante se vuelve invisible — exactamente lo que la
+  advertencia 17.5 prohíbe.
+- **Una salvaguarda solo cubre lo que enumera** (V-21). El detector de la Regla de Oro 2 barría tres
+  directorios; el primer archivo ejecutable que apareció fuera de ellos quedó invisible. Toda lista de
+  rutas necesita una aserción que se caiga cuando alguien saque algo de la lista.
+- **Una dependencia puede escribir en el archivo de reglas del proyecto** (V-22). `next dev` reescribía
+  `CLAUDE.md` en cada arranque e invitaba a comitearlo. Revertirlo a mano no es cerrarlo.
+- **Verificar «el usuario puede usarlo» exige correrlo, no leerlo.** El defecto de A15 (nadie ejecutaba
+  la cola en producción) solo se confirma viendo `document_processing_job.tomado_por = web-<pid>`
+  después de levantar el servidor de verdad.
+- **Con PGlite, cada comando sin `DATABASE_URL` vive en su propia base desechable.** Es correcto y está
+  documentado, pero es la primera piedra con la que tropieza quien no programa.
+
+---
+
+<details>
+<summary>Próximo paso tras la Ola 3 (histórico, superado por el lote posterior)</summary>
+
+### Próximo paso — cierre de la Ola 3 (histórico)
+
 **OLA 3 CERRADA por A14 (2026-08-31), en la segunda pasada. Con ella se cierra la última ola del plan de
 la sección 4.** Los dos criterios de salida pasan, más `npx next build`. Falta únicamente el **commit de
 cierre, que lo hace A0** (A14 no hace commits).
@@ -1989,6 +2211,11 @@ Ninguno bloquea una compuerta; todos son deuda conocida antes de producción.
   debe decidir qué pasa cuando el rango nuevo se cruza con uno anterior.
 - **Si una prueba con datos de verdad tarda de más, mide antes de acusar al diseño** (D-057): 159 s
   pasaron a 4 ms con un `ANALYZE`.
+
+---
+
+
+</details>
 
 ---
 

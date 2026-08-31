@@ -426,11 +426,19 @@ export async function crearTercero(
       ],
     );
     await tx.query(
+      // V-20: sin DEFAULT en la base (migración 160), las nueve banderas van
+      // explícitas. Las cuatro que este escenario no parametriza se declaran
+      // en `false` AQUÍ, a la vista, en vez de dejar que las invente el motor.
       `INSERT INTO third_party_fiscal_attribute
          (tenant_id, company_id, third_party_id, es_declarante_renta, es_responsable_iva,
           es_regimen_simple, es_autorretenedor_renta, regimen_tributario,
+          es_gran_contribuyente, es_agente_retencion_renta, es_agente_retencion_iva,
+          es_agente_retencion_ica, es_autorretenedor_ica,
           vigente_desde, vigente_hasta, norma_respaldo, fuente)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::date,$10::date,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,
+               false, false, false,
+               false, false,
+               $9::date,$10::date,
                'RUT aportado por el cliente (escenario de pruebas de A3)', 'rut')`,
       [
         e.tenantId,

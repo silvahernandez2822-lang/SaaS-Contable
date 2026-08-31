@@ -330,10 +330,18 @@ describe('B — Adjudicación de `tercero.editar` (migración 140)', () => {
       e.companyId,
       (tx) =>
         tx.query(
+          // V-20: la base ya no pone valores por omisión (migración 160).
           `INSERT INTO third_party_fiscal_attribute
              (tenant_id, company_id, third_party_id, es_declarante_renta,
+              es_autorretenedor_renta, es_gran_contribuyente, es_regimen_simple,
+              es_responsable_iva, es_agente_retencion_renta, es_agente_retencion_iva,
+              es_agente_retencion_ica, es_autorretenedor_ica, regimen_tributario,
               vigente_desde, vigente_hasta, norma_respaldo)
-           VALUES ($1, $2, $3, true, $4::date, $5::date, 'RUT del tercero')`,
+           VALUES ($1, $2, $3, true,
+                   false, false, false,
+                   false, false, false,
+                   false, false, 'ordinario',
+                   $4::date, $5::date, 'RUT del tercero')`,
           [e.tenantId, e.companyId, e.thirdPartyId, desde, hasta],
         ),
       { rolCodigo, sesionNueva: true },

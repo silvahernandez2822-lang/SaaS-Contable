@@ -83,8 +83,31 @@ function recolectar(dir: string, acumulado: Linea[]): void {
   }
 }
 
+/**
+ * Ola 4 (A14, V-21): el barrido por DIRECTORIOS dejaba fuera el codigo
+ * ejecutable que vive en la RAIZ del repositorio. A15 introdujo el primero
+ * (`instrumentation.ts`, el hook que Next.js ejecuta en cada arranque del
+ * servidor) y quedaba invisible para la Regla de Oro 2: se comprobo
+ * envenenandolo con `const TARIFA_SERVICIOS = 0.04` y el detector no lo vio.
+ * `next.config.*` entra por la misma puerta. Se recorre la raiz sin recursion
+ * (los directorios ya los cubre DIRECTORIOS) y saltando los archivos ocultos.
+ */
+function recolectarRaiz(acumulado: Linea[]): void {
+  for (const entrada of readdirSync(RAIZ)) {
+    if (entrada.startsWith('.')) continue;
+    const ruta = join(RAIZ, entrada);
+    if (statSync(ruta).isDirectory()) continue;
+    if (!EXTENSIONES.some((e) => entrada.endsWith(e))) continue;
+    if (entrada === 'next-env.d.ts') continue; // lo regenera Next, no es codigo del proyecto
+    sinComentarios(readFileSync(ruta, 'utf8')).forEach((texto, i) => {
+      if (texto.trim() !== '') acumulado.push({ archivo: entrada, numero: i + 1, texto });
+    });
+  }
+}
+
 const LINEAS: Linea[] = [];
 for (const d of DIRECTORIOS) recolectar(join(RAIZ, d), LINEAS);
+recolectarRaiz(LINEAS);
 
 function informar(hallazgos: Linea[]): string[] {
   return hallazgos.map((l) => `${l.archivo}:${l.numero}  ${l.texto.trim()}`);
@@ -408,6 +431,11 @@ describe('A14 · Regla de Oro 2 — ni un valor tributario quemado en el código
     // Y el cierre de resultados, que es el único código de la Ola 3 que
     // ESCRIBE en el ledger.
     expect([...LINEAS.map((l) => l.archivo)]).toContain('src/services/cierre.ts');
+    // Ola 4 (A14, V-21): el codigo ejecutable de la RAIZ tambien se barre.
+    // `instrumentation.ts` (A15) es el hook que Next.js corre en cada arranque
+    // del servidor: es codigo de produccion, y antes de esta prueba el barrido
+    // no lo alcanzaba. Si alguien lo saca del barrido, esto cae.
+    expect([...LINEAS.map((l) => l.archivo)]).toContain('instrumentation.ts');
     // Ola 2 (A14): `app/` ya existe y es la superficie con MÁS decimales
     // legítimos del repositorio (CSS, `step=`, `width=`). Que el barrido la
     // alcance de verdad no puede quedar implícito: si alguien la excluyera

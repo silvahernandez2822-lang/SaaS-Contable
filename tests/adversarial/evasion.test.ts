@@ -862,3 +862,91 @@ describe('A14 · barrido estructural de puertas laterales', () => {
     expect(huecos).toEqual([]);
   });
 });
+
+// =============================================================================
+// V-20 — el atributo fiscal que la BASE inventaba. CERRADA por A14 (mig. 160).
+//
+// A8 documentó en V-17 tres capas que impiden guardar un atributo fiscal sin
+// declararlo: el tipo de TypeScript, `requerirBooleano` en el servicio y los
+// radios sin `defaultChecked` en el formulario. Las tres viven en la
+// APLICACIÓN. A14 probó el cuarto camino — un INSERT directo bajo `app_user`
+// con el permiso legítimo, omitiendo columnas — y la base rellenaba OCHO de
+// las nueve banderas con `false` y el régimen con `'ordinario'`, en silencio.
+// D-014 y la advertencia 17.5 lo prohíben: un valor inventado en un motor
+// tributario es peor que uno faltante.
+// =============================================================================
+describe('A14 · V-20 — ninguna bandera fiscal tiene valor por omisión', () => {
+  const BANDERAS = [
+    'es_declarante_renta',
+    'es_autorretenedor_renta',
+    'es_gran_contribuyente',
+    'es_regimen_simple',
+    'es_responsable_iva',
+    'es_agente_retencion_renta',
+    'es_agente_retencion_iva',
+    'es_agente_retencion_ica',
+    'es_autorretenedor_ica',
+    'regimen_tributario',
+  ] as const;
+
+  it('el catálogo lo confirma: ni una sola de las diez columnas tiene DEFAULT', async () => {
+    const conDefault = await db.asAdmin(async (tx) => {
+      const { rows } = await tx.query<{ column_name: string; column_default: string | null }>(
+        `SELECT column_name, column_default
+           FROM information_schema.columns
+          WHERE table_name = 'third_party_fiscal_attribute'
+            AND column_default IS NOT NULL
+          ORDER BY column_name`,
+      );
+      return rows.map((r) => `${r.column_name} = ${r.column_default}`);
+    });
+    for (const bandera of BANDERAS) {
+      expect(conDefault.join(' | ')).not.toContain(`${bandera} =`);
+    }
+  });
+
+  it.each(BANDERAS)(
+    'un INSERT bajo app_user que omite «%s» falla en el motor, no se inventa el valor',
+    async (omitida) => {
+      const columnas = BANDERAS.filter((c) => c !== omitida);
+      const valores = columnas.map((c) => (c === 'regimen_tributario' ? `'ordinario'` : 'false'));
+      await rechazoConCodigo(
+        () =>
+          db.asTenant(
+            alfa.tenantId,
+            alfa.companyId,
+            (tx) =>
+              tx.query(
+                `INSERT INTO third_party_fiscal_attribute
+                   (tenant_id, company_id, third_party_id, ${columnas.join(', ')},
+                    vigente_desde, norma_respaldo)
+                 VALUES ($1, $2, $3, ${valores.join(', ')}, '2027-01-01', 'V-20')`,
+                [alfa.tenantId, alfa.companyId, alfa.thirdPartyId],
+              ),
+            { rolId: ROLES.ADMIN_TRIBUTARIO, sesionNueva: true },
+          ),
+        [SQLSTATE.NOT_NULL_VIOLATION],
+        `omitir ${omitida} en un INSERT directo de atributos fiscales`,
+      );
+    },
+  );
+
+  it('declarando las diez, el INSERT pasa: la guarda no rompe el camino legítimo', async () => {
+    const valores = BANDERAS.map((c) => (c === 'regimen_tributario' ? `'ordinario'` : 'false'));
+    const filas = await db.asTenant<{ rows: { id: string }[] }>(
+      alfa.tenantId,
+      alfa.companyId,
+      (tx) =>
+        tx.query<{ id: string }>(
+          `INSERT INTO third_party_fiscal_attribute
+             (tenant_id, company_id, third_party_id, ${BANDERAS.join(', ')},
+              vigente_desde, vigente_hasta, norma_respaldo)
+           VALUES ($1, $2, $3, ${valores.join(', ')}, '2015-01-01', '2019-12-31', 'V-20')
+           RETURNING id`,
+          [alfa.tenantId, alfa.companyId, alfa.thirdPartyId],
+        ),
+      { rolId: ROLES.ADMIN_TRIBUTARIO, sesionNueva: true },
+    );
+    expect(filas.rows).toHaveLength(1);
+  });
+});
