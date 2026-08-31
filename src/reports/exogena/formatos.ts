@@ -17,6 +17,16 @@
  * por defecto ni se omite la fila; se genera con lo que hay (en blanco) y se
  * reporta como bloqueo aparte, tanto en el objeto de retorno como en una
  * hoja "Bloqueos" del Excel.
+ *
+ * V-18: TODO generador de esta sección que devuelva `advertencias` (limitación
+ * de alcance del producto, no un error) las hace llegar al `workbook`, no solo
+ * al objeto de retorno y a la cabecera del plano: un bloque destacado en
+ * "Papel de trabajo" (`LibroExcelSpec.advertencias`) y una hoja "Advertencias"
+ * dedicada que queda ACTIVA al abrir el archivo (`hojaAdvertencias`,
+ * `hojasAdicionalesExogena`) — para que un contador que abre el Excel no
+ * confunda "no hubo operaciones" con "el producto no puede conocerlas
+ * estructuralmente" (p. ej. Formatos 1003 y 1006: este producto no procesa
+ * ventas).
  */
 import type ExcelJS from 'exceljs';
 import type { SqlClient } from '../../db/types';
@@ -104,10 +114,14 @@ function filaTercero(t: IdentificacionTercero | null): Record<string, unknown> {
 
 /** Hoja "Bloqueos": el Formato 1001 no se puede presentar en firme mientras
  * esta hoja tenga filas — se genera igual (no se detiene el archivo), pero
- * queda a la vista de quien lo revise. */
+ * queda a la vista de quien lo revise. `activarAlAbrir` (V-18): es la hoja
+ * que se ve al abrir el archivo cuando existe, por encima de cualquier hoja
+ * "Advertencias" general (un bloqueo de datos reales es más urgente que una
+ * limitación de alcance del producto). */
 function hojaBloqueos1001(incompletos: readonly TerceroIncompleto[]): HojaAdicional {
   return {
     nombre: 'Bloqueos',
+    activarAlAbrir: true,
     encabezadoTexto: [
       'Formato 1001 (art. 1.3.5.2.1 Res. 000227/2025): dirección y código de departamento/municipio ' +
         'son obligatorios para CADA tercero informado. Los terceros de esta hoja NO los tienen capturados: ' +
@@ -126,6 +140,48 @@ function hojaBloqueos1001(incompletos: readonly TerceroIncompleto[]): HojaAdicio
       faltaMunicipio: i.faltaMunicipio ? 'Sí' : 'No',
     })),
   };
+}
+
+/**
+ * Hoja "Advertencias" (V-18 — corrección de A14 sobre A11/A9). Las
+ * advertencias de alcance que cada generador ya devuelve en `advertencias`
+ * (p. ej. "este producto no procesa facturas de venta, así que el Formato
+ * 1003/1006 no tiene fuente automática completa") antes solo vivían en el
+ * objeto de retorno y en la cabecera del archivo plano; el Excel — que es
+ * justamente lo que un contador revisa antes de presentar — no las mostraba.
+ * Reutiliza `HojaAdicional` y `construirHojaAdicional` de A9/A10 tal cual,
+ * sin reimplementar nada: solo se agrega DESPUÉS de las cuatro hojas
+ * obligatorias, exactamente como cualquier otra hoja adicional, y queda
+ * marcada `activarAlAbrir` para que sea imposible de pasar por alto (ver
+ * `construirLibroExcel`).
+ */
+function hojaAdvertencias(advertencias: readonly string[]): HojaAdicional {
+  return {
+    nombre: 'Advertencias',
+    activarAlAbrir: true,
+    encabezadoTexto: [
+      'ADVERTENCIAS DE ALCANCE Y COBERTURA DE DATOS — léalas antes de presentar este formato.',
+      'Distinguen "no hubo operaciones de este tipo en el período" de "el producto no tiene, ' +
+        'estructuralmente, cómo conocerlas": son dos situaciones muy distintas y esta hoja existe para que ' +
+        'no se confundan.',
+    ],
+    columnas: [{ header: 'Advertencia', key: 'texto', width: 120 }],
+    filas: advertencias.map((texto) => ({ texto })),
+  };
+}
+
+/** `hojasAdicionales` común a todo formato de exógena: el bloqueo del 1001
+ * (si aplica) primero, y la hoja de advertencias de alcance (si el generador
+ * devolvió alguna) después. Si ambas existen, `hojaBloqueos1001` gana la
+ * pestaña activa por ir primero (ver `activarAlAbrir` en `tipos.ts`). */
+function hojasAdicionalesExogena(
+  advertencias: readonly string[],
+  tercerosIncompletos: readonly TerceroIncompleto[] = [],
+): HojaAdicional[] {
+  return [
+    ...(tercerosIncompletos.length > 0 ? [hojaBloqueos1001(tercerosIncompletos)] : []),
+    ...(advertencias.length > 0 ? [hojaAdvertencias(advertencias)] : []),
+  ];
 }
 
 async function terceroIdsDe(filas: readonly { terceroId: string | null }[]): Promise<string[]> {
@@ -206,7 +262,8 @@ export async function generarFormato1001(tx: SqlClient, rango: RangoExogena): Pr
     trazabilidadNota:
       'La regla y la vigencia de cada retención se consultan en el certificado de retenciones (sección 11.3); aquí se consolida el total por tercero para exógena.',
     parametros: [],
-    hojasAdicionales: tercerosIncompletos.length > 0 ? [hojaBloqueos1001(tercerosIncompletos)] : [],
+    advertencias,
+    hojasAdicionales: hojasAdicionalesExogena(advertencias, tercerosIncompletos),
   };
   const workbook = construirLibroExcel(spec);
   const plano = construirPlano('1001', columnasPlano, filas, advertencias);
@@ -270,6 +327,8 @@ export async function generarFormato1003(tx: SqlClient, rango: RangoExogena): Pr
     trazabilidad: [],
     trazabilidadNota: 'La regla y la vigencia de la autorretención se consultan en el certificado de retenciones.',
     parametros: [],
+    advertencias,
+    hojasAdicionales: hojasAdicionalesExogena(advertencias),
   };
   const workbook = construirLibroExcel(spec);
   const plano = construirPlano('1003', columnasPlano, filas, advertencias);
@@ -333,6 +392,8 @@ async function generarFormatoIva(
     trazabilidad: [],
     trazabilidadNota: 'El IVA se registra tal como llega en el documento fuente; no lo calcula el motor de retenciones (Regla de Oro 4).',
     parametros: [],
+    advertencias,
+    hojasAdicionales: hojasAdicionalesExogena(advertencias),
   };
   const workbook = construirLibroExcel(spec);
   const plano = construirPlano(formatoCodigo, columnasPlano, filas, advertencias);
@@ -392,6 +453,8 @@ export async function generarFormato1007(tx: SqlClient, rango: RangoExogena): Pr
     trazabilidad: [],
     trazabilidadNota: 'Los ingresos se toman del ledger ya asentado; no hay una regla tributaria que trazar aquí.',
     parametros: [],
+    advertencias,
+    hojasAdicionales: hojasAdicionalesExogena(advertencias),
   };
   const workbook = construirLibroExcel(spec);
   const plano = construirPlano('1007', columnasPlano, filas, advertencias);
@@ -461,6 +524,8 @@ async function generarFormatoSaldo(
     trazabilidad: [],
     trazabilidadNota: 'Saldo contable al corte; no hay una regla tributaria que trazar aquí.',
     parametros: [],
+    advertencias,
+    hojasAdicionales: hojasAdicionalesExogena(advertencias),
   };
   const workbook = construirLibroExcel(spec);
   const plano = construirPlano(formatoCodigo, columnasPlano, filas, advertencias);

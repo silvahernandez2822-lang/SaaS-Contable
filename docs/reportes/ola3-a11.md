@@ -160,3 +160,84 @@ Los siete núcleo de la sección 7.7, cada uno en `src/reports/exogena/formatos.
 trae bloqueo operativo activo (hoja "Bloqueos") mientras A8 no construya el maestro de terceros. Los
 formatos 1010, 1012, 2276, 2820/2833 quedan catalogados (A1) pero **no generables**: son trabajo nuevo
 de captura de datos que esta ola no alcanzó.
+
+---
+
+## Corrección V-18 (cierra) — las advertencias de alcance ahora llegan al Excel
+
+**El problema que dejó A14:** las advertencias de alcance (p. ej. "este producto no procesa
+facturas de venta, así que el Formato 1003/1006 no tiene fuente automática completa") vivían en el
+objeto `advertencias` que devuelve cada generador y en la cabecera del archivo plano, pero **no en
+el Excel** — que es justamente lo que el contador abre y revisa antes de presentar. Un contador que
+viera el 1003 o el 1006 con pocas filas o vacío no tenía forma de distinguir "no hubo esas
+operaciones" de "el sistema no puede conocerlas estructuralmente".
+
+### Qué se cambió
+
+No se reimplementó el constructor de cuatro hojas de A9 (`construirLibroExcel`,
+`src/reports/excel.ts`): se lo extendió con dos mecanismos, ambos opcionales y sin efecto si no se
+usan (por eso ningún libro de A9/A10 —diario, mayor, balance, certificados, ESF, ERI, ECP, EFE,
+notas— cambió de comportamiento):
+
+1. **Bloque destacado en "Papel de trabajo"** (`LibroExcelSpec.advertencias?: string[]`, nuevo campo
+   en `src/reports/tipos.ts`): si el spec trae advertencias, `construirHojaPapelDeTrabajo` las
+   escribe en rojo y negrita (`ADVERTENCIAS DE ALCANCE — LÉALAS ANTES DE PRESENTAR ESTE REPORTE`)
+   justo después del encabezado de empresa/NIT/período/responsable, antes de la tabla. Es la segunda
+   hoja del libro — la que sigue inmediatamente después de "Datos" — así que aparece sin que nadie
+   tenga que buscarla en una pestaña de más.
+2. **Hoja "Advertencias" dedicada, marcada como pestaña activa al abrir el archivo**
+   (`HojaAdicional.activarAlAbrir?: boolean`, también en `tipos.ts`): reutiliza tal cual la función
+   genérica `construirHojaAdicional` que A10 ya dejó construida (ninguna línea nueva de renderizado
+   de hoja); solo se agrega un `HojaAdicional` más a `hojasAdicionales`, exactamente por el mismo
+   mecanismo con el que A11 ya agregaba la hoja "Bloqueos" del Formato 1001. Lo nuevo es que
+   `construirLibroExcel` ahora, al terminar de armar todas las hojas, busca la PRIMERA hoja marcada
+   `activarAlAbrir` y fija `workbook.views = [{ ..., activeTab: <ese índice> }]`. Esto **no reordena
+   ninguna hoja** — las cuatro obligatorias siguen siendo siempre las cuatro primeras, en el mismo
+   orden — solo decide qué pestaña queda seleccionada cuando Excel abre el archivo. Si el Formato
+   1001 trae bloqueo de terceros Y advertencia general a la vez, gana "Bloqueos" (va primero en el
+   arreglo): un dato real faltante es más urgente que una limitación de alcance del producto.
+
+En `src/reports/exogena/formatos.ts` se agregó `hojaAdvertencias()` (construye el `HojaAdicional`
+"Advertencias" con el texto completo, una fila por advertencia) y `hojasAdicionalesExogena()` (arma
+`[Bloqueos si aplica, Advertencias si aplica]`), y los siete generadores ahora pasan `advertencias`
+y `hojasAdicionales: hojasAdicionalesExogena(...)` en su `LibroExcelSpec`. Se aplicó a **los siete**,
+no solo a 1003/1006, tal como se pidió: hoy 1005, 1007, 1008 y 1009 también tienen advertencias no
+vacías (identificación de cuenta de IVA por nombre, dependencia de `niif_mapping`, dependencia de
+`exogena_account_mapping`), y todas quedan igual de visibles.
+
+### Verificación de que no se rompió la estructura obligatoria (sección 11.2)
+
+- `tests/adversarial/compuerta-ola3-entregas.test.ts` (A14, no tocado) sigue verificando, sobre los
+  VEINTE libros de la Ola 3 incluidos los siete de A11, que `wb.worksheets.slice(0, 4).map(w =>
+  w.name)` sea exactamente `['Datos', 'Papel de trabajo', 'Trazabilidad', 'Parámetros']` — con
+  round-trip real a `.xlsx` — y sigue en verde.
+- Se agregaron pruebas propias de regresión: en `tests/reports/formato-excel.test.ts`
+  (`describe('construirLibroExcel — advertencias de alcance (V-18)')`, 6 pruebas) se verifica contra
+  `construirLibroExcel` en aislamiento: sin advertencias no aparece ningún bloque de más; con
+  advertencias el bloque en "Papel de trabajo" existe con la fuente en rojo/negrita; las cuatro hojas
+  obligatorias siguen siendo las cuatro primeras aunque haya `hojasAdicionales`; la hoja
+  `activarAlAbrir` queda como `workbook.views[0].activeTab`; sin ninguna hoja marcada no se fuerza
+  ninguna vista; y si dos hojas la piden, gana la primera en el orden declarado.
+- En `tests/reports/exogena.test.ts` (`describe('V-18 — ...')`, 3 pruebas) se verifica contra los
+  generadores reales, con base de datos PGlite: el Formato 1003 trae la hoja "Advertencias" con el
+  texto exacto de alcance (`/no procesa facturas de VENTA/`), después de las cuatro obligatorias, y
+  esa hoja queda activa al abrir; el Formato 1006 igual; y el Formato 1001, que además tiene bloqueo
+  de terceros real en el fixture, deja "Bloqueos" como pestaña activa por encima de "Advertencias".
+
+### Las tres compuertas de cierre (V-18)
+
+- `npm test` → **880 pruebas en verde** (871 previas + 9 nuevas: 6 en
+  `tests/reports/formato-excel.test.ts`, 3 en `tests/reports/exogena.test.ts`).
+- `npm run typecheck` → limpio.
+- `npx next build` → exit 0 (Next.js 16.3.3, Turbopack); no se tocó `app/`, así que las rutas
+  existentes siguen igual.
+
+### Formatos donde aplica
+
+Los siete generadores de `src/reports/exogena/formatos.ts` (`generarFormato1001`,
+`generarFormato1003`, `generarFormato1005`, `generarFormato1006`, `generarFormato1007`,
+`generarFormato1008`, `generarFormato1009`) ahora hacen llegar su `advertencias` al Excel por los dos
+canales descritos arriba. El mecanismo (`LibroExcelSpec.advertencias`, `HojaAdicional.activarAlAbrir`)
+queda disponible en `src/reports/tipos.ts`/`src/reports/excel.ts` para cualquier libro futuro de A9 o
+A10 que también necesite advertencias imposibles de pasar por alto — hoy los libros de A9/A10 no
+pasan ese campo, así que su comportamiento no cambió.

@@ -20,7 +20,9 @@ import { PermisoInsuficienteError } from '../../src/auth/permisos';
 import type { SqlClient } from '../../src/db/types';
 import {
   generarFormato1001,
+  generarFormato1003,
   generarFormato1005,
+  generarFormato1006,
   generarFormato1007,
   generarFormato1009,
 } from '../../src/reports/exogena/formatos';
@@ -215,6 +217,48 @@ describe('Formato 1007 — ingresos, resuelto contra niif_mapping', () => {
     const fila = salida.filas.find((f: any) => f.terceroId === e.thirdPartyId) as any;
     expect(fila).toBeDefined();
     expect(fila.valorIngreso).toBe((50_000_00).toString());
+  });
+});
+
+describe('V-18 — la advertencia de alcance (compras, no ventas) llega al Excel, no solo al objeto y al plano', () => {
+  it('Formato 1003: hoja "Advertencias" con el texto de alcance, activa al abrir, después de las cuatro obligatorias', async () => {
+    const salida = await db.asTenant(e.tenantId, e.companyId, (tx) => generarFormato1003(tx, RANGO));
+    expect(salida.advertencias.length).toBeGreaterThan(0);
+    const nombres = salida.workbook.worksheets.map((w) => w.name);
+    expect(nombres.slice(0, 4)).toEqual(HOJAS_OBLIGATORIAS);
+    expect(nombres).toContain('Advertencias');
+
+    const hojaAdvertencias = salida.workbook.getWorksheet('Advertencias')!;
+    const texto = hojaAdvertencias.getSheetValues().flat().map((v) => String(v ?? '')).join(' ');
+    expect(texto).toMatch(/no procesa facturas de VENTA/);
+
+    const indice = salida.workbook.worksheets.findIndex((w) => w.name === 'Advertencias');
+    expect(salida.workbook.views?.[0]?.activeTab).toBe(indice);
+
+    const papel = salida.workbook.getWorksheet('Papel de trabajo')!;
+    const textoPapel = papel.getSheetValues().flat().map((v) => String(v ?? '')).join(' ');
+    expect(textoPapel).toMatch(/ADVERTENCIAS DE ALCANCE/);
+    expect(textoPapel).toMatch(/no procesa facturas de VENTA/);
+  });
+
+  it('Formato 1006 (IVA generado): misma advertencia visible en el Excel', async () => {
+    const salida = await db.asTenant(e.tenantId, e.companyId, (tx) => generarFormato1006(tx, RANGO));
+    expect(salida.advertencias.some((a) => a.includes('no procesa facturas de VENTA'))).toBe(true);
+    const nombres = salida.workbook.worksheets.map((w) => w.name);
+    expect(nombres.slice(0, 4)).toEqual(HOJAS_OBLIGATORIAS);
+    expect(nombres).toContain('Advertencias');
+    const indice = salida.workbook.worksheets.findIndex((w) => w.name === 'Advertencias');
+    expect(salida.workbook.views?.[0]?.activeTab).toBe(indice);
+  });
+
+  it('Formato 1001: con bloqueo de terceros Y advertencia general, la hoja "Bloqueos" gana la pestaña activa', async () => {
+    const salida = await db.asTenant(e.tenantId, e.companyId, (tx) => generarFormato1001(tx, RANGO));
+    expect(salida.tercerosIncompletos.length).toBeGreaterThan(0);
+    const nombres = salida.workbook.worksheets.map((w) => w.name);
+    expect(nombres).toContain('Bloqueos');
+    expect(nombres).toContain('Advertencias');
+    const indiceBloqueos = salida.workbook.worksheets.findIndex((w) => w.name === 'Bloqueos');
+    expect(salida.workbook.views?.[0]?.activeTab).toBe(indiceBloqueos);
   });
 });
 

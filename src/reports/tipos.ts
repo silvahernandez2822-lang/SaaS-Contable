@@ -90,6 +90,20 @@ export interface HojaAdicional {
   filas: readonly unknown[];
   /** Nota al pie, para lo que el contador debe completar a mano. */
   pie?: string[];
+  /**
+   * A11 (V-18). Si es `true`, esta hoja queda como la pestaña ACTIVA al abrir
+   * el archivo (`workbook.views[0].activeTab`), aunque no sea la primera hoja
+   * del libro — las cuatro obligatorias de la sección 11.2 siempre van
+   * primero, en el mismo orden, sin excepción (A14 lo verifica exigiendo que
+   * sean exactamente las cuatro primeras). Esto es para advertencias de
+   * alcance que un contador debe ver sin tener que buscarlas: "el libro tiene
+   * pocas filas o ninguna" y "el producto no puede, estructuralmente, conocer
+   * esas operaciones" son dos situaciones muy distintas, y la segunda no
+   * puede quedar escondida en una pestaña de más. Si varias hojas la piden,
+   * gana la PRIMERA en el orden de `hojasAdicionales` (p. ej. un bloqueo de
+   * datos del Formato 1001 antes que una advertencia de alcance general).
+   */
+  activarAlAbrir?: boolean;
 }
 
 /** Especificación completa de un libro exportado: las cuatro hojas obligatorias. */
@@ -106,4 +120,14 @@ export interface LibroExcelSpec {
   parametros: FilaParametro[];
   /** Hojas extra, después de las cuatro obligatorias (A10). */
   hojasAdicionales?: HojaAdicional[];
+  /**
+   * A11 (V-18). Advertencias de alcance o cobertura de datos que el generador
+   * del reporte necesita que quien revisa el libro vea sin buscarlas — p. ej.
+   * "este producto no procesa facturas de venta, así que este formato no
+   * tiene fuente automática completa". Si se proveen, aparecen en un bloque
+   * destacado al inicio de "Papel de trabajo" (la segunda hoja, la que sigue
+   * al abrir el archivo desde "Datos"), además de cualquier hoja
+   * "Advertencias" dedicada que el llamador agregue a `hojasAdicionales`.
+   */
+  advertencias?: string[];
 }

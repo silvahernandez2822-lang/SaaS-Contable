@@ -187,3 +187,101 @@ describe('construirLibroExcel', () => {
     expect(buffer.subarray(0, 2).toString('utf8')).toBe('PK');
   });
 });
+
+// =============================================================================
+// V-18 — las advertencias de alcance llegan al Excel, no solo al objeto de
+// retorno ni a la cabecera del archivo plano.
+// =============================================================================
+
+describe('construirLibroExcel — advertencias de alcance (V-18)', () => {
+  it('sin advertencias, "Papel de trabajo" no agrega ningún bloque de más', () => {
+    const wb = construirLibroExcel(specMinimo());
+    const papel = wb.getWorksheet('Papel de trabajo')!;
+    const texto = papel.getSheetValues().flat().map((v) => String(v ?? '')).join(' ');
+    expect(texto).not.toMatch(/ADVERTENCIAS DE ALCANCE/);
+  });
+
+  it('con advertencias, aparecen destacadas en "Papel de trabajo" en rojo y negrita', () => {
+    const wb = construirLibroExcel(
+      specMinimo({ advertencias: ['Este reporte no cubre las ventas: el producto no las procesa.'] }),
+    );
+    const papel = wb.getWorksheet('Papel de trabajo')!;
+    const filas = papel.getSheetValues() as unknown[][];
+    const idxTitulo = filas.findIndex((f) => (f ?? []).some((c) => String(c ?? '').includes('ADVERTENCIAS DE ALCANCE')));
+    expect(idxTitulo).toBeGreaterThan(-1);
+    const filaTitulo = papel.getRow(idxTitulo);
+    expect(filaTitulo.font?.bold).toBe(true);
+    expect((filaTitulo.font as any)?.color?.argb).toBe('FFC00000');
+    const texto = filas.flat().map((v) => String(v ?? '')).join(' ');
+    expect(texto).toContain('Este reporte no cubre las ventas');
+  });
+
+  it('las cuatro hojas obligatorias siguen siendo las cuatro primeras aunque haya advertencias y hojas adicionales', () => {
+    const wb = construirLibroExcel(
+      specMinimo({
+        advertencias: ['Advertencia de alcance de prueba.'],
+        hojasAdicionales: [
+          {
+            nombre: 'Advertencias',
+            activarAlAbrir: true,
+            columnas: [{ header: 'Advertencia', key: 'texto', width: 100 }],
+            filas: [{ texto: 'Advertencia de alcance de prueba.' }],
+          },
+        ],
+      }),
+    );
+    expect(wb.worksheets.slice(0, 4).map((w) => w.name)).toEqual([
+      'Datos',
+      'Papel de trabajo',
+      'Trazabilidad',
+      'Parámetros',
+    ]);
+    expect(wb.worksheets.map((w) => w.name)).toContain('Advertencias');
+  });
+
+  it('la hoja marcada `activarAlAbrir` queda como la pestaña activa al abrir el archivo', () => {
+    const wb = construirLibroExcel(
+      specMinimo({
+        hojasAdicionales: [
+          {
+            nombre: 'Advertencias',
+            activarAlAbrir: true,
+            columnas: [{ header: 'Advertencia', key: 'texto', width: 100 }],
+            filas: [{ texto: 'x' }],
+          },
+        ],
+      }),
+    );
+    const indiceEsperado = wb.worksheets.findIndex((w) => w.name === 'Advertencias');
+    expect(indiceEsperado).toBeGreaterThan(-1);
+    expect(wb.views?.[0]?.activeTab).toBe(indiceEsperado);
+  });
+
+  it('sin ninguna hoja `activarAlAbrir`, no se fuerza ninguna pestaña activa', () => {
+    const wb = construirLibroExcel(specMinimo());
+    expect(wb.views ?? []).toHaveLength(0);
+  });
+
+  it('si dos hojas piden `activarAlAbrir`, gana la primera en el orden declarado', () => {
+    const wb = construirLibroExcel(
+      specMinimo({
+        hojasAdicionales: [
+          {
+            nombre: 'Bloqueos',
+            activarAlAbrir: true,
+            columnas: [{ header: 'x', key: 'x' }],
+            filas: [{ x: '1' }],
+          },
+          {
+            nombre: 'Advertencias',
+            activarAlAbrir: true,
+            columnas: [{ header: 'texto', key: 'texto' }],
+            filas: [{ texto: '2' }],
+          },
+        ],
+      }),
+    );
+    const indiceBloqueos = wb.worksheets.findIndex((w) => w.name === 'Bloqueos');
+    expect(wb.views?.[0]?.activeTab).toBe(indiceBloqueos);
+  });
+});

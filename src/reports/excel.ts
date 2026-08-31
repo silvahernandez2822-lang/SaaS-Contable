@@ -61,6 +61,17 @@ function construirHojaPapelDeTrabajo(
   hoja.addRow([`Generado el: ${e.generadoEn}`]);
   hoja.addRow([]);
 
+  if ((spec.advertencias ?? []).length > 0) {
+    const filaTituloAdv = hoja.addRow(['ADVERTENCIAS DE ALCANCE — LÉALAS ANTES DE PRESENTAR ESTE REPORTE']);
+    filaTituloAdv.font = { bold: true, size: 12, color: { argb: 'FFC00000' } };
+    for (const advertencia of spec.advertencias ?? []) {
+      const filaAdv = hoja.addRow([advertencia]);
+      filaAdv.font = { color: { argb: 'FFC00000' } };
+      filaAdv.alignment = { wrapText: true, vertical: 'top' };
+    }
+    hoja.addRow([]);
+  }
+
   const columnas = spec.resumenPapelDeTrabajo?.columnas ?? spec.columnasDatos;
   const filas = spec.resumenPapelDeTrabajo?.filas ?? spec.filasDatos;
 
@@ -215,7 +226,20 @@ export function construirLibroExcel(spec: LibroExcelSpec): ExcelJS.Workbook {
   construirHojaPapelDeTrabajo(wb, spec);
   construirHojaTrazabilidad(wb, spec);
   construirHojaParametros(wb, spec);
-  for (const hoja of spec.hojasAdicionales ?? []) construirHojaAdicional(wb, hoja);
+  // Índice (0-based) de la primera hoja adicional marcada `activarAlAbrir`
+  // (V-18): las cuatro obligatorias SIEMPRE quedan primero, en el mismo
+  // orden — esto solo decide qué pestaña queda SELECCIONADA al abrir el
+  // archivo, no reordena ninguna hoja.
+  let indiceHojaActiva: number | null = null;
+  for (const hoja of spec.hojasAdicionales ?? []) {
+    construirHojaAdicional(wb, hoja);
+    if (hoja.activarAlAbrir && indiceHojaActiva === null) indiceHojaActiva = wb.worksheets.length - 1;
+  }
+  if (indiceHojaActiva !== null) {
+    wb.views = [
+      { x: 0, y: 0, width: 10000, height: 20000, firstSheet: 0, activeTab: indiceHojaActiva, visibility: 'visible' },
+    ];
+  }
   return wb;
 }
 
