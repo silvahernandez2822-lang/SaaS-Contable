@@ -83,6 +83,37 @@ export function claveCierre(desde: string, hasta: string): string {
 }
 
 /**
+ * Se pidió cerrar un rango que SE SOLAPA con un ejercicio ya cerrado.
+ *
+ * V-15 (hallazgo de A14 en la compuerta de la Ola 3). `idempotency_key`
+ * protege contra cerrar dos veces EL MISMO rango, pero no contra cerrar
+ * 01-jun→30-jun y después 15-jun→30-jun: las claves son distintas, así que la
+ * idempotencia no dispara, y como `saldosACerrar` excluye los asientos de
+ * tipo `cierre` para poder ser repetible, el segundo cierre vuelve a ver los
+ * mismos ingresos y gastos y los cancela OTRA VEZ. Medido: la cuenta de
+ * ingresos quedaba con saldo DÉBITO y el resultado del ejercicio en cero.
+ * Como el ledger es inmutable (Regla de Oro 1), deshacerlo exige una reversa.
+ *
+ * Por eso el solape se rechaza ANTES de escribir nada. Si de verdad hay que
+ * cerrar un rango distinto, primero se reversa el cierre anterior.
+ */
+export class CierreSolapadoError extends Error {
+  constructor(
+    readonly journalEntryId: string,
+    readonly rangoExistente: { desde: string; hasta: string },
+    readonly rangoPedido: { desde: string; hasta: string },
+  ) {
+    super(
+      `CIERRE_SOLAPADO: el ejercicio ${rangoPedido.desde} a ${rangoPedido.hasta} se solapa con el cierre ya publicado ` +
+        `${rangoExistente.desde} a ${rangoExistente.hasta} (asiento ${journalEntryId}). Cerrarlo otra vez cancelaría ` +
+        'por segunda vez las mismas cuentas de resultado. Si el cierre anterior estuvo mal, corríjalo con un asiento ' +
+        'de reversa (Regla de Oro 1) antes de volver a cerrar.',
+    );
+    this.name = 'CierreSolapadoError';
+  }
+}
+
+/**
  * Saldos de las cuentas de resultado del ejercicio, EXCLUYENDO los asientos de
  * cierre ya publicados. Esa exclusión es lo que hace el cierre repetible sin
  * duplicar: si el ejercicio ya se cerró, el segundo intento ve saldo cero.
@@ -180,6 +211,33 @@ export async function cerrarCuentasDeResultado(
     [clave],
   );
   if (yaExiste[0]) return { estado: 'ya_cerrado', journalEntryId: yaExiste[0].id };
+
+  // V-15 (A14): el mismo rango ya se descartó arriba; lo que queda por
+  // descartar es un rango DISTINTO que se solape con uno ya cerrado. El rango
+  // cerrado vive en la propia clave de idempotencia (`cierre:<desde>:<hasta>`),
+  // que es dato del asiento, no un estado paralelo que pudiera desincronizarse.
+  const { rows: solapados } = await tx.query<{ id: string; desde: string; hasta: string }>(
+    `SELECT id,
+            split_part(idempotency_key, ':', 2) AS desde,
+            split_part(idempotency_key, ':', 3) AS hasta
+       FROM journal_entry
+      WHERE company_id = app.current_company_id()
+        AND tipo = 'cierre'
+        AND estado = 'posted'
+        AND idempotency_key ~ '^cierre:[0-9]{4}-[0-9]{2}-[0-9]{2}:[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+        AND split_part(idempotency_key, ':', 2)::date <= $2::date
+        AND split_part(idempotency_key, ':', 3)::date >= $1::date
+      ORDER BY posted_at
+      LIMIT 1`,
+    [input.desde, input.hasta],
+  );
+  if (solapados[0]) {
+    throw new CierreSolapadoError(
+      solapados[0].id,
+      { desde: solapados[0].desde, hasta: solapados[0].hasta },
+      { desde: input.desde, hasta: input.hasta },
+    );
+  }
 
   const { aCerrar, sinClasificar } = await saldosACerrar(tx, input);
   if (aCerrar.length === 0) {

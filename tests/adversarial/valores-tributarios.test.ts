@@ -391,6 +391,23 @@ describe('A14 · Regla de Oro 2 — ni un valor tributario quemado en el código
     for (const esperado of ['src/domain', 'src/ingest', 'src/services', 'db/migrations']) {
       expect([...modulos]).toContain(esperado);
     }
+    // Ola 3 (A14, D-062): `src/reports` es la superficie con MÁS formato
+    // numérico del repositorio (máscaras de Excel, layouts de ancho fijo,
+    // conversión de tarifa a porcentaje). Es donde un literal con pinta de
+    // tarifa tiene la mejor coartada, así que el barrido tiene que alcanzarla
+    // de forma DEMOSTRADA y no por casualidad de la recursión. A14 reenvenenó
+    // los tres subdirectorios y el detector cazó las seis muestras (solo
+    // `ANCHO_NIT = 20`, que no es tributario, sobrevivió, como debe ser).
+    const archivosDeReports = new Set(
+      LINEAS.filter((l) => l.archivo.startsWith('src/reports/')).map((l) => l.archivo),
+    );
+    expect(archivosDeReports.size).toBeGreaterThan(10);
+    for (const ruta of ['src/reports/excel.ts', 'src/reports/estados/', 'src/reports/exogena/']) {
+      expect([...archivosDeReports].some((a) => a.startsWith(ruta))).toBe(true);
+    }
+    // Y el cierre de resultados, que es el único código de la Ola 3 que
+    // ESCRIBE en el ledger.
+    expect([...LINEAS.map((l) => l.archivo)]).toContain('src/services/cierre.ts');
     // Ola 2 (A14): `app/` ya existe y es la superficie con MÁS decimales
     // legítimos del repositorio (CSS, `step=`, `width=`). Que el barrido la
     // alcance de verdad no puede quedar implícito: si alguien la excluyera

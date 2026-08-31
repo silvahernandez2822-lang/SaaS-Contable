@@ -1,7 +1,18 @@
 # ESTADO_PROYECTO.md
 
 > Memoria única entre sesiones. Todo agente lo lee al empezar y lo actualiza al terminar.
-> Última actualización: 2026-08-27 — **A14, compuerta de la Ola 2 (A5, A7, A8, A13). Veredicto: OLA 2
+> Última actualización: 2026-08-30 — **A14, compuerta de la Ola 3 (A9, A10, A11). Veredicto: OLA 3
+> BLOQUEADA por un solo motivo, y no es de cálculo.** El criterio de salida más duro —«el balance de
+> prueba cuadra contra la suma del ledger, comprobado por A14 con datos generados aleatoriamente»—
+> **PASA**: A14 generó **10.000 asientos aleatorios (39.983 partidas)** y el balance cuadra **al centavo**
+> contra las tablas crudas y contra lo generado en memoria, en los **cinco** niveles del PUC, grupo por
+> grupo, saldo inicial incluido. Lo que **no** pasa es el otro criterio: «todo reporte **se descarga** en
+> Excel». **Hoy no hay por dónde descargar nada**: los veinte libros de la ola no los invoca ni una ruta
+> ni una pantalla (V-16). Además A14 encontró y **corrigió** un defecto real del cierre de resultados que
+> duplicaba la cancelación de las cuentas de resultado (V-15). Suite: **806 en verde** (41 archivos),
+> typecheck limpio, `next build` exit 0.
+>
+> Registro histórico: 2026-08-27 — **A14, compuerta de la Ola 2 (A5, A7, A8, A13). Veredicto: OLA 2
 > CERRADA.** Los tres criterios de salida de la sección 4 pasan, verificados **por la interfaz real** y
 > con instrumentos propios de A14 (una mina en vez de un contador, un espía de `fetch`, 30 empresas de
 > verdad y 50 aprobaciones de un golpe). En el camino A14 **refutó** el acotamiento que A8 le había
@@ -16,6 +27,15 @@
 | **0 — Fundaciones** | A2, A12, A14 | **PASA las cuatro pruebas**, verificadas de forma independiente por A14 con pruebas propias (`tests/adversarial/`) | *pendiente — lo pone A0* | 2026-08-26 |
 | **1 — Núcleo del dominio** | A1, A3, A4, A6, A14 | **PASA los cuatro criterios**, verificados de forma independiente por A14 con pruebas propias. Bloqueada primero por V-4 y V-6, cerrados por A1 en `ffaf3db` y **reverificados** por A14 sin creerle al reporte. Ver «Compuerta de la Ola 1 — veredicto de A14» | *pendiente — lo pone A0* | 2026-08-27 |
 | **2 — Inteligencia, parametrización e interfaz** | A5, A7, A8, A13, A14 | **PASA los tres criterios**, verificados por A14 **por la interfaz real** (`tests/adversarial/compuerta-ola2-interfaz.test.ts`) y con instrumentos propios (`tests/adversarial/compuerta-ola2.test.ts`). Dos defectos reales encontrados y **corregidos por A14** (D-049, D-050); uno declarado y asignado (V-11). Ver «Compuerta de la Ola 2 — veredicto de A14» | *pendiente — lo pone A0* | 2026-08-27 |
+
+**Ola 3: NO CERRADA. BLOQUEADA por A14 (2026-08-30).** La construcción está hecha y es sólida: 20 libros
+Excel (8 de A9, 5 de A10, 7 de A11), los cuatro estados financieros, el cierre de resultados y siete
+formatos de exógena, todo con las cuatro hojas obligatorias de la §11.2 y sin un solo valor tributario
+quemado. El bloqueo es de **entrega, no de cálculo**: no existe ninguna ruta de Next ni ninguna pantalla
+que produzca la descarga, y el criterio de salida dice literalmente «todo reporte **se descarga** en
+Excel». Es el mismo estándar que A14 fijó en la Ola 2 (D-056: la compuerta se prueba por la interfaz, no
+por la capa de servicios). Le toca a **A9** (route handler) y a **A8** (la pantalla). Ver
+«Compuerta de la Ola 3 — veredicto de A14».
 
 **Ola 1: CERRADA por A14, en la segunda pasada.** En la primera, la compuerta quedó **bloqueada**: con el
 repositorio tal como se entregaba, `rounding_rule` estaba vacía y no había ni una regla de ReteICA, de
@@ -945,6 +965,93 @@ donde vive el contador hostil.
 
 ---
 
+## Decisiones de QA adversarial de A14 (compuerta de la Ola 3)
+
+### D-057 — El criterio de los 10.000 asientos se comprueba contra las TABLAS CRUDAS, no contra la vista; y exige `ANALYZE`
+
+**Problema:** A9 cierra el criterio de la §12 comparando `balanceDePrueba` con `sumaDirectaLedger`. Las
+dos leen la **misma** vista `v_journal_line_reporte`. Esa comparación no puede fallar por la razón que el
+criterio persigue: si la vista perdiera filas —y hace un **INNER JOIN con `account`**, que es la forma
+clásica de perderlas—, ambas perderían las mismas y el reporte seguiría «cuadrando» contra sí mismo.
+
+**Decidido:** la comprobación de A14 usa **tres** fuentes: (1) el balance, (2) `journal_line JOIN
+journal_entry` **crudas** y (3) lo que el propio generador de datos acumuló **en memoria**. Y compara
+**grupo por grupo** en los cinco niveles del PUC, incluido el saldo inicial, no solo el gran total: un
+total correcto con dos grupos intercambiados no pasa. Se conserva además la comparación circular de A9,
+para que si algún día divergen se vea cuál de las dos cambió.
+
+**Y una condición de ejecución que no es un truco:** la carga masiva termina con `ANALYZE`. A14 midió que
+sin estadísticas el `JOIN` bajo RLS degenera en bucle anidado y crece cuadráticamente (10 s / 39 s / 159 s
+con 2.000 / 4.000 / 8.000 partidas; **4 ms** tras `ANALYZE`). No es la RLS: la misma consulta sin JOIN va
+en 3 ms bajo RLS, y `count(*)` con las mismas funciones de sesión en el `WHERE` va en 1 ms. Es el
+planificador sin estadísticas. Cualquier PostgreSQL real lo hace por autovacuum; tras una carga masiva hay
+que hacerlo a mano. **Consecuencia para A15**, anotada en la propia prueba.
+
+### D-058 — La idempotencia por clave no cubre el solape. El cierre de ejercicio necesitaba las dos cosas
+
+**Problema (V-15):** `cerrarCuentasDeResultado` es idempotente por `idempotency_key =
+cierre:<desde>:<hasta>`, y eso está bien: cerrar diez veces el mismo ejercicio deja un asiento. Pero
+`saldosACerrar` **excluye los asientos de tipo `cierre`** precisamente para poder repetirse — y esa misma
+exclusión hace que un cierre de un rango **distinto pero solapado** vuelva a ver los ingresos y gastos ya
+cancelados y los cancele **otra vez**. A14 lo midió: tras cerrar 01-jun→30-jun y luego 15-jun→30-jun, la
+cuenta de ingresos quedaba con **saldo débito** y el resultado del ejercicio en **cero**. Nada de eso se
+puede deshacer editando: el ledger es inmutable.
+
+**Decidido y corregido por A14:** antes de escribir nada, `cerrarCuentasDeResultado` rechaza con
+`CierreSolapadoError` un rango que se solape con el de un asiento de cierre **ya publicado**. El rango del
+cierre anterior **no se guarda en ninguna tabla nueva**: se lee de la propia `idempotency_key` del
+asiento, que ya es dato del ledger. Un estado paralelo que dijera «hasta dónde está cerrado» podría
+desincronizarse del ledger; la clave del asiento, no.
+
+**Por qué rechazar y no «cerrar solo la diferencia»:** porque cuál es la diferencia es una decisión
+contable, no aritmética. Si el cierre anterior estuvo mal, la Regla de Oro 1 ya dice qué hacer: se
+reversa y se vuelve a cerrar. El mensaje del error lo dice con esas palabras.
+
+### D-059 — Un entregable que no se puede descargar no cumple «se descarga». Se aplica el mismo estándar que en la Ola 2
+
+**Problema (V-16):** la Ola 3 entrega veinte libros correctos, con sus cuatro hojas, que serializan a
+`.xlsx` válido — y a los que **nadie puede llegar**: cero importadores de `src/reports/` fuera de las
+pruebas, ninguna ruta, ninguna pantalla.
+
+**Decidido:** se bloquea la ola. El criterio de salida de la sección 4 no dice «existe la función que
+genera el Excel», dice «**todo reporte se descarga** en Excel», y la §11.1 razona por qué: «un reporte
+que solo se ve en pantalla no sirve para el flujo de trabajo real de una firma contable». Esto ni
+siquiera se ve en pantalla.
+
+**Y es el mismo estándar que A14 ya fijó, no uno nuevo inventado para castigar a esta ola:** D-056 (Ola 2)
+decidió que la compuerta se prueba **por la interfaz**, no por la capa de servicios, después de que la Ola
+2 estuviera a punto de cerrarse con la aplicación sin compilar. Aceptar aquí una verificación de capa de
+servicios sería contradecir esa decisión en la ola siguiente.
+
+**Lo que A14 no hace, y por qué:** no escribe él la ruta. Construir el entregable y aprobarlo son el mismo
+acto si los hace el mismo agente, y esta es la última compuerta del proyecto: es justo donde menos conviene
+que el verificador sea también el autor. El desbloqueo está acotado a una sola cosa y todo lo demás queda
+verificado y escrito para que no haya que rehacerlo.
+
+### D-060 — Lo que A14 acepta de A10 y A11 sin reservas, para que nadie lo reabra
+
+Tres afirmaciones de los reportes de esta ola resultaron **ciertas al verificarlas**, y quedan aceptadas
+con la evidencia con la que se comprobaron, no con la palabra del autor:
+
+1. **Las notas no pueden fabricar una revelación.** No por disciplina del autor, sino por **forma del
+   tipo**: `NotaEstadosFinancieros` no tiene campo de contenido, y la columna «REDACCIÓN DE LA NOTA» del
+   libro se escribe siempre vacía. Comprobado en las trece notas, campo por campo y celda por celda. Es la
+   aplicación correcta de la advertencia 17.5 a los estados financieros: un estado financiero que inventa
+   una revelación es peor que uno incompleto, igual que una tarifa inventada es peor que una faltante.
+2. **El EFE sale vacío si nadie marcó las cuentas de efectivo.** `es_efectivo` es estrictamente
+   `rubro_efe = 'efectivo_y_equivalentes'`; sin marca es `NULL` y no entra. La presunción que sí existe
+   —la **actividad** de cada flujo— se marca como `presumida`, se cuenta y se lista en su papel de
+   trabajo. Presumir y avisar es honesto; presumir y callar sería inventar.
+3. **La exógena no rellena nada por defecto.** Dirección y municipio ausentes salen como celda vacía en el
+   plano y como fila en la hoja «Bloqueos» del Excel. Ni un `0`, ni un código DANE, ni «COLOMBIA».
+
+Lo que **no** se acepta de esos reportes: la afirmación de A9 de que «todo `src/reports/` lo invoca un
+route handler de Next.js» (**es falsa hoy**, V-16), y la idea de que la advertencia de alcance de los
+formatos 1003/1006 «se le muestra al contador» — se le mostraría **si existiera la interfaz que la
+consume**, que es justamente lo que falta; y en el Excel, que sí existe, no aparece (V-18).
+
+---
+
 ## Vulnerabilidades — registro de A14
 
 | Id | Qué es | Gravedad | Estado | De quién |
@@ -1011,6 +1118,35 @@ de despliegue** que no derrota ningún criterio con la cabecera estándar puesta
 
 ---
 
+### Hallazgos de la Ola 3 (A14)
+
+Se numeran a continuación de los de la Ola 2. **Uno bloquea la ola (V-16)** y no es un defecto de
+cálculo: es que lo construido no tiene por dónde entregarse. Otro era un defecto real del ledger y está
+**corregido en esta misma pasada** (V-15).
+
+**Estado de los hallazgos heredados al cerrar la verificación de la Ola 3:**
+
+| Id | Estado tras la Ola 3 |
+|---|---|
+| V-1 | **SIGUE ABIERTA.** Nada de la Ola 3 la toca. Le toca a **A4 + A12** |
+| V-5 | **SIGUE ABIERTA.** Nada de la Ola 3 la toca (no hay tarifas de ICA por actividad para Bogotá ni Cali) |
+| V-11 | **SIGUE ABIERTA** (la IP del cliente en la aprobación desde la bandeja). **A7 + A15** |
+| D-023 / D-024 | Sin cambios: abiertas por diseño, con su alcance medido |
+
+**Hallazgos nuevos de esta pasada:**
+
+| Id | Qué es | Gravedad | Estado | De quién |
+|---|---|---|---|---|
+| V-15 | **El cierre de resultados duplicaba la cancelación si los rangos se solapan.** `idempotency_key` (`cierre:<desde>:<hasta>`) impide repetir el **mismo** ejercicio, pero no dos rangos **solapados**: como `saldosACerrar` excluye a propósito los asientos de tipo `cierre` —para poder ser repetible—, un segundo cierre de 15-jun→30-jun después de uno de 01-jun→30-jun vuelve a ver los mismos ingresos y los cancela otra vez. Medido por A14 antes del arreglo: la cuenta de ingresos quedaba con **saldo débito** y el resultado del ejercicio en **cero**; y como el ledger es inmutable, deshacerlo obliga a una reversa | **Media-alta como producto** (corrompe el resultado del ejercicio en silencio, en el escenario natural de «cerré el semestre y luego cierro el año») | **CORREGIDA por A14** (D-058): `CierreSolapadoError` rechaza el solape **antes de escribir nada**, leyendo el rango de la propia clave de idempotencia del asiento publicado. Prueba de regresión que además verifica que el intento rechazado no deja ni un borrador huérfano | era de **A10** |
+| V-16 | **No existe ninguna forma de descargar un reporte.** Los veinte libros de la ola (8 de A9, 5 de A10, 7 de A11) no los invoca ni una ruta de Next, ni una acción de servidor, ni una pantalla: **cero** importadores de `src/reports/` fuera de `tests/`. El criterio de salida de la sección 4 dice «todo reporte **se descarga** en Excel», y la §11.1 dice que «un reporte que solo se ve en pantalla no sirve» — esto ni siquiera se ve en pantalla. El reporte de A9 afirma lo contrario («todo `src/reports/` lo invoca un route handler»); A14 lo verificó y **no es cierto** | **Alta como producto, y BLOQUEANTE de la compuerta**: el entregable de la ola es inalcanzable para un contador. No es fuga ni corrupción — lo generado es correcto y serializa bien a `.xlsx`, comprobado en los veinte | **ABIERTA. BLOQUEA la Ola 3** | **A9** (route handler con `reporte.exportar` y sesión real, sobre `libroABuffer`) + **A8** (la pantalla) |
+| V-17 | **No hay forma de crear ni editar un tercero.** El esquema de A2 está bien (`third_party` tiene `direccion`, `municipality_id` y `codigo_dane`), pero no existe ni un `INSERT INTO third_party` en `src/`, `app/` ni migraciones: solo en los fixtures de prueba. A11 lo detectó como bloqueo del Formato 1001 (dirección y municipio del informado, art. 1.3.5.2.1 Res. 000227/2025); **A14 lo amplía**: como `src/services/ingest.ts` resuelve el tercero por NIT y **no lo crea**, una factura de un proveedor no cargado a mano por SQL tampoco se puede causar. Hoy no se puede poner en marcha un cliente nuevo sin acceso directo a la base | **Media-alta como producto** (impide el arranque real de una empresa cliente), **baja como riesgo** (no hay fuga ni dato inventado: A11 hizo lo correcto dejando las celdas vacías y listándolas en la hoja «Bloqueos») | **ABIERTA, declarada y medida.** No bloquea la compuerta de la Ola 3 por sí sola: el criterio en disputa es la descarga | **A8** (maestro de terceros, con dirección y municipio obligatorios o advertidos). A2 no tiene nada que corregir |
+| V-18 | **Las advertencias de alcance de los formatos 1003 y 1006 no llegan al Excel.** Van en el objeto devuelto y en la cabecera del archivo plano, pero **no** en el libro, que es el que el contador revisa. El 1001 sí tiene su hoja «Bloqueos»; estos dos no tienen su hoja «Advertencias» | **Baja** (la limitación está declarada y el dato no se inventa; lo que falla es dónde se avisa) | **ABIERTA, declarada** | **A11** |
+| — | **Sin estadísticas del planificador, un JOIN bajo RLS crece cuadráticamente.** Medido por A14 en PGlite: `journal_line ⋈ journal_entry` bajo RLS tarda 10 s con 2.000 partidas, 39 s con 4.000 y 159 s con 8.000; tras `ANALYZE`, **4 ms**. No es la RLS (la misma consulta sin JOIN va en 3 ms bajo RLS) ni la vista de A9: es el planificador estimando sobre tablas sin estadísticas y cayendo en bucle anidado | Muy baja en producción (autovacuum mantiene las estadísticas), **alta justo después de una carga masiva** | **Aceptada, con el número medido y anotada en la prueba** | anotación para **A15**: ANALIZAR después de una carga masiva de documentos |
+| — | El archivo plano de exógena lleva líneas de cabecera que empiezan por `#` (la advertencia de layout no verificado). Ningún prevalidador de la DIAN acepta comentarios: **el archivo de hoy es un borrador de revisión, no un archivo presentable**. Es coherente con que los códigos numéricos del anexo técnico estén sin verificar (advertencia 17.5), pero conviene no confundirlo | Baja | **Aceptada mientras el layout siga sin verificar** | **A11** cuando se verifique el anexo técnico; **verificación humana** para el anexo |
+
+
+---
+
 ## Convenciones establecidas
 
 **Estructura de carpetas**
@@ -1038,6 +1174,8 @@ docs/                          Cumplimiento, ADRs, contratos de API
 - Toda tabla paramétrica: `vigente_desde DATE NOT NULL`, `vigente_hasta DATE NULL`, `norma_respaldo TEXT NOT NULL`.
 - Prohibido: literales numéricos tributarios en `src/` y `app/`. A14 hace grep. La única constante permitida es la lógica de resolución.
 - Migraciones ya aplicadas no se editan: se agrega una nueva. El runner guarda el checksum y aborta si cambia.
+- **`src/reports/` es de SOLO LECTURA sobre el ledger** (invariante de la Ola 3, verificado por A14): generar los veinte libros deja `journal_entry`, `journal_line`, `retention_applied`, `approval` y `source_document` con la misma huella exacta. Lo que escribe vive en `src/services/` (hoy, `cierre.ts`), porque escribir es un caso de uso. Si un reporte necesita escribir, no es un reporte.
+- **Todo módulo nuevo de `src/` necesita un consumidor fuera de `tests/`.** El canario de inventario de A14 comprueba que el módulo está declarado, no que alguien lo use; un `grep` de importadores es lo que separa «entregado» de «alcanzable» (V-16).
 
 **Inventario de tablas (creadas por A2 en la Ola 0)**
 
@@ -1215,6 +1353,224 @@ veredicto de HOY y lo que cambió.
 | Un cambio de parámetro no altera lo publicado | **PASA** (caso 17, ahora también por la interfaz) |
 | Balance de prueba vs. ledger con 10.000 asientos | no implementado todavía — **A9 + A14, Ola 3** |
 | Carga: 5.000 facturas en cola sin degradar el request HTTP | **sigue sin implementar.** Era una advertencia para la Ola 2 y nadie la tomó. **A6 + A13 + A15.** No es criterio de salida de la Ola 2, así que no la bloquea, pero pasa a ser deuda explícita de la Ola 3 |
+
+---
+
+## Casos dorados — VEREDICTO DE LA OLA 3 (A14), uno por uno
+
+Los veinte se **volvieron a ejecutar completos** en esta pasada, no una muestra: `npm test` entero (806
+pruebas, 41 archivos) y, además, A14 relanzó por separado las suites que los contienen
+(`tests/golden/casos-dorados.test.ts`, `tests/golden/caso19-memoria.test.ts`,
+`tests/adversarial/casos-dorados.test.ts`, `compuerta-ola0`, `compuerta-ola1`, `compuerta-ola2`,
+`compuerta-ola2-interfaz` y `evasion`: **177 + 33 pruebas, cero fallos**). El **cómo** se verificó cada
+uno está en las dos tablas de arriba y no se repite; aquí va el veredicto de HOY y lo que la Ola 3 le
+añadió a cada caso.
+
+| # | Veredicto Ola 3 | Qué pasó en esta pasada |
+|---|---|---|
+| 1 | **PASA** (sin cambios) | Reejecutado. Retefuente $40.000 y ReteIVA $28.500. La pata de ReteICA de Bogotá sigue sin datos (V-5), que no es asunto de esta ola |
+| 2 | **PASA** (sin cambios) | Reejecutado. $60.000, con `tax_rule_id` distinta de la del declarante |
+| 3 | **PASA** (sin cambios) | Reejecutado. No retiene bajo $104.748, con el motivo persistido y releído |
+| 4 | **PASA** (sin cambios) | Reejecutado. No retiene bajo $523.740, con motivo |
+| 5 | **PASA** (sin cambios) | Reejecutado. $15.000 auditado contra su fila de `tax_rule` |
+| 6 | **PASA** (sin cambios) | Reejecutado. $22.000 desde el primer peso, con base mínima 0 **como dato** |
+| 7 | **PASA** (sin cambios) | Reejecutado. Inmueble no retiene; mueble por el mismo valor, $16.000 |
+| 8 | **PASA** (sin cambios) | Reejecutado sin andamiaje: $2.000 de ReteICA en Medellín con los seeds del repositorio |
+| 9 | **PASA en lo que discrimina** (sin cambios) | Reejecutado. Base de Cali $157.122 frente a la de Medellín $785.610. La magnitud de la tarifa por actividad sigue en V-5 |
+| 10 | **PASA en lo que discrimina, y por el canal real** (sin cambios) | Reejecutado. V-8 sigue cerrada por A7 |
+| 11 | **PASA en el motor y por el canal real** (sin cambios) | Reejecutado. V-7 sigue cerrada por A7 |
+| 12 | **PASA** (sin cambios) | Reejecutado. ReteIVA al 100% = $190.000, con norma que cita el art. 437-2 |
+| 13 | **PASA** (sin cambios) | Reejecutado. Sin política parametrizada el motor no decide |
+| 14 | **PASA** (sin cambios) | Reejecutado, incluida la variante hostil de trocear un concepto en dos líneas |
+| 15 | **PASA, y la Ola 3 lo pone a prueba donde más duele** | Reejecutado (reversa por asiento nuevo, original idéntico byte a byte). **Nuevo:** el cierre de resultados de A10 es el primer código que escribe en el ledger fuera de la causación, y A14 verificó que ahí también se corrige por reversa: sobre el asiento de cierre **publicado**, `UPDATE journal_entry` y `DELETE journal_line` fallan con `LG001` desde una sesión real |
+| 16 | **PASA** (sin cambios) | Reejecutado. Manda la fecha del hecho, con el borde exacto 30-jun / 1-jul |
+| 17 | **PASA** (sin cambios), y **la Ola 3 no lo rompe** | Reejecutado en el motor y por la interfaz de A8. **Nuevo:** los reportes de la Ola 3 no reabren la puerta: `src/reports/` es de solo lectura —generar los **veinte** libros deja `journal_entry`, `journal_line`, `retention_applied`, `approval` y `source_document` con la **misma huella exacta** antes y después— y la hoja «Parámetros» de cada libro trae la vigencia con la que se armó, que es lo que hace auditable un cambio de tarifa a seis meses vista |
+| 18 | **PASA, y se extiende al cierre de ejercicio** | Reejecutado (diez pasadas de la cola, un solo asiento, la misma fotografía las diez). **Nuevo:** A14 ejecutó el **cierre de resultados diez veces**: un solo asiento de cierre, el mismo `id` las diez veces, y la cuenta de resultado con el saldo **exacto** (pérdida de $1.500.000), no el doble. Y encontró la grieta que la clave de idempotencia no cubría: dos rangos **solapados** sí duplicaban la cancelación (**V-15, corregida por A14**) |
+| 19 | **PASA** (sin cambios) | Reejecutado con la mina y el espía de D-052: segunda factura del mismo proveedor con la misma descripción escrita distinta → `origen = 'memoria'`, `llamadasLlm = 0`, `costoMicrosUsd = 0`, la mina intacta y `globalThis.fetch` sin una sola llamada. Ningún módulo de la Ola 3 llama a un LLM: `src/reports/` no importa nada de `src/ai/` |
+| 20 | **PASA, reverificado sobre TODA la superficie nueva de la Ola 3** | Cero filas ajenas, y ahora también **cero celdas ajenas**: los **veinte** libros generados desde la sesión de **otra firma** y desde **otra empresa de la misma firma** no contienen la marca de la empresa A, ni su `third_party_id`, ni su `company_id`, **en ninguna hoja** (se recorre el libro entero, no solo «Datos»: si una hoja adicional olvidara el filtro, se vería). Y el **archivo plano** de exógena (1001, 1005, 1007, 1009) generado por la otra firma tampoco los trae |
+
+**Pruebas adicionales de integridad, estado tras la Ola 3:**
+
+| Prueba | Estado |
+|---|---|
+| Grep de literales tributarios en código → cero | **PASA, con el barrido REENVENENADO contra los módulos nuevos.** Cero hallazgos en `src/`, `app/` y `db/migrations/`. A14 sembró seis muestras en `src/reports/`, `src/reports/estados/` y `src/reports/exogena/` —tarifa quemada, máscara de Excel `'0.00%'`, dos umbrales precalculados (104748 y 523740), un `TOPE_UVT_1001 = 2400` y 2.400 UVT en pesos (125.697.600)— y el detector cazó **las seis**; el único superviviente fue `ANCHO_NIT = 20`, que no es tributario. Se añadió la aserción de que el barrido **alcanza** `src/reports/` y `src/services/cierre.ts`, para que el silencio no pueda ser vacío |
+| UPDATE/DELETE sobre asiento publicado → falla en BD | **PASA**, reverificado sobre el asiento que estrena la ola: el **de cierre de ejercicio**. `UPDATE journal_entry` y `DELETE journal_line` desde sesión real → `LG001` |
+| Asiento desbalanceado → falla en BD | **PASA**, `LG002` en el COMMIT con descuadre de un centavo. Y los 10.000 asientos aleatorios de esta ola se publicaron **todos** balanceados: si uno solo no lo hubiera estado, el COMMIT de su lote habría caído |
+| Reprocesar la misma factura 10 veces → asiento idéntico | **PASA** (caso 18), y el cierre de ejercicio también resulta idempotente diez veces |
+| Un cambio de parámetro no altera lo publicado | **PASA** (caso 17) |
+| **Balance de prueba vs. ledger con 10.000 asientos → cuadra al centavo** | **PASA. Implementado por A14 en esta ola** (`tests/adversarial/compuerta-ola3.test.ts`). Detalle en el criterio 2 de la compuerta |
+| Carga: 5.000 facturas en cola sin degradar el request HTTP | **SIGUE SIN IMPLEMENTAR.** Era advertencia para la Ola 2, pasó a deuda explícita de la Ola 3 y nadie la tomó tampoco. No es criterio de salida de ninguna de las dos, así que no bloquea; queda como deuda para **A6 + A13 + A15** antes de producción |
+
+---
+
+## Compuerta de la Ola 3 — veredicto de A14: **BLOQUEADA** (pasa un criterio de dos)
+
+Ejecutada el 2026-08-30 sobre el commit `bb8cb08`, con pruebas propias de A14
+(`tests/adversarial/compuerta-ola3.test.ts` y `tests/adversarial/compuerta-ola3-entregas.test.ts`,
+**107 pruebas nuevas**), sin creerle a `docs/reportes/ola3-a9.md`, `ola3-a10.md` ni `ola3-a11.md`.
+
+### Criterio 1 — «Todo reporte se descarga en Excel con formato de papel de trabajo (sección 11)»
+
+**NO PASA, y por eso la ola queda bloqueada. El defecto no está en el Excel: está en que no hay descarga.**
+
+Lo que **sí** está verificado, y no hay que rehacerlo (A14 lo comprobó libro por libro, los veinte):
+
+- **Las cuatro hojas obligatorias de la §11.2 están, y son las cuatro primeras, en los veinte libros**:
+  los 8 de A9, los 5 de A10 y los 7 de A11. La comprobación es `worksheets.slice(0, 4)` **exactamente
+  igual a** `['Datos','Papel de trabajo','Trazabilidad','Parámetros']`, así que una hoja adicional no
+  puede colarse en medio ni desplazar a una obligatoria.
+- **«Papel de trabajo» lleva el encabezado que exige la norma**: en los veinte libros aparecen el NIT, la
+  palabra «período» y el período real del reporte.
+- **«Trazabilidad» dice qué regla y qué vigencia se aplicó, con datos reales y no con un rótulo vacío**:
+  en el certificado de retenciones la hoja contiene el `tax_rule_id` **exacto** de la regla usada y su
+  `vigente_desde`, y sus encabezados nombran regla y vigencia. La hoja «Parámetros» del mismo libro trae
+  también la vigencia: es lo que hace el reporte autoexplicativo dentro de seis meses, que es lo que pide
+  la §11.2 y lo que lo vuelve defendible ante un revisor fiscal.
+- **Los veinte libros se escriben de verdad como `.xlsx` y se vuelven a abrir**: A14 los serializó con
+  `libroABuffer`, verificó la firma `PK` del ZIP y los **releyó** con ExcelJS, conservando las cuatro
+  hojas y el número total de hojas. Ningún nombre de hoja pasa de 31 caracteres ni lleva caracteres
+  prohibidos — el error clásico que revienta al serializar y que ninguna prueba que se quede en el objeto
+  en memoria vería.
+
+Lo que **falta**, y es todo lo que falta: **no existe ninguna superficie por la que un contador obtenga
+esos archivos.** Barrido sobre `app/` y sobre todo el repositorio fuera de `src/reports/` y `tests/`:
+**cero** importadores de `src/reports/`. No hay route handler, no hay acción de servidor, no hay pantalla
+ni enlace. El reporte de A9 afirma que «todo `src/reports/` lo invoca un route handler de Next.js»;
+**eso no es cierto hoy**, y A14 no lo da por bueno por estar escrito. Es **V-16**, y le toca a **A9** (la
+ruta que sirve el `.xlsx` con su permiso y su sesión) y a **A8** (la pantalla). Ver D-059.
+
+### Criterio 2 — «El balance de prueba cuadra contra la suma del ledger, comprobado por A14 con datos generados aleatoriamente» (§12: 10.000 asientos, al centavo)
+
+**PASA.** Verificado con datos que generó A14, no con el escenario de dos asientos con el que A9 dio el
+criterio por bueno en su reporte.
+
+- **10.000 asientos aleatorios y 39.983 partidas**, con generador determinista (mulberry32, semilla
+  20260830) para que un fallo sea reproducible: de 1 a 3 débitos y de 1 a 3 créditos por asiento, importes
+  aleatorios en centavos, fechas repartidas sobre los 365 días de 2026 y **15 cuentas** con códigos de 4,
+  6 y 8 dígitos, para que agrupar por nivel del PUC tenga algo real que agrupar en los cinco niveles.
+  Todos pasan por el ciclo real `draft` → partidas → `app.publicar_asiento`.
+- **La comparación NO es circular.** `sumaDirectaLedger` de A9 lee la **misma vista**
+  `v_journal_line_reporte` que el balance: comparar una con otra no puede detectar que la vista pierda
+  filas. A14 compara contra `journal_line JOIN journal_entry` **crudas** y, además, contra **lo que
+  generó en memoria**. Tres fuentes, no dos.
+- **Cuadra al centavo en los cinco niveles** (clase, grupo, cuenta, subcuenta, auxiliar): la suma de
+  `debitosPeriodo` y de `creditosPeriodo` de todas las filas del balance coincide exactamente con la suma
+  cruda, y débitos = créditos (la doble partida se demuestra con 10.000 asientos, no se asume).
+- **Grupo por grupo, no solo el total.** Para cada nivel A14 recalcula en memoria débitos, créditos y
+  **saldo inicial** de cada grupo y los compara uno a uno contra la fila del balance, comprueba
+  `saldoFinal = saldoInicial + débitos − créditos` y verifica **en el otro sentido** que ningún grupo con
+  movimiento desapareció del reporte. Un total correcto con dos grupos intercambiados no pasaría.
+- **La vista no pierde ni inventa una partida**: mismo conteo y misma suma de `monto` que las tablas
+  crudas. Importaba comprobarlo porque `v_journal_line_reporte` hace un **INNER JOIN con `account`**, y un
+  inner join es exactamente la forma en que un reporte pierde filas en silencio.
+- Todo en `BigInt` de punta a punta, en la prueba y en el código.
+
+**Hallazgo de rendimiento que salió de aquí, y que no es un defecto del producto** (ver D-057): sin
+estadísticas del planificador, un `JOIN` de `journal_line` con `journal_entry` **bajo RLS** degenera en
+bucle anidado y crece **cuadráticamente** — medido: 10 s con 2.000 partidas, 39 s con 4.000, 159 s con
+8.000; con `ANALYZE` ejecutado, el mismo JOIN baja a **4 ms**. Es el planificador sin estadísticas, no la
+RLS ni la vista: la misma consulta sin el JOIN va en 3 ms bajo RLS. Queda anotado para **A15**: tras una
+carga masiva de documentos hay que ANALIZAR, o los primeros reportes de esa empresa se arrastran.
+
+### Criterio nuevo desde la Ola 2 — `npx next build`
+
+**PASA. Exit 0**, Next 16.3.3 con Turbopack, las 11 rutas existentes se sirven igual. Ejecutado dos
+veces: al empezar (para no heredar una rotura ajena) y al terminar, después de tocar
+`src/services/cierre.ts`. `npm test` **806 en verde** en 41 archivos (699 previas + 107 de A14),
+`npm run typecheck` limpio.
+
+### Adjudicación de las tres entregas, punto por punto
+
+**A10 — «las notas son estructuralmente incapaces de fabricar una revelación».** **CIERTO, verificado por
+A14 y no por lectura del reporte.** El objeto `NotaEstadosFinancieros` no tiene ningún campo que pueda
+llevar la redacción: A14 recorrió las **trece** notas y comprobó que ninguna declara un campo
+`redaccion`, `contenido`, `texto`, `revelacion`, `nota` ni `cuerpo`. Lo que hay es `exigencia` (lo que
+pide la norma), `aportaElSistema` y `completaElContador` (instrucciones al preparador), y en el libro una
+columna **«REDACCIÓN DE LA NOTA» que sale vacía en las trece filas**, comprobado celda a celda. Las hojas
+`PT …` existen y llevan las columnas de juicio en blanco. **No hay camino por el que salga una revelación
+redactada por la máquina.**
+
+**A10 — el EFE cuando nadie marcó las cuentas de efectivo.** **Sale vacío y con su papel de trabajo, sin
+suponer nada.** Verificado con `niif_mapping.rubro_efe` sin marcar: `cuentasEfectivo = []`, efectivo
+inicial y final en **cero**, todos los renglones en cero, y la hoja **«PT efectivo y equivalentes»**
+presente y con las **candidatas reales** (aparece la cuenta 110505, que sí tiene saldo). El defecto que
+A14 buscaba —que `es_efectivo` cayera en un valor por defecto— **no existe**: en `app.niif_de_cuenta`,
+`es_efectivo` es `(rubro_efe = 'efectivo_y_equivalentes')`, así que sin marca es `NULL` y el filtro
+`WHERE n.es_efectivo` no la toma. Y con las cuentas marcadas, la conciliación de la §7 cuadra **al
+centavo**: `descuadre = 0`, efectivo inicial + flujo neto = efectivo final, y el detalle (renglones de
+nivel 2) suma exactamente el flujo neto. La **actividad** de cada flujo sí se presume cuando no está
+declarada, pero se marca como `presumida`, se cuenta en `partidasPresumidas` y se lista en la hoja «PT
+actividades presumidas»: presumir y avisar no es inventar.
+
+**A10 — el cierre de resultados, que es lo que escribe en el ledger.** **Respeta la Regla de Oro 1, con
+una grieta que A14 encontró y corrigió.** Verificado: asiento **nuevo** de tipo `cierre`, ciclo
+`draft` → partidas → `app.publicar_asiento`, publicado con `posted_at` y con una fila de `approval` con
+decisión `aprobado`; cero `UPDATE`/`DELETE` sobre nada publicado (el intento falla con `LG001`); exige el
+permiso `periodo.cerrar` (con rol `auxiliar_causacion` lanza `PermisoInsuficienteError`); y **una cuenta
+sin mapeo NIIF no se cierra a ciegas por su clase del PUC**: la cuenta 199905 del escenario no aparece en
+**ninguna** partida del asiento de cierre y sí en `cuentasSinClasificar`. **La grieta (V-15):** la clave
+de idempotencia cubre repetir el **mismo** rango, pero no dos rangos **solapados**. Cerrar 01-jun→30-jun y
+después 15-jun→30-jun creaba un segundo asiento que volvía a cancelar los mismos ingresos: medido por
+A14, la cuenta de ingresos quedaba con **saldo débito** y el resultado del ejercicio en **cero**. Y como
+el ledger es inmutable, deshacerlo exige una reversa. **Corregida por A14** (`CierreSolapadoError`, ver
+D-058), con prueba de regresión que además comprueba que el intento rechazado **no deja nada escrito**.
+
+**A11 — el bloqueo del Formato 1001.** **Es real, está bien diagnosticado y bien dirigido, y A14 lo
+amplía.** Verificado a mano: `third_party` **sí** tiene `direccion`, `municipality_id` y `codigo_dane`
+(migración 005), o sea que el esquema de A2 está bien; y **no existe ni un solo `INSERT INTO
+third_party` en `src/`, en `app/` ni en las migraciones** — ninguno, en todo el repositorio fuera de los
+fixtures de prueba. **Lo que A14 añade al diagnóstico:** el hueco no es solo de exógena. Como
+`src/services/ingest.ts` resuelve el tercero por NIT y **no lo crea**, una factura de un proveedor que
+nadie haya insertado antes **por SQL a mano** no se puede causar. Hoy el producto no se puede poner en
+marcha con un cliente nuevo sin acceso directo a la base de datos. Es **V-17**, y le toca a **A8**.
+
+**A11 — que el archivo generado no rellene nada por defecto.** **Verificado, y es cierto.** En el Formato
+1001 el tercero sin dirección sale con la celda **vacía** entre delimitadores en el archivo plano —A14
+localiza la columna «Dirección» por su encabezado y comprueba que **todas** las filas de datos la traen
+vacía—, aparece en la hoja **«Bloqueos»** del Excel, y el plano lleva la advertencia. Ni un `0`, ni un
+código DANE por defecto, ni «COLOMBIA». Es exactamente lo que exige la advertencia 17.5, y su
+consecuencia (una sanción del art. 651 ET por un municipio inventado) queda evitada.
+
+**A11 — la limitación de alcance de los formatos 1003 y 1006.** **Es limitación honesta, no defecto
+disfrazado**, con una salvedad menor. El producto no procesa facturas de venta (§1.3 del mega-prompt),
+así que la fuente natural de esos dos formatos no existe en el ledger; los generadores no inventan nada,
+producen lo que **sí** hay (autorretención y lo que el contador mapee en `exogena_account_mapping`) y
+devuelven la advertencia en tiempo de ejecución **y en la cabecera del archivo plano**. La salvedad
+(**V-18**, menor): esa advertencia **no llega al Excel**, que es justamente el que el contador revisa; el
+1001 sí tiene su hoja «Bloqueos» y estos dos no tienen su hoja «Advertencias». Le toca a **A11**.
+
+**A9, A10 y A11 tocaron el inventario cerrado de módulos de `src/`.** Verificado: `'reports'` está
+declarado en el inventario de `tests/adversarial/casos-dorados.test.ts` y el canario sigue en verde. El
+detector de valores tributarios **alcanza** los tres directorios nuevos y caza el veneno sembrado en cada
+uno (ver la tabla de integridad de arriba).
+
+### Lo que A14 corrigió en esta pasada
+
+1. **V-15 — el cierre de rangos solapados duplicaba la cancelación.** `CierreSolapadoError` en
+   `src/services/cierre.ts`: antes de escribir nada se rechaza un cierre cuyo rango se solape con el de un
+   asiento de cierre ya publicado. El rango se lee de la **propia clave de idempotencia** del asiento
+   (`cierre:<desde>:<hasta>`), que es dato del ledger y no un estado paralelo que pudiera desincronizarse.
+2. **El barrido de la Regla de Oro 2 ahora demuestra que alcanza `src/reports/` y `src/services/cierre.ts`**,
+   con la misma forma con la que ya demostraba que alcanza `app/`. Un silencio vacío deja de poder
+   confundirse con un silencio limpio.
+3. **La comprobación del criterio de los 10.000 asientos existe y está automatizada**: era la única prueba
+   de integridad de la §12 que llevaba dos olas sin implementar.
+
+### Lo que A14 NO corrigió, y a quién le toca
+
+| Qué falta | Por qué A14 no lo hace | A quién le toca |
+|---|---|---|
+| **V-16 — la ruta y la pantalla de descarga de los veinte libros** | Es construcción de producto, no verificación: si A14 la escribe, no queda nadie independiente para verificarla. Y es justo el criterio de salida en disputa: quien entrega no puede ser quien aprueba | **A9** (route handler que sirva el `.xlsx` con permiso `reporte.exportar` y sesión real, reutilizando `libroABuffer`) + **A8** (la pantalla) |
+| **V-17 — no hay forma de crear ni editar un tercero** | Es una pantalla CRUD completa con sus validaciones, y afecta al maestro de datos, no a un reporte | **A8** |
+| **V-18 — las advertencias de alcance de 1003/1006 no llegan al Excel** | Es contenido del entregable de A11, y el mecanismo ya existe (`hojasAdicionales`, como la hoja «Bloqueos» del 1001) | **A11** |
+| **Prueba de carga: 5.000 facturas en cola** | Lleva dos olas sin dueño efectivo. No es criterio de salida de ninguna, pero sigue sin hacerse | **A6 + A13 + A15** |
+
+### Qué hace falta EXACTAMENTE para desbloquear la Ola 3
+
+Una sola cosa: **que exista la descarga** (V-16). Cuando A9 entregue el route handler y A8 el enlace,
+A14 vuelve a correr únicamente esa parte —la ruta responde con el `Content-Type` de xlsx, exige sesión y
+permiso, y el archivo que baja abre en Excel con sus cuatro hojas— y cierra la ola. Todo lo demás de esta
+compuerta ya está verificado y **no hay que rehacerlo**.
 
 ---
 
@@ -1494,6 +1850,74 @@ sin broker, tal como exige la sección 5.
 ---
 
 ## Próximo paso
+
+**OLA 3 BLOQUEADA por A14 (2026-08-30). No hay commit de cierre todavía.** El criterio duro —el balance
+de prueba contra el ledger con 10.000 asientos aleatorios— **pasa al centavo**. El que falla es el otro:
+«todo reporte **se descarga** en Excel», y hoy **no hay por dónde descargarlo** (V-16). Todo lo demás de
+la compuerta está verificado y no hay que rehacerlo; el detalle, criterio por criterio y entrega por
+entrega, está en «Compuerta de la Ola 3 — veredicto de A14».
+
+**Para desbloquear hacen falta dos cosas, en este orden:**
+
+1. **A9 — el route handler de descarga.** Una ruta bajo `app/` que reciba qué reporte y con qué período,
+   exija sesión real y el permiso `reporte.exportar` (que los veinte generadores ya exigen por su cuenta),
+   llame al generador, serialice con `libroABuffer` y devuelva el `.xlsx` con su `Content-Type` y su
+   `Content-Disposition`. Nada de lógica de reporte nueva: la generación ya está hecha y verificada.
+   Cuidado con dos cosas que ya costaron caro en olas anteriores: en un archivo con `"use server"` **todo
+   export debe ser `async`**, y Turbopack **no** resuelve la extensión `.js` en imports relativos.
+2. **A8 — la pantalla.** Desde dónde se pide: empresa en contexto, período y tipo de reporte. Es la misma
+   costura que ya existe en `app/parametros` y `app/bandeja`.
+
+Cuando estén, **A14 vuelve a correr solo esa parte** (la ruta responde con el `Content-Type` correcto,
+exige sesión y permiso, el archivo que baja abre con sus cuatro hojas) y cierra la ola. No hay que repetir
+el resto de la compuerta.
+
+Estado del árbol al bloquear: **806 pruebas en verde**, 41 archivos, typecheck limpio, `next build` exit 0.
+Ficheros que A14 tocó en esta pasada:
+
+- `src/services/cierre.ts` — `CierreSolapadoError`: rechaza cerrar un ejercicio que se solape con uno ya
+  cerrado, antes de escribir nada (V-15, D-058).
+- `tests/adversarial/compuerta-ola3.test.ts` — **nuevo**. Los 10.000 asientos aleatorios contra el ledger
+  crudo (criterio de salida de la §12, que llevaba dos olas sin implementar).
+- `tests/adversarial/compuerta-ola3-entregas.test.ts` — **nuevo**. Las cuatro hojas obligatorias, la
+  trazabilidad con regla y vigencia, el round-trip a `.xlsx`, el aislamiento entre firmas y entre empresas
+  en los veinte libros, el cierre de resultados y las advertencias 17.5 de A10 y A11.
+- `tests/adversarial/valores-tributarios.test.ts` — el barrido ahora demuestra que alcanza `src/reports/`
+  y `src/services/cierre.ts`.
+- `ESTADO_PROYECTO.md`.
+
+### Lo que queda abierto después de la Ola 3, con dueño
+
+| Qué | Quién | ¿Bloquea? |
+|---|---|---|
+| **V-16** — no hay ruta ni pantalla de descarga de reportes | **A9** + **A8** | **Sí: bloquea la Ola 3** |
+| **V-17** — no hay maestro de terceros (impide exógena 1001 completa y, más grave, impide causar la factura de un proveedor nuevo) | **A8** | No la compuerta; sí el arranque real de un cliente |
+| **V-18** — las advertencias de alcance de 1003/1006 no llegan al Excel | **A11** | No |
+| **V-11** — la IP del cliente en la aprobación desde la bandeja | **A7** + **A15** | No |
+| **V-1** — `app.resolver_empresa_por_buzon` concedida a `app_user` | **A4** + **A12** | No |
+| **V-5** — código de actividad de ICA municipal de 5 dígitos (Bogotá) | **A2**, luego **A1** | No |
+| Prueba de carga de 5.000 facturas en cola (§12) | **A6** + **A13** + **A15** | No, pero lleva dos olas sin dueño efectivo |
+| `ANALYZE` después de una carga masiva (si no, los primeros reportes de esa empresa se arrastran) | **A15** | No |
+| Datos normativos pendientes de verificación humana (ver su sección) | **humano** + **A1** | No |
+
+### Advertencias que salen de esta verificación, para quien retome
+
+- **Un módulo sin consumidor no está terminado.** El inventario de módulos de `src/` (canario de A14) dice
+  qué módulos existen, pero no que alguien los use. Antes de declarar terminado un módulo nuevo, un
+  `grep` de sus importadores fuera de `tests/` tiene que devolver algo. Es exactamente lo que faltó aquí.
+- **Cuando una prueba compara A con B, hay que mirar si A y B leen de la misma fuente** (D-057). El
+  criterio de los 10.000 asientos se estaba dando por bueno comparando dos consultas contra la misma
+  vista. Una comparación circular pasa siempre, incluso cuando el defecto que busca está presente.
+- **La idempotencia por clave no protege del solape** (D-058). Cualquier operación que se declare
+  idempotente sobre un **rango** (cierres, recálculos, reprocesos por período) tiene que decidir también
+  qué pasa cuando el rango nuevo se cruza con uno anterior. Aquí costaba el resultado del ejercicio.
+- **Si una prueba con datos de verdad tarda de más, mide antes de acusar al diseño.** El JOIN bajo RLS
+  parecía un defecto de arquitectura y era el planificador sin estadísticas: 159 s pasaron a 4 ms con un
+  `ANALYZE`. La medición está en D-057 con sus números; no hace falta repetirla, sí recordarla.
+
+---
+
+## Próximo paso — Ola 3 despachada (histórico)
 
 **OLA 2 CERRADA por A14.** Los tres criterios de la sección 4 pasan, verificados con pruebas propias y
 **por la interfaz real**. Falta únicamente el **commit de cierre, que lo hace A0** (A14 no hace commits).
