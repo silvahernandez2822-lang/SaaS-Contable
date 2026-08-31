@@ -49,6 +49,15 @@ async function main(): Promise<void> {
         `Listo: ${resultado.aplicadas.length} migración(es) aplicada(s), ` +
           `${resultado.yaAplicadas.length} ya estaban.`,
       );
+      // A15 (D-057): sin ANALYZE el planificador estima sobre tablas sin
+      // estadísticas y un JOIN bajo RLS puede degenerar en bucle anidado
+      // (medido: 10 s/39 s/159 s con 2.000/4.000/8.000 partidas sin ANALYZE,
+      // 4 ms con él). El esquema recién creado está vacío, así que esto es
+      // barato aquí; lo que importa de verdad es que `seed` y
+      // `datos-ejemplo` también lo corran, y que producción tenga el
+      // autovacuum de journal_entry/journal_line afinado (150_a15_...).
+      await db.exec('ANALYZE');
+      console.log('Estadísticas actualizadas (ANALYZE).');
     }
   } finally {
     await db.close();

@@ -53,6 +53,14 @@ async function main(): Promise<void> {
 
     const resultado = await seed(db, { dir, logger: (m) => console.log(m) });
     console.log(`Listo: ${resultado.aplicados.length} archivo(s) de seed aplicado(s).`);
+
+    // A15 (D-057): las tablas paramétricas (PUC, tarifas, municipios) se
+    // consultan en JOIN dentro del motor de reglas; sin estadísticas frescas
+    // tras cargarlas de una sola vez, el planificador arranca a ciegas.
+    if (resultado.aplicados.length > 0) {
+      await db.exec('ANALYZE');
+      console.log('Estadísticas actualizadas (ANALYZE).');
+    }
   } finally {
     await db.close();
   }

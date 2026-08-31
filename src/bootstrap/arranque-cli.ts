@@ -65,6 +65,9 @@ async function main(): Promise<void> {
       console.log(`Migraciones aplicadas: ${m.aplicadas.length}`);
       await seed(db);
       console.log('Datos paramétricos cargados.');
+      // A15 (D-057): igual que en migrate-cli/seed-cli, sin esto el
+      // planificador queda a ciegas justo después de la carga masiva inicial.
+      await db.exec('ANALYZE');
     }
 
     const resultado = await arrancar(db, {

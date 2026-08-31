@@ -1,0 +1,49 @@
+# Configuración mínima de despliegue — Render Starter (USD 7/mes, always-on,
+# sin cold start), NO Vercel Hobby (prohíbe uso comercial en su ToS; su plan
+# Pro son USD 20/mes solo de hosting, ver docs/reportes/entorno-y-despliegue-a15.md
+# y docs/reportes/ola0-a15.md).
+#
+# Un único servicio web. El worker de la cola de causación (`src/services/
+# worker.ts`) corre DENTRO de este mismo proceso (`instrumentation.ts`), a
+# propósito: un segundo servicio Render solo para el worker duplicaría el
+# costo de hosting y se comería el margen del techo de USD 20/mes de la fase
+# inicial (decisión de la Ola 0, sección 2 de docs/reportes/ola0-a15.md).
+#
+# La base de datos NO se declara aquí: Render no ofrece Postgres gestionado
+# en el mismo rango de precio que Neon/Supabase (ver esa misma sección). Se
+# crea aparte (Neon o Supabase, capa gratuita para el piloto) y su cadena de
+# conexión se pega en DATABASE_URL desde el panel de Render — nunca en este
+# archivo, y nunca en el repositorio.
+services:
+  - type: web
+    name: contable-co
+    runtime: node
+    plan: starter
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start
+    healthCheckPath: /entrar
+    envVars:
+      # Secretos y configuración específica del entorno: se cargan desde el
+      # panel de Render ("Environment"), NUNCA desde este archivo. `sync:
+      # false` es la forma en que Render Blueprints dicen "esta variable
+      # existe, pero su valor se pone a mano y no viaja por git".
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: APP_ENCRYPTION_KEY
+        sync: false
+      - key: LLM_PROVEEDOR
+        sync: false
+      - key: LLM_API_KEY
+        sync: false
+      - key: LLM_MODELO
+        sync: false
+      - key: LLM_URL_BASE
+        sync: false
+      - key: LLM_TIMEOUT_MS
+        sync: false
+      - key: WORKER_COLA_INTERVALO_MS
+        sync: false
+      - key: WORKER_COLA_DESHABILITADO
+        sync: false

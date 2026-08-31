@@ -87,6 +87,14 @@ async function main(): Promise<void> {
     console.log('  Entre a la aplicación (npm run dev), inicie sesión con el usuario que creó');
     console.log('  con  npm run arranque  y revise /bandeja: ahí están las facturas de ejemplo');
     console.log('  con sus asientos en borrador, listos para aprobación humana.');
+
+    // A15 (D-057): esta es la primera carga real de journal_entry/journal_line
+    // de la instalación. Sin ANALYZE aquí, los primeros reportes de la
+    // empresa recién arrancada se arrastran (medido: JOIN bajo RLS pasa de
+    // segundos a 4 ms con estadísticas frescas).
+    await db.exec('ANALYZE');
+    console.log('');
+    console.log('Estadísticas actualizadas (ANALYZE).');
   } finally {
     await db.close();
   }
