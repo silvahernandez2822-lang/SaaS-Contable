@@ -1,16 +1,17 @@
 # ESTADO_PROYECTO.md
 
 > Memoria única entre sesiones. Todo agente lo lee al empezar y lo actualiza al terminar.
-> Última actualización: 2026-08-30 — **A14, compuerta de la Ola 3 (A9, A10, A11). Veredicto: OLA 3
-> BLOQUEADA por un solo motivo, y no es de cálculo.** El criterio de salida más duro —«el balance de
-> prueba cuadra contra la suma del ledger, comprobado por A14 con datos generados aleatoriamente»—
-> **PASA**: A14 generó **10.000 asientos aleatorios (39.983 partidas)** y el balance cuadra **al centavo**
-> contra las tablas crudas y contra lo generado en memoria, en los **cinco** niveles del PUC, grupo por
-> grupo, saldo inicial incluido. Lo que **no** pasa es el otro criterio: «todo reporte **se descarga** en
-> Excel». **Hoy no hay por dónde descargar nada**: los veinte libros de la ola no los invoca ni una ruta
-> ni una pantalla (V-16). Además A14 encontró y **corrigió** un defecto real del cierre de resultados que
-> duplicaba la cancelación de las cuentas de resultado (V-15). Suite: **806 en verde** (41 archivos),
-> typecheck limpio, `next build` exit 0.
+> Última actualización: 2026-08-31 — **A14, compuerta de la Ola 3 (A9, A10, A11), SEGUNDA PASADA.
+> Veredicto: OLA 3 CERRADA. Con ella se cierra la última ola del proyecto.** En la primera pasada
+> (2026-08-30) A14 bloqueó por V-16: los veinte libros existían y eran correctos, pero **no había por
+> dónde descargarlos**. A9 entregó `GET /api/reportes/:libro` y la pantalla `/reportes`; A14 **no le creyó
+> y lo atacó**: los veinte slugs devuelven un `.xlsx` real que se reabre con las cuatro hojas
+> obligatorias, ningún generador quedó huérfano sin slug, y la ruta resiste cookie de empresa ajena,
+> `companyId` en la query, sesión de otra firma, sesión cerrada, falta de permiso y recorrido de ruta. En
+> el ataque apareció **V-19** (un slug igual a una clave del prototipo de `Object` devolvía 500 en vez de
+> 404), **corregida por A14**. El criterio duro de la §12 —10.000 asientos aleatorios contra el ledger—
+> ya había pasado al centavo. Suite: **849 en verde** (43 archivos), typecheck limpio, `next build` exit 0
+> con `ƒ /api/reportes/[libro]` y `ƒ /reportes`.
 >
 > Registro histórico: 2026-08-27 — **A14, compuerta de la Ola 2 (A5, A7, A8, A13). Veredicto: OLA 2
 > CERRADA.** Los tres criterios de salida de la sección 4 pasan, verificados **por la interfaz real** y
@@ -27,15 +28,19 @@
 | **0 — Fundaciones** | A2, A12, A14 | **PASA las cuatro pruebas**, verificadas de forma independiente por A14 con pruebas propias (`tests/adversarial/`) | *pendiente — lo pone A0* | 2026-08-26 |
 | **1 — Núcleo del dominio** | A1, A3, A4, A6, A14 | **PASA los cuatro criterios**, verificados de forma independiente por A14 con pruebas propias. Bloqueada primero por V-4 y V-6, cerrados por A1 en `ffaf3db` y **reverificados** por A14 sin creerle al reporte. Ver «Compuerta de la Ola 1 — veredicto de A14» | *pendiente — lo pone A0* | 2026-08-27 |
 | **2 — Inteligencia, parametrización e interfaz** | A5, A7, A8, A13, A14 | **PASA los tres criterios**, verificados por A14 **por la interfaz real** (`tests/adversarial/compuerta-ola2-interfaz.test.ts`) y con instrumentos propios (`tests/adversarial/compuerta-ola2.test.ts`). Dos defectos reales encontrados y **corregidos por A14** (D-049, D-050); uno declarado y asignado (V-11). Ver «Compuerta de la Ola 2 — veredicto de A14» | *pendiente — lo pone A0* | 2026-08-27 |
+| **3 — Salidas contables y fiscales** | A9, A10, A11, A14 | **PASA los dos criterios**, en la segunda pasada. Bloqueada primero por V-16 (no existía forma de descargar ningún reporte), cerrada por A9 con `GET /api/reportes/:libro` + `/reportes` y **reverificada por A14 atacando la ruta**, no leyendo el reporte. Un defecto nuevo encontrado y corregido por A14 en el ataque (V-19). Ver «Compuerta de la Ola 3 — veredicto de A14» | *pendiente — lo pone A0* | 2026-08-31 |
 
-**Ola 3: NO CERRADA. BLOQUEADA por A14 (2026-08-30).** La construcción está hecha y es sólida: 20 libros
-Excel (8 de A9, 5 de A10, 7 de A11), los cuatro estados financieros, el cierre de resultados y siete
-formatos de exógena, todo con las cuatro hojas obligatorias de la §11.2 y sin un solo valor tributario
-quemado. El bloqueo es de **entrega, no de cálculo**: no existe ninguna ruta de Next ni ninguna pantalla
-que produzca la descarga, y el criterio de salida dice literalmente «todo reporte **se descarga** en
-Excel». Es el mismo estándar que A14 fijó en la Ola 2 (D-056: la compuerta se prueba por la interfaz, no
-por la capa de servicios). Le toca a **A9** (route handler) y a **A8** (la pantalla). Ver
-«Compuerta de la Ola 3 — veredicto de A14».
+**Ola 3: CERRADA por A14, en la segunda pasada. Con ella termina la construcción del proyecto.** En la
+primera pasada (2026-08-30) el criterio duro —el balance de prueba contra el ledger con 10.000 asientos
+aleatorios— ya pasaba al centavo, pero A14 bloqueó por **V-16**: los veinte libros existían, eran
+correctos y serializaban a `.xlsx` válido, y **ningún importador fuera de las pruebas los invocaba**. No
+había descarga, y el criterio dice literalmente «todo reporte **se descarga** en Excel». A9 cerró V-16 con
+`GET /api/reportes/:libro` y la pantalla `/reportes`. A14 **no lo dio por bueno por escrito**: atacó la
+ruta con sesión de otra firma, cookie de empresa ajena, `companyId` inyectado en la query, sesión cerrada,
+token inventado, rol sin permiso y recorrido de ruta — todos rechazados, y ni una celda de otra firma en
+ningún libro. En ese ataque salió **V-19** (un slug igual a una clave del prototipo de `Object` devolvía
+500 en vez de 404), **corregida por A14**. Quedan abiertas y declaradas V-17 y V-18; ninguna derrota un
+criterio de salida.
 
 **Ola 1: CERRADA por A14, en la segunda pasada.** En la primera, la compuerta quedó **bloqueada**: con el
 repositorio tal como se entregaba, `rounding_rule` estaba vacía y no había ni una regla de ReteICA, de
@@ -1050,6 +1055,42 @@ route handler de Next.js» (**es falsa hoy**, V-16), y la idea de que la adverte
 formatos 1003/1006 «se le muestra al contador» — se le mostraría **si existiera la interfaz que la
 consume**, que es justamente lo que falta; y en el Excel, que sí existe, no aparece (V-18).
 
+### D-061 — Un catálogo de rutas se consulta por clave PROPIA, no por la cadena de prototipos
+
+**Problema (V-19):** `app/api/reportes/[libro]/route.ts` resolvía el generador con `REPORTES[libro]`, y el
+slug lo elige quien llama. En JavaScript ese acceso recorre el **prototipo**: `REPORTES['__proto__']`
+devuelve `Object.prototype` —truthy, así que se salta el 404— y `REPORTES['constructor']` devuelve el
+constructor `Object`, que además **es una función** y por tanto se llegaba a **invocar** como si fuera el
+generador del reporte. El resultado observable era un 500 con un mensaje interno en vez de un 404 limpio.
+No hay fuga —`conSesion` y `app.exigir_permiso` corren igual, y la RLS no se toca—, pero es la clase de
+descuido que en otra ruta con menos suerte sí llega a algo.
+
+**Decidido y corregido por A14:** `Object.hasOwn(REPORTES, libro) ? REPORTES[libro] : undefined`. Y la
+regla general, que vale para cualquier despacho por clave que venga de fuera (slugs, tipos de documento,
+nombres de acción): **si la clave la elige el cliente, la búsqueda se hace por propiedad propia.** Quedan
+nueve muestras de regresión (`__proto__`, `constructor`, `toString`, `valueOf`, `hasOwnProperty` y cuatro
+de recorrido de ruta), y la prueba informa **todas** las que fallen, no solo la primera: la primera
+versión se detenía en `__proto__` y dejaba sin ejecutar las cuatro siguientes.
+
+### D-062 — V-16 no se cierra con «existe la ruta», sino con «no queda ningún libro huérfano»
+
+**Problema:** la forma obvia de verificar la descarga es pedir un par de reportes por HTTP y ver que bajan.
+Eso no cierra V-16: el defecto original no era que faltara *una* ruta, sino que **había veinte libros y
+ningún consumidor**. Una ruta que sirviera dieciocho de veinte pasaría esa verificación y dejaría dos
+libros tan inalcanzables como antes.
+
+**Decidido:** la prueba de A14 (`tests/adversarial/compuerta-ola3-ruta.test.ts`) **enumera en tiempo de
+ejecución los generadores exportados por `src/reports/`** (`generarLibro*`, `generarBalance*`,
+`generarCertificado*`, `generarRelacion*`, `generarMovimiento*`, `generarDetalle*`, `generarEstado*`,
+`generarNotas*`, `generarFormato*`), exige que sean **veinte** y que **todos** aparezcan cableados en el
+fuente de la ruta; y comprueba con `git grep` que la ruta es el **único** importador de `src/reports/`
+fuera de `tests/` — la afirmación de A9, verificada contra el árbol y no aceptada por escrito. Si mañana
+alguien añade un libro y olvida su slug, o si un segundo importador aparece por otro camino, esa prueba
+cae. **V-16 no puede reaparecer en silencio.**
+
+Esto es la forma concreta, para módulos, de la convención que la Ola 3 dejó escrita: *un módulo sin
+consumidor no está terminado*.
+
 ---
 
 ## Vulnerabilidades — registro de A14
@@ -1138,9 +1179,10 @@ cálculo: es que lo construido no tiene por dónde entregarse. Otro era un defec
 | Id | Qué es | Gravedad | Estado | De quién |
 |---|---|---|---|---|
 | V-15 | **El cierre de resultados duplicaba la cancelación si los rangos se solapan.** `idempotency_key` (`cierre:<desde>:<hasta>`) impide repetir el **mismo** ejercicio, pero no dos rangos **solapados**: como `saldosACerrar` excluye a propósito los asientos de tipo `cierre` —para poder ser repetible—, un segundo cierre de 15-jun→30-jun después de uno de 01-jun→30-jun vuelve a ver los mismos ingresos y los cancela otra vez. Medido por A14 antes del arreglo: la cuenta de ingresos quedaba con **saldo débito** y el resultado del ejercicio en **cero**; y como el ledger es inmutable, deshacerlo obliga a una reversa | **Media-alta como producto** (corrompe el resultado del ejercicio en silencio, en el escenario natural de «cerré el semestre y luego cierro el año») | **CORREGIDA por A14** (D-058): `CierreSolapadoError` rechaza el solape **antes de escribir nada**, leyendo el rango de la propia clave de idempotencia del asiento publicado. Prueba de regresión que además verifica que el intento rechazado no deja ni un borrador huérfano | era de **A10** |
-| V-16 | **No existe ninguna forma de descargar un reporte.** Los veinte libros de la ola (8 de A9, 5 de A10, 7 de A11) no los invoca ni una ruta de Next, ni una acción de servidor, ni una pantalla: **cero** importadores de `src/reports/` fuera de `tests/`. El criterio de salida de la sección 4 dice «todo reporte **se descarga** en Excel», y la §11.1 dice que «un reporte que solo se ve en pantalla no sirve» — esto ni siquiera se ve en pantalla. El reporte de A9 afirma lo contrario («todo `src/reports/` lo invoca un route handler»); A14 lo verificó y **no es cierto** | **Alta como producto, y BLOQUEANTE de la compuerta**: el entregable de la ola es inalcanzable para un contador. No es fuga ni corrupción — lo generado es correcto y serializa bien a `.xlsx`, comprobado en los veinte | **ABIERTA. BLOQUEA la Ola 3** | **A9** (route handler con `reporte.exportar` y sesión real, sobre `libroABuffer`) + **A8** (la pantalla) |
+| V-16 | **No existía ninguna forma de descargar un reporte.** Los veinte libros de la ola (8 de A9, 5 de A10, 7 de A11) no los invocaba ni una ruta de Next, ni una acción de servidor, ni una pantalla: **cero** importadores de `src/reports/` fuera de `tests/`. El criterio de salida dice «todo reporte **se descarga** en Excel», y la §11.1 que «un reporte que solo se ve en pantalla no sirve» — esto ni siquiera se veía en pantalla | **Alta como producto. BLOQUEÓ la Ola 3** en la primera pasada | **CERRADA por A9** (`app/api/reportes/[libro]/route.ts` + `app/reportes/page.tsx`, commit `0e28054`) y **reverificada por A14 atacando la ruta**, no leyendo el reporte: los veinte slugs sirven un `.xlsx` que se reabre con las cuatro hojas, ningún generador quedó huérfano sin slug (prueba que enumera los exports de `src/reports/` y exige que los veinte estén cableados), y la ruta resiste los nueve ataques de la tabla del veredicto | era de **A9** + **A8** |
 | V-17 | **No hay forma de crear ni editar un tercero.** El esquema de A2 está bien (`third_party` tiene `direccion`, `municipality_id` y `codigo_dane`), pero no existe ni un `INSERT INTO third_party` en `src/`, `app/` ni migraciones: solo en los fixtures de prueba. A11 lo detectó como bloqueo del Formato 1001 (dirección y municipio del informado, art. 1.3.5.2.1 Res. 000227/2025); **A14 lo amplía**: como `src/services/ingest.ts` resuelve el tercero por NIT y **no lo crea**, una factura de un proveedor no cargado a mano por SQL tampoco se puede causar. Hoy no se puede poner en marcha un cliente nuevo sin acceso directo a la base | **Media-alta como producto** (impide el arranque real de una empresa cliente), **baja como riesgo** (no hay fuga ni dato inventado: A11 hizo lo correcto dejando las celdas vacías y listándolas en la hoja «Bloqueos») | **ABIERTA, declarada y medida.** No bloquea la compuerta de la Ola 3 por sí sola: el criterio en disputa es la descarga | **A8** (maestro de terceros, con dirección y municipio obligatorios o advertidos). A2 no tiene nada que corregir |
 | V-18 | **Las advertencias de alcance de los formatos 1003 y 1006 no llegan al Excel.** Van en el objeto devuelto y en la cabecera del archivo plano, pero **no** en el libro, que es el que el contador revisa. El 1001 sí tiene su hoja «Bloqueos»; estos dos no tienen su hoja «Advertencias» | **Baja** (la limitación está declarada y el dato no se inventa; lo que falla es dónde se avisa) | **ABIERTA, declarada** | **A11** |
+| V-19 | **Un slug igual a una clave del prototipo de `Object` no daba 404 sino 500.** `REPORTES[libro]` resolvía por la cadena de prototipos: `__proto__` devolvía un objeto truthy que no es un generador —se saltaba el 404 y reventaba abajo con un 500 que expone un mensaje interno— y `constructor` llegaba a **llamar** a `Object` como si fuera el generador. Encontrado por A14 atacando la ruta nueva con nueve slugs envenenados | **Baja**: no hay fuga (la sesión y el permiso se exigen antes y la RLS sigue puesta) ni escritura; es manejo de errores y divulgación de un mensaje interno | **CORREGIDA por A14** (D-061): `Object.hasOwn(REPORTES, libro)`. Las nueve muestras quedan como regresión, y la prueba informa **todas** las que fallen, no solo la primera | era de **A9** |
 | — | **Sin estadísticas del planificador, un JOIN bajo RLS crece cuadráticamente.** Medido por A14 en PGlite: `journal_line ⋈ journal_entry` bajo RLS tarda 10 s con 2.000 partidas, 39 s con 4.000 y 159 s con 8.000; tras `ANALYZE`, **4 ms**. No es la RLS (la misma consulta sin JOIN va en 3 ms bajo RLS) ni la vista de A9: es el planificador estimando sobre tablas sin estadísticas y cayendo en bucle anidado | Muy baja en producción (autovacuum mantiene las estadísticas), **alta justo después de una carga masiva** | **Aceptada, con el número medido y anotada en la prueba** | anotación para **A15**: ANALIZAR después de una carga masiva de documentos |
 | — | El archivo plano de exógena lleva líneas de cabecera que empiezan por `#` (la advertencia de layout no verificado). Ningún prevalidador de la DIAN acepta comentarios: **el archivo de hoy es un borrador de revisión, no un archivo presentable**. Es coherente con que los códigos numéricos del anexo técnico estén sin verificar (advertencia 17.5), pero conviene no confundirlo | Baja | **Aceptada mientras el layout siga sin verificar** | **A11** cuando se verifique el anexo técnico; **verificación humana** para el anexo |
 
@@ -1389,6 +1431,16 @@ añadió a cada caso.
 | 19 | **PASA** (sin cambios) | Reejecutado con la mina y el espía de D-052: segunda factura del mismo proveedor con la misma descripción escrita distinta → `origen = 'memoria'`, `llamadasLlm = 0`, `costoMicrosUsd = 0`, la mina intacta y `globalThis.fetch` sin una sola llamada. Ningún módulo de la Ola 3 llama a un LLM: `src/reports/` no importa nada de `src/ai/` |
 | 20 | **PASA, reverificado sobre TODA la superficie nueva de la Ola 3** | Cero filas ajenas, y ahora también **cero celdas ajenas**: los **veinte** libros generados desde la sesión de **otra firma** y desde **otra empresa de la misma firma** no contienen la marca de la empresa A, ni su `third_party_id`, ni su `company_id`, **en ninguna hoja** (se recorre el libro entero, no solo «Datos»: si una hoja adicional olvidara el filtro, se vería). Y el **archivo plano** de exógena (1001, 1005, 1007, 1009) generado por la otra firma tampoco los trae |
 
+**Reejecución de la SEGUNDA pasada (2026-08-31, con la ruta de descarga ya entregada):** los veinte
+vuelven a correr en verde dentro de las 849 pruebas. El **caso 20 se extiende a la superficie que estrena
+el desbloqueo**, que es la más expuesta de todo el producto (una ruta HTTP que devuelve archivos): sesión
+de la firma B pidiendo la empresa de la firma A → **403** con rastro `ACCESO_DENEGADO`; empresa de la
+misma firma sin acceso vigente → **403**; `companyId`/`company_id`/`empresa`/`tenantId` inyectados en la
+query → **ni se leen**, y el `.xlsx` que baja —abierto y recorrido hoja por hoja— no contiene la marca de
+la otra firma ni su `third_party_id`; sin cookie, con token inventado o con la sesión ya cerrada → **401**.
+El **caso 17** también se extiende: descargar los veinte libros por HTTP deja la huella del ledger
+idéntica, así que la ruta tampoco puede alterar nada de lo publicado.
+
 **Pruebas adicionales de integridad, estado tras la Ola 3:**
 
 | Prueba | Estado |
@@ -1403,41 +1455,80 @@ añadió a cada caso.
 
 ---
 
-## Compuerta de la Ola 3 — veredicto de A14: **BLOQUEADA** (pasa un criterio de dos)
+## Compuerta de la Ola 3 — veredicto de A14: **PASA. Ola 3 CERRADA** (en la segunda pasada)
 
-Ejecutada el 2026-08-30 sobre el commit `bb8cb08`, con pruebas propias de A14
-(`tests/adversarial/compuerta-ola3.test.ts` y `tests/adversarial/compuerta-ola3-entregas.test.ts`,
-**107 pruebas nuevas**), sin creerle a `docs/reportes/ola3-a9.md`, `ola3-a10.md` ni `ola3-a11.md`.
+Dos pasadas:
+
+- **Primera (2026-08-30, commit `bb8cb08`): BLOQUEADA.** El criterio 2 pasaba al centavo; el criterio 1
+  no, porque no existía ninguna forma de descargar un reporte (V-16). 107 pruebas nuevas de A14
+  (`tests/adversarial/compuerta-ola3.test.ts`, `compuerta-ola3-entregas.test.ts`).
+- **Segunda (2026-08-31, commit `0e28054` + correcciones de A14): PASA.** A9 cerró V-16 con
+  `app/api/reportes/[libro]/route.ts` y `app/reportes/page.tsx`; A14 lo **atacó** en vez de creerle
+  (`tests/adversarial/compuerta-ola3-ruta.test.ts`, **35 pruebas nuevas**) y encontró V-19, que corrigió.
 
 ### Criterio 1 — «Todo reporte se descarga en Excel con formato de papel de trabajo (sección 11)»
 
-**NO PASA, y por eso la ola queda bloqueada. El defecto no está en el Excel: está en que no hay descarga.**
+**PASA. Verificado por HTTP, no por la capa de servicios** (D-056), y atacando la ruta como atacante y
+como contador hostil.
 
-Lo que **sí** está verificado, y no hay que rehacerlo (A14 lo comprobó libro por libro, los veinte):
+Lo del **contenido** del Excel ya estaba verificado en la primera pasada, libro por libro, los veinte
+(8 de A9, 5 de A10, 7 de A11), y sigue en verde:
 
-- **Las cuatro hojas obligatorias de la §11.2 están, y son las cuatro primeras, en los veinte libros**:
-  los 8 de A9, los 5 de A10 y los 7 de A11. La comprobación es `worksheets.slice(0, 4)` **exactamente
-  igual a** `['Datos','Papel de trabajo','Trazabilidad','Parámetros']`, así que una hoja adicional no
-  puede colarse en medio ni desplazar a una obligatoria.
-- **«Papel de trabajo» lleva el encabezado que exige la norma**: en los veinte libros aparecen el NIT, la
-  palabra «período» y el período real del reporte.
-- **«Trazabilidad» dice qué regla y qué vigencia se aplicó, con datos reales y no con un rótulo vacío**:
-  en el certificado de retenciones la hoja contiene el `tax_rule_id` **exacto** de la regla usada y su
-  `vigente_desde`, y sus encabezados nombran regla y vigencia. La hoja «Parámetros» del mismo libro trae
-  también la vigencia: es lo que hace el reporte autoexplicativo dentro de seis meses, que es lo que pide
-  la §11.2 y lo que lo vuelve defendible ante un revisor fiscal.
-- **Los veinte libros se escriben de verdad como `.xlsx` y se vuelven a abrir**: A14 los serializó con
-  `libroABuffer`, verificó la firma `PK` del ZIP y los **releyó** con ExcelJS, conservando las cuatro
-  hojas y el número total de hojas. Ningún nombre de hoja pasa de 31 caracteres ni lleva caracteres
-  prohibidos — el error clásico que revienta al serializar y que ninguna prueba que se quede en el objeto
-  en memoria vería.
+- **Las cuatro hojas obligatorias de la §11.2 están, y son las cuatro primeras**: la comprobación es
+  `worksheets.slice(0, 4)` **exactamente igual a** `['Datos','Papel de trabajo','Trazabilidad','Parámetros']`,
+  así que una hoja adicional no puede colarse en medio ni desplazar a una obligatoria.
+- **«Papel de trabajo» lleva el encabezado que exige la norma**: NIT, la palabra «período» y el período
+  real del reporte, en los veinte.
+- **«Trazabilidad» dice qué regla y qué vigencia se aplicó, con datos reales**: en el certificado de
+  retenciones contiene el `tax_rule_id` **exacto** de la regla usada y su `vigente_desde`, y sus
+  encabezados nombran regla y vigencia. La hoja «Parámetros» del mismo libro también trae la vigencia:
+  es lo que lo hace autoexplicativo a seis meses y defendible ante un revisor fiscal.
+- **Los veinte se escriben como `.xlsx` y se vuelven a abrir**, con la firma `PK` del ZIP verificada y
+  sin ningún nombre de hoja de más de 31 caracteres.
 
-Lo que **falta**, y es todo lo que falta: **no existe ninguna superficie por la que un contador obtenga
-esos archivos.** Barrido sobre `app/` y sobre todo el repositorio fuera de `src/reports/` y `tests/`:
-**cero** importadores de `src/reports/`. No hay route handler, no hay acción de servidor, no hay pantalla
-ni enlace. El reporte de A9 afirma que «todo `src/reports/` lo invoca un route handler de Next.js»;
-**eso no es cierto hoy**, y A14 no lo da por bueno por estar escrito. Es **V-16**, y le toca a **A9** (la
-ruta que sirve el `.xlsx` con su permiso y su sesión) y a **A8** (la pantalla). Ver D-059.
+Lo **nuevo de esta pasada**, que es lo que faltaba: **ahora se descargan de verdad.**
+
+- **Los veinte slugs responden 200 por `GET /api/reportes/:libro`**, con
+  `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`, cuerpo que empieza
+  por `PK`, y **al reabrirlo con ExcelJS trae las cuatro hojas obligatorias**. No es una muestra: son los
+  veinte, uno por uno, cada uno con sus parámetros obligatorios.
+- **El `Content-Disposition` no es inyectable**: se comprueba contra
+  `^attachment; filename="[A-Za-z0-9_.-]+\.xlsx"$`. El nombre lo arma la ruta leyendo la hoja «Papel de
+  trabajo» del libro **ya generado** (razón social y NIT), no un parámetro del cliente.
+- **El libro que baja trae los datos de la empresa en sesión** (contiene la marca de la firma A): si no,
+  la prueba de aislamiento de más abajo no probaría nada.
+- **Ningún libro quedó huérfano.** Esta es la comprobación que cierra V-16 de verdad, y no la existencia
+  de la ruta: A14 enumera **los generadores exportados por `src/reports/`** en tiempo de ejecución
+  (`generarLibro*`, `generarBalance*`, `generarEstado*`, `generarFormato*`…), verifica que son **veinte**
+  y que **todos** aparecen cableados en el fuente de la ruta. Si mañana alguien añade un libro y olvida su
+  slug, esa prueba cae: V-16 no puede reaparecer en silencio.
+- **La afirmación de A9 de que su ruta es el único importador de `src/reports/` fuera de las pruebas es
+  CIERTA**, y no se acepta por escrito: se comprueba con `git grep` sobre `app/` y `src/` dentro de la
+  propia prueba, exigiendo que la lista sea exactamente `['app/api/reportes/[libro]/route.ts']`.
+- **La ruta no escribe nada en el ledger**: descargar los veinte deja la huella de `journal_entry`,
+  `journal_line`, `approval`, `source_document` y `retention_applied` idéntica.
+- **La pantalla existe** (`app/reportes/page.tsx`, `ƒ /reportes` en el build) y no ofrece formularios sin
+  el permiso `reporte.exportar`.
+
+### Ataques a la ruta — caso dorado 20 sobre la superficie nueva
+
+Una ruta HTTP que sirve archivos es el sitio más fácil para filtrar datos de otra firma. Resultado de los
+ataques de A14, todos contra la base real (RLS, `app.current_company_id()` y `app.exigir_permiso` sin
+dobles; lo único simulado es `next/headers` y el singleton de conexión):
+
+| Ataque | Resultado |
+|---|---|
+| Sin cookie de sesión | **401**, sin generar nada, y el cuerpo no contiene la marca de ninguna firma |
+| Token inventado | **401** |
+| Sesión **cerrada** después de emitirse (la cookie sigue en el cliente) | **200 antes, 401 después**: lo decide la base, no la cookie |
+| Sesión de la **firma B** con cookie de empresa de la **firma A** | **403**, con rastro `ACCESO_DENEGADO` en `audit_log` del tenant atacante, y sin servir el libro |
+| Empresa de la **misma firma** sobre la que el usuario no tiene acceso vigente | **403** |
+| `companyId`, `company_id`, `empresa` y `tenantId` inyectados en la **query string** | **200 con el libro de SU empresa**: los cuatro parámetros **ni se leen**. El `.xlsx` que baja no contiene la marca de la firma A ni su `third_party_id` — comprobado abriendo el archivo devuelto y recorriendo **todas** las hojas |
+| Rol `solo_lectura` (sin `reporte.exportar`) | **403** — lo impone el motor (`app.exigir_permiso`), la ruta solo traduce |
+| Recorrido de ruta (`../../../etc/passwd`, `..%2f..%2fapp%2flib%2fdb`, `libro-diario/../../secreto`) | **404** |
+| Slugs iguales a claves del prototipo de `Object` (`__proto__`, `constructor`, `toString`, `valueOf`, `hasOwnProperty`) | **404** tras la corrección de A14. **Antes daban 500** (V-19) |
+| Parámetros ausentes o mal formados, `nivel=9`, `nivel=3; DROP TABLE journal_line` | **400** con mensaje puntual, nunca 500 |
+| Inyección SQL por `terceroId` (`' OR 1=1 --`) | No llega al motor como SQL; no devuelve datos ajenos y el ledger queda intacto |
 
 ### Criterio 2 — «El balance de prueba cuadra contra la suma del ledger, comprobado por A14 con datos generados aleatoriamente» (§12: 10.000 asientos, al centavo)
 
@@ -1474,10 +1565,11 @@ carga masiva de documentos hay que ANALIZAR, o los primeros reportes de esa empr
 
 ### Criterio nuevo desde la Ola 2 — `npx next build`
 
-**PASA. Exit 0**, Next 16.3.3 con Turbopack, las 11 rutas existentes se sirven igual. Ejecutado dos
-veces: al empezar (para no heredar una rotura ajena) y al terminar, después de tocar
-`src/services/cierre.ts`. `npm test` **806 en verde** en 41 archivos (699 previas + 107 de A14),
-`npm run typecheck` limpio.
+**PASA. Exit 0** en las dos pasadas, Next 16.3.3 con Turbopack. En la segunda, el build lista **13 rutas**,
+incluidas las dos nuevas: `ƒ /api/reportes/[libro]` y `ƒ /reportes`. Ejecutado siempre al empezar (para no
+heredar una rotura ajena) y al terminar, después de tocar `src/services/cierre.ts` (primera pasada) y
+`app/api/reportes/[libro]/route.ts` (segunda). Cierre: `npm test` **849 en verde** en 43 archivos
+(814 previas + 35 de la suite de ataque a la ruta), `npm run typecheck` limpio.
 
 ### Adjudicación de las tres entregas, punto por punto
 
@@ -1544,8 +1636,9 @@ declarado en el inventario de `tests/adversarial/casos-dorados.test.ts` y el can
 detector de valores tributarios **alcanza** los tres directorios nuevos y caza el veneno sembrado en cada
 uno (ver la tabla de integridad de arriba).
 
-### Lo que A14 corrigió en esta pasada
+### Lo que A14 corrigió en las dos pasadas
 
+0. **V-19 — un slug igual a una clave del prototipo de `Object` devolvía 500 en vez de 404** (segunda pasada). `REPORTES[libro]` resolvía por la cadena de prototipos: con `__proto__` devolvía un objeto truthy que no es un generador, se saltaba el 404 y reventaba abajo con un 500 que expone un mensaje interno; con `constructor` llegaba a **llamar** a `Object` como si fuera el generador. No hay fuga —la sesión se exige antes—, pero un catálogo de rutas se consulta por **clave propia**: `Object.hasOwn(REPORTES, libro)`. Corregido en `app/api/reportes/[libro]/route.ts`, con las nueve muestras de veneno en la prueba, que además ahora **informa todas** las que fallen y no solo la primera.
 1. **V-15 — el cierre de rangos solapados duplicaba la cancelación.** `CierreSolapadoError` en
    `src/services/cierre.ts`: antes de escribir nada se rechaza un cierre cuyo rango se solape con el de un
    asiento de cierre ya publicado. El rango se lee de la **propia clave de idempotencia** del asiento
@@ -1558,19 +1651,22 @@ uno (ver la tabla de integridad de arriba).
 
 ### Lo que A14 NO corrigió, y a quién le toca
 
+**V-16 ya no está en esta tabla: la cerró A9 y A14 la reverificó atacándola.** Lo que sigue abierto:
+
 | Qué falta | Por qué A14 no lo hace | A quién le toca |
 |---|---|---|
-| **V-16 — la ruta y la pantalla de descarga de los veinte libros** | Es construcción de producto, no verificación: si A14 la escribe, no queda nadie independiente para verificarla. Y es justo el criterio de salida en disputa: quien entrega no puede ser quien aprueba | **A9** (route handler que sirva el `.xlsx` con permiso `reporte.exportar` y sesión real, reutilizando `libroABuffer`) + **A8** (la pantalla) |
 | **V-17 — no hay forma de crear ni editar un tercero** | Es una pantalla CRUD completa con sus validaciones, y afecta al maestro de datos, no a un reporte | **A8** |
 | **V-18 — las advertencias de alcance de 1003/1006 no llegan al Excel** | Es contenido del entregable de A11, y el mecanismo ya existe (`hojasAdicionales`, como la hoja «Bloqueos» del 1001) | **A11** |
 | **Prueba de carga: 5.000 facturas en cola** | Lleva dos olas sin dueño efectivo. No es criterio de salida de ninguna, pero sigue sin hacerse | **A6 + A13 + A15** |
 
-### Qué hace falta EXACTAMENTE para desbloquear la Ola 3
+### Cómo se desbloqueó (histórico, ya resuelto)
 
-Una sola cosa: **que exista la descarga** (V-16). Cuando A9 entregue el route handler y A8 el enlace,
-A14 vuelve a correr únicamente esa parte —la ruta responde con el `Content-Type` de xlsx, exige sesión y
-permiso, y el archivo que baja abre en Excel con sus cuatro hojas— y cierra la ola. Todo lo demás de esta
-compuerta ya está verificado y **no hay que rehacerlo**.
+Faltaba una sola cosa —**que existiera la descarga** (V-16)— y así se cerró: A9 entregó
+`app/api/reportes/[libro]/route.ts` y `app/reportes/page.tsx`, y A14 volvió a correr **solo esa parte**,
+atacándola, sin repetir el resto de la compuerta. La ruta pasó todo salvo el caso de las claves del
+prototipo (V-19), que A14 corrigió en el momento. El resto de la compuerta —las cuatro hojas, la
+trazabilidad, los 10.000 asientos, el cierre de resultados, las advertencias 17.5 de A10 y A11— ya estaba
+verificado en la primera pasada y no se rehízo.
 
 ---
 
@@ -1851,69 +1947,48 @@ sin broker, tal como exige la sección 5.
 
 ## Próximo paso
 
-**OLA 3 BLOQUEADA por A14 (2026-08-30). No hay commit de cierre todavía.** El criterio duro —el balance
-de prueba contra el ledger con 10.000 asientos aleatorios— **pasa al centavo**. El que falla es el otro:
-«todo reporte **se descarga** en Excel», y hoy **no hay por dónde descargarlo** (V-16). Todo lo demás de
-la compuerta está verificado y no hay que rehacerlo; el detalle, criterio por criterio y entrega por
-entrega, está en «Compuerta de la Ola 3 — veredicto de A14».
+**OLA 3 CERRADA por A14 (2026-08-31), en la segunda pasada. Con ella se cierra la última ola del plan de
+la sección 4.** Los dos criterios de salida pasan, más `npx next build`. Falta únicamente el **commit de
+cierre, que lo hace A0** (A14 no hace commits).
 
-**Para desbloquear hacen falta dos cosas, en este orden:**
+Estado del árbol al cerrar: **849 pruebas en verde**, 43 archivos, typecheck limpio, `next build` exit 0
+con 13 rutas (incluidas `ƒ /api/reportes/[libro]` y `ƒ /reportes`). Ficheros que A14 tocó en la segunda
+pasada:
 
-1. **A9 — el route handler de descarga.** Una ruta bajo `app/` que reciba qué reporte y con qué período,
-   exija sesión real y el permiso `reporte.exportar` (que los veinte generadores ya exigen por su cuenta),
-   llame al generador, serialice con `libroABuffer` y devuelva el `.xlsx` con su `Content-Type` y su
-   `Content-Disposition`. Nada de lógica de reporte nueva: la generación ya está hecha y verificada.
-   Cuidado con dos cosas que ya costaron caro en olas anteriores: en un archivo con `"use server"` **todo
-   export debe ser `async`**, y Turbopack **no** resuelve la extensión `.js` en imports relativos.
-2. **A8 — la pantalla.** Desde dónde se pide: empresa en contexto, período y tipo de reporte. Es la misma
-   costura que ya existe en `app/parametros` y `app/bandeja`.
-
-Cuando estén, **A14 vuelve a correr solo esa parte** (la ruta responde con el `Content-Type` correcto,
-exige sesión y permiso, el archivo que baja abre con sus cuatro hojas) y cierra la ola. No hay que repetir
-el resto de la compuerta.
-
-Estado del árbol al bloquear: **806 pruebas en verde**, 41 archivos, typecheck limpio, `next build` exit 0.
-Ficheros que A14 tocó en esta pasada:
-
-- `src/services/cierre.ts` — `CierreSolapadoError`: rechaza cerrar un ejercicio que se solape con uno ya
-  cerrado, antes de escribir nada (V-15, D-058).
-- `tests/adversarial/compuerta-ola3.test.ts` — **nuevo**. Los 10.000 asientos aleatorios contra el ledger
-  crudo (criterio de salida de la §12, que llevaba dos olas sin implementar).
-- `tests/adversarial/compuerta-ola3-entregas.test.ts` — **nuevo**. Las cuatro hojas obligatorias, la
-  trazabilidad con regla y vigencia, el round-trip a `.xlsx`, el aislamiento entre firmas y entre empresas
-  en los veinte libros, el cierre de resultados y las advertencias 17.5 de A10 y A11.
-- `tests/adversarial/valores-tributarios.test.ts` — el barrido ahora demuestra que alcanza `src/reports/`
-  y `src/services/cierre.ts`.
+- `app/api/reportes/[libro]/route.ts` — `Object.hasOwn` en el despacho por slug (V-19, D-061).
+- `tests/adversarial/compuerta-ola3-ruta.test.ts` — **nuevo**: los veinte libros por HTTP, la prueba de
+  «ningún libro huérfano» y los nueve ataques a la ruta.
 - `ESTADO_PROYECTO.md`.
 
-### Lo que queda abierto después de la Ola 3, con dueño
+(De la primera pasada: `src/services/cierre.ts`, `tests/adversarial/compuerta-ola3.test.ts`,
+`tests/adversarial/compuerta-ola3-entregas.test.ts` y `tests/adversarial/valores-tributarios.test.ts`.)
 
-| Qué | Quién | ¿Bloquea? |
+### Lo que queda abierto al cerrar el plan de olas, con dueño
+
+Ninguno bloquea una compuerta; todos son deuda conocida antes de producción.
+
+| Qué | Quién | Gravedad |
 |---|---|---|
-| **V-16** — no hay ruta ni pantalla de descarga de reportes | **A9** + **A8** | **Sí: bloquea la Ola 3** |
-| **V-17** — no hay maestro de terceros (impide exógena 1001 completa y, más grave, impide causar la factura de un proveedor nuevo) | **A8** | No la compuerta; sí el arranque real de un cliente |
-| **V-18** — las advertencias de alcance de 1003/1006 no llegan al Excel | **A11** | No |
-| **V-11** — la IP del cliente en la aprobación desde la bandeja | **A7** + **A15** | No |
-| **V-1** — `app.resolver_empresa_por_buzon` concedida a `app_user` | **A4** + **A12** | No |
-| **V-5** — código de actividad de ICA municipal de 5 dígitos (Bogotá) | **A2**, luego **A1** | No |
-| Prueba de carga de 5.000 facturas en cola (§12) | **A6** + **A13** + **A15** | No, pero lleva dos olas sin dueño efectivo |
-| `ANALYZE` después de una carga masiva (si no, los primeros reportes de esa empresa se arrastran) | **A15** | No |
-| Datos normativos pendientes de verificación humana (ver su sección) | **humano** + **A1** | No |
+| **V-17** — no hay maestro de terceros: impide completar el Formato 1001 y, más grave, **impide causar la factura de un proveedor que nadie haya insertado por SQL**. Hoy no se pone en marcha un cliente nuevo sin acceso a la base | **A8** | Media-alta como producto |
+| **V-18** — las advertencias de alcance de los formatos 1003/1006 no llegan al Excel que revisa el contador | **A11** | Baja |
+| **V-11** — la aprobación desde la bandeja revienta si el despliegue no reenvía la IP del cliente | **A7** + **A15** | Media |
+| **V-1** — `app.resolver_empresa_por_buzon` sigue concedida a `app_user` | **A4** + **A12** | Baja |
+| **V-5** — el código de actividad de ICA municipal de Bogotá (5 dígitos) no cabe en `ciiu_activity` | **A2**, luego **A1** | Media (dato) |
+| Prueba de carga de 5.000 facturas en cola (§12) | **A6** + **A13** + **A15** | Sin dueño efectivo desde la Ola 2 |
+| `ANALYZE` tras una carga masiva, o los primeros reportes de esa empresa se arrastran (D-057) | **A15** | Operativa |
+| Datos normativos pendientes de verificación humana (ver su sección) | **humano** + **A1** | Alta antes de producción |
 
 ### Advertencias que salen de esta verificación, para quien retome
 
-- **Un módulo sin consumidor no está terminado.** El inventario de módulos de `src/` (canario de A14) dice
-  qué módulos existen, pero no que alguien los use. Antes de declarar terminado un módulo nuevo, un
-  `grep` de sus importadores fuera de `tests/` tiene que devolver algo. Es exactamente lo que faltó aquí.
-- **Cuando una prueba compara A con B, hay que mirar si A y B leen de la misma fuente** (D-057). El
-  criterio de los 10.000 asientos se estaba dando por bueno comparando dos consultas contra la misma
-  vista. Una comparación circular pasa siempre, incluso cuando el defecto que busca está presente.
-- **La idempotencia por clave no protege del solape** (D-058). Cualquier operación que se declare
-  idempotente sobre un **rango** (cierres, recálculos, reprocesos por período) tiene que decidir también
-  qué pasa cuando el rango nuevo se cruza con uno anterior. Aquí costaba el resultado del ejercicio.
-- **Si una prueba con datos de verdad tarda de más, mide antes de acusar al diseño.** El JOIN bajo RLS
-  parecía un defecto de arquitectura y era el planificador sin estadísticas: 159 s pasaron a 4 ms con un
-  `ANALYZE`. La medición está en D-057 con sus números; no hace falta repetirla, sí recordarla.
+- **Un módulo sin consumidor no está terminado** (V-16, D-062). Y la comprobación no es «existe una ruta»,
+  sino «no queda ningún libro huérfano»: se enumeran los exports y se exige que todos estén cableados.
+- **Si la clave la elige el cliente, la búsqueda se hace por propiedad propia** (V-19, D-061). `obj[clave]`
+  con clave externa recorre el prototipo, y `constructor` es una función invocable.
+- **Cuando una prueba compara A con B, hay que mirar si A y B leen de la misma fuente** (D-057).
+- **La idempotencia por clave no protege del solape** (D-058): toda operación idempotente sobre un *rango*
+  debe decidir qué pasa cuando el rango nuevo se cruza con uno anterior.
+- **Si una prueba con datos de verdad tarda de más, mide antes de acusar al diseño** (D-057): 159 s
+  pasaron a 4 ms con un `ANALYZE`.
 
 ---
 

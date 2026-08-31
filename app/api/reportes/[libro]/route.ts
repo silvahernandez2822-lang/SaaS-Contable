@@ -299,7 +299,12 @@ function respuestaError(status: number, motivo: string, detalle: string): Respon
 
 export async function GET(request: Request, ctx: { params: Promise<{ libro: string }> }): Promise<Response> {
   const { libro } = await ctx.params;
-  const generar = REPORTES[libro];
+  // `Object.hasOwn` y no `REPORTES[libro]` a secas (hallazgo de A14, V-19):
+  // con el acceso directo, un slug que sea una clave del PROTOTIPO de Object
+  // (`__proto__`, `constructor`, `toString`...) devuelve algo truthy que no es
+  // un generador, se salta este 404 y revienta más abajo con un 500 que expone
+  // un mensaje interno. Un catálogo de rutas se consulta por clave PROPIA.
+  const generar = Object.hasOwn(REPORTES, libro) ? REPORTES[libro] : undefined;
   if (!generar) {
     return respuestaError(
       404,
