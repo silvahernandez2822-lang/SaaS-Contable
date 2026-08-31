@@ -10,7 +10,7 @@ import {
   obtenerTercero,
   listarHistorialAtributosFiscales,
   hoyIso,
-  puedeEditarTerceros,
+  puedeEditarAtributosFiscales,
 } from '../../../../src/services/terceros';
 import { MensajeError, RadioSiNo, Si } from '../../_componentes';
 import { confirmarAction, simularAction } from './acciones';
@@ -34,7 +34,7 @@ export default async function PaginaAtributosFiscales({
   const sp = await searchParams;
 
   const [tercero, historial, puedeEditar] = await conSesion((tx) =>
-    Promise.all([obtenerTercero(tx, id), listarHistorialAtributosFiscales(tx, id), puedeEditarTerceros(tx)]),
+    Promise.all([obtenerTercero(tx, id), listarHistorialAtributosFiscales(tx, id), puedeEditarAtributosFiscales(tx)]),
   );
 
   if (!tercero) {
@@ -56,7 +56,7 @@ export default async function PaginaAtributosFiscales({
 
       <MensajeError error={cadena(sp, 'error') || undefined} />
 
-      {!puedeEditar && <p>Su sesión no tiene el permiso "tercero.editar": solo puede consultar el historial.</p>}
+      {!puedeEditar && <p>Su sesión no tiene el permiso "tercero.atributos_fiscales": solo puede consultar el historial.</p>}
 
       {puedeEditar && !confirmando && (
         <form action={simularAction} style={{ border: '1px solid #334155', padding: '16px' }}>

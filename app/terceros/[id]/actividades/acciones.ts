@@ -41,7 +41,7 @@ function mensajeDeError(e: unknown): string {
     return e.message;
   }
   if (isPostgresError(e) && e.code === SQLSTATE.PERMISO_INSUFICIENTE) {
-    return 'Su sesión no tiene permiso para editar actividades de terceros (se requiere "tercero.editar").';
+    return 'Su sesión no tiene permiso para editar actividades de terceros (se requiere "tercero.atributos_fiscales"; y "parametro.editar" si fija una tarifa de ICA propia).';
   }
   return e instanceof Error ? e.message : 'Ocurrió un error inesperado guardando la actividad.';
 }

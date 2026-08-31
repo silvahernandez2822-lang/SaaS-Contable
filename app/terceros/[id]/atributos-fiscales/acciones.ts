@@ -73,7 +73,7 @@ function mensajeDeError(e: unknown): string {
     return e.message;
   }
   if (isPostgresError(e) && e.code === SQLSTATE.PERMISO_INSUFICIENTE) {
-    return 'Su sesión no tiene permiso para editar atributos fiscales (se requiere "tercero.editar").';
+    return 'Su sesión no tiene permiso para editar atributos fiscales (se requiere "tercero.atributos_fiscales").';
   }
   return e instanceof Error ? e.message : 'Ocurrió un error inesperado guardando el atributo fiscal.';
 }

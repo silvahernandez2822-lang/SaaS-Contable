@@ -50,7 +50,8 @@
  *     (`app.trg_audit`, ya instalado sobre estas dos tablas en 009); este
  *     servicio solo exige que el contador la escriba (`requerirNorma`).
  *  5. Permiso restringido — lo impone el trigger `third_party*_permiso`
- *     (`tercero.editar`, migración 016). Este servicio no lo reimplementa:
+ *     (`tercero.editar` para el maestro, `tercero.atributos_fiscales` para las
+ *     vigencias fiscales y la actividad — migraciones 016 y 140). Este servicio no lo reimplementa:
  *     si falta, el INSERT/UPDATE falla con SQLSTATE `SE002` y sube sin
  *     envolverse (D-025, igual que en `parametrizacion.ts`).
  *  6. Simulador previo de impacto — `simularImpactoAtributosFiscales` /
@@ -449,6 +450,20 @@ export async function obtenerTercero(tx: SqlClient, terceroId: string): Promise<
 
 export async function puedeEditarTerceros(tx: SqlClient): Promise<boolean> {
   const { rows } = await tx.query<{ tiene: boolean }>("SELECT app.tiene_permiso('tercero.editar') AS tiene");
+  return rows[0]?.tiene === true;
+}
+
+/**
+ * A12, migración 140. Editar el MAESTRO de un tercero y editar sus VIGENCIAS
+ * FISCALES no son la misma cosa: lo segundo entra en el cálculo de la
+ * retención, así que es parámetro y lleva su propio permiso
+ * (`tercero.atributos_fiscales`). Lo tienen admin_firma, admin_tributario y
+ * contador; el auxiliar de causación no.
+ */
+export async function puedeEditarAtributosFiscales(tx: SqlClient): Promise<boolean> {
+  const { rows } = await tx.query<{ tiene: boolean }>(
+    "SELECT app.tiene_permiso('tercero.atributos_fiscales') AS tiene",
+  );
   return rows[0]?.tiene === true;
 }
 

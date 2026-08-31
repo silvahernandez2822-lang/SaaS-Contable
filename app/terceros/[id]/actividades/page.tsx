@@ -12,7 +12,7 @@ import {
   listarMunicipiosParaSelector,
   listarCiiuParaSelector,
   hoyIso,
-  puedeEditarTerceros,
+  puedeEditarAtributosFiscales,
 } from '../../../../src/services/terceros';
 import { MensajeError, RadioSiNo, Si } from '../../_componentes';
 import { confirmarAction, simularAction } from './acciones';
@@ -41,7 +41,7 @@ export default async function PaginaActividades({
       listarActividadesVigentes(tx, id),
       listarMunicipiosParaSelector(tx),
       listarCiiuParaSelector(tx),
-      puedeEditarTerceros(tx),
+      puedeEditarAtributosFiscales(tx),
     ]),
   );
 
@@ -83,7 +83,7 @@ export default async function PaginaActividades({
         <p>Sin actividad económica registrada en ningún municipio.</p>
       )}
 
-      {!puedeEditar && <p>Su sesión no tiene el permiso "tercero.editar": no puede registrar actividad nueva.</p>}
+      {!puedeEditar && <p>Su sesión no tiene el permiso "tercero.atributos_fiscales": no puede registrar actividad nueva.</p>}
 
       {puedeEditar && !confirmando && (
         <form action={simularAction} style={{ border: '1px solid #334155', padding: '16px', marginTop: '16px' }}>

@@ -31,6 +31,9 @@ export const PERMISOS = {
   PUC_EDITAR: 'puc.editar',
   TERCERO_LEER: 'tercero.leer',
   TERCERO_EDITAR: 'tercero.editar',
+  /** A12 (140): los atributos fiscales y la actividad economica de un tercero
+   * entran en el calculo de la retencion, asi que se separan del maestro. */
+  TERCERO_ATRIBUTOS_FISCALES: 'tercero.atributos_fiscales',
   CONCEPTO_LEER: 'concepto.leer',
   CONCEPTO_EDITAR: 'concepto.editar',
   REPORTE_LEER: 'reporte.leer',

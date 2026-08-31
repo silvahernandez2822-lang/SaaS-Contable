@@ -936,9 +936,17 @@ describe('A14 · canario anti-falso-PASS (actualizado en la Ola 1)', () => {
     // fila, no calcula ninguna retención y no queda exento del barrido de
     // `valores-tributarios.test.ts` (toda tarifa que aparece en la hoja
     // "Parámetros" la trae la base de datos, nunca un literal).
+    //
+    // Ola 4: `src/bootstrap/` (A12, arranque del sistema) queda DECLARADO. No
+    // calcula nada ni toca el ledger: crea la primera firma, su primera
+    // empresa-cliente y su usuario administrador. Corre SOLO desde la línea de
+    // órdenes con la credencial privilegiada de la base (la misma de
+    // `npm run migrate`), nunca desde una petición HTTP, y no emite sesiones:
+    // el usuario que crea entra por `iniciarSesion` como cualquier otro.
     expect(readdirSync(raiz).sort()).toEqual([
       'ai',
       'auth',
+      'bootstrap',
       'db',
       'domain',
       'ingest',

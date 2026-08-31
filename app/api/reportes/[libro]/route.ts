@@ -316,7 +316,19 @@ export async function GET(request: Request, ctx: { params: Promise<{ libro: stri
   const sp = new URL(request.url).searchParams;
 
   try {
-    const { workbook, periodo } = await conSesion((tx) => generar(tx, sp));
+    const { workbook, periodo } = await conSesion(async (tx) => {
+      const resultado = await generar(tx, sp);
+      // Rastro EXPORT de la sección 14.1 (A12, migración 140). Va DENTRO de la
+      // misma transacción y de la misma sesión verificada que autorizó la
+      // lectura: si el rastro no se puede escribir, el archivo no se entrega.
+      // Descargar el libro mayor completo de una empresa es una extracción en
+      // bloque de datos contables, y hasta hoy no dejaba huella de ningún tipo.
+      await tx.query('SELECT app.registrar_exportacion($1, $2::jsonb)', [
+        libro,
+        JSON.stringify({ periodo: resultado.periodo, parametros: Object.fromEntries(sp) }),
+      ]);
+      return resultado;
+    });
     const buffer = await libroABuffer(workbook);
     const nombreArchivo = nombreDeArchivo(workbook, libro, periodo);
     return new Response(new Uint8Array(buffer), {
