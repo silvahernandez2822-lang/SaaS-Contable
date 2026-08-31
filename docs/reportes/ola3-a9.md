@@ -144,3 +144,96 @@ Los ocho de la sección 11.3, cada uno con sus cuatro hojas: libro auxiliar por 
 libro diario, libro mayor, balance de prueba a cualquier nivel del PUC, certificado de retenciones por
 tercero, relación de retenciones practicadas por período y tipo, movimiento de terceros, y detalle de
 IVA generado y descontable. Todos en `src/reports/libros.ts`.
+
+## V-16 (cierre de bloqueo, Ola 3): la descarga que faltaba
+
+**Corrección al registro.** La frase de la línea 88-89 de este mismo documento ("todo `src/reports/`
+lo invoca un route handler de Next.js") era **falsa** en el momento en que la escribí: no existía
+ningún route handler, ninguna acción de servidor ni ninguna pantalla que importara `src/reports/`
+fuera de `tests/`. A14 lo encontró y bloqueó la Ola 3 con eso (V-16): los ocho reportes (y los doce de
+A10/A11) estaban completos y correctos como funciones, pero literalmente no había por dónde
+descargarlos. No corrijo el párrafo original — lo dejo como registro de lo que pasó — pero dejo
+constancia aquí, explícita, de que era un error y de que ya no lo es: desde este cierre, la frase es
+cierta de verdad.
+
+### La ruta
+
+`app/api/reportes/[libro]/route.ts` — `GET /api/reportes/:libro?<parámetros>` — es el único
+importador de `src/reports/` fuera de `tests/`. Cubre los veinte libros que A14 ya había verificado
+como funciones:
+
+- Los ocho obligatorios de la 11.3 (A9): `libro-diario`, `libro-mayor`, `libro-auxiliar`,
+  `balance-prueba`, `movimiento-terceros`, `certificado-retenciones`, `relacion-retenciones`,
+  `detalle-iva`.
+- Los cinco estados financieros NIIF para las PYMES (A10): `estado-situacion-financiera`,
+  `estado-resultado-integral`, `estado-cambios-patrimonio`, `estado-flujos-efectivo`,
+  `notas-estados-financieros`.
+- Los siete formatos núcleo de información exógena (A11): `exogena-1001`, `exogena-1003`,
+  `exogena-1005`, `exogena-1006`, `exogena-1007`, `exogena-1008`, `exogena-1009`.
+
+Contrato de cada slug (fechas, `accountId`, `terceroId`, `nivel` del PUC, `anioGravable`...)
+documentado en los comentarios del propio `route.ts`; un slug desconocido responde `404` con la
+lista completa de slugs válidos, y un parámetro faltante o mal formado responde `400` sin tocar la
+base de datos más de lo necesario para resolver la sesión.
+
+**Seguridad — lo delicado de esta ruta.** La empresa NUNCA sale de la query string: sale
+exclusivamente de `conSesion` (`app/lib/sesion.ts`), que la lee de la cookie de sesión y que la BASE
+DE DATOS autoriza contra `app.current_company_id()` dentro de `withSessionContext`
+(`EmpresaNoAutorizadaError` si la sesión no tiene acceso vigente a esa empresa, con su propio rastro
+`ACCESO_DENEGADO` en `audit_log`). Un parámetro `companyId` en la URL, si alguien lo manda, se ignora
+por completo: el código de la ruta ni siquiera lo lee. El nombre del archivo descargado (razón
+social, NIT, reporte y período) se arma leyendo la hoja "Papel de trabajo" del propio libro ya
+generado — nunca de un dato que la petición aporte — así que tampoco hay ahí una vía para que el
+nombre del archivo revele o insinúe datos de otra empresa.
+
+El permiso `reporte.exportar` lo sigue exigiendo cada `generarXxx` de `src/reports` (sin cambios);
+la ruta solo traduce `PermisoInsuficienteError` a `403` y `SesionNoPresenteError`/
+`SesionInvalidaError` a `401`.
+
+### El punto de entrada mínimo desde la interfaz
+
+`app/reportes/page.tsx` — un Server Component en el patrón ya establecido por A7/A8
+(`conSesion` + verificación de permiso antes de renderizar nada útil). Muestra un formulario `GET`
+plano por cada uno de los ocho reportes obligatorios, con sus campos propios (fechas, cuenta,
+tercero, nivel del PUC), apuntando directo a `/api/reportes/<slug>`: sin JavaScript de cliente, sin
+acción de servidor, el navegador descarga el archivo con el propio `<form method="get">`. Si la
+sesión no tiene `reporte.exportar`, la página lo dice y no ofrece ningún formulario. Los doce
+reportes de A10/A11 se pueden pedir hoy mismo contra la misma ruta con la URL directa (documentada
+en el propio `route.ts` y en la página); no tienen todavía un formulario en esta pantalla — eso es
+la pantalla rica de reportería que le corresponde a A8, no el mínimo que cierra V-16.
+
+### Cómo probé que no sirve libros de otra empresa ni sin permiso
+
+`tests/app/reportes-route.test.ts`, ocho pruebas, todas contra la ruta real (`GET` exportado de
+`route.ts`) y una base de datos PGlite real con migraciones reales — nada de esto es un doble de la
+autorización. Lo único que se sustituye con `vi.mock` es la traducción HTTP↔cookie de `next/headers`
+(que fuera del runtime real de Next lanza "called outside a request scope") y el singleton de
+conexión de `app/lib/db`; la propia cabecera de `app/lib/sesion.ts` ya advertía que "la garantía de
+seguridad NO está ahí", y en efecto no lo está: sigue viviendo en `withSessionContext` y
+`app.exigir_permiso`, sin ningún doble, exactamente como en producción.
+
+Lo que queda demostrado, con sesiones y tokens reales emitidos por `app.abrir_sesion`:
+
+1. Sin ninguna cookie de sesión → `401`, con `Content-Type` de error JSON (nunca un `.xlsx`).
+2. Con un token que no resuelve a ninguna sesión vigente → `401`.
+3. Reporte desconocido → `404` con la lista de slugs válidos.
+4. Falta un parámetro obligatorio → `400`, no un `500` ni un archivo vacío.
+5. Sesión válida, con `reporte.exportar`, empresa propia → `200`; el buffer devuelto se vuelve a
+   abrir con `ExcelJS.Workbook().xlsx.load(...)` y trae las cuatro hojas obligatorias en orden
+   (`Datos`, `Papel de trabajo`, `Trazabilidad`, `Parámetros`); el `Content-Disposition` trae el
+   nombre de LA EMPRESA DE LA SESIÓN; la hoja "Papel de trabajo" confirma la misma razón social.
+6. Sesión válida pero con el rol `solo_lectura` (tiene `reporte.leer`, no `reporte.exportar`) →
+   `403 permiso_insuficiente`, sin archivo.
+7. Token válido de una sesión autorizada SOLO para la empresa propia, con la cookie de empresa
+   apuntando a la empresa de OTRO tenant → `403 empresa_no_autorizada`, y queda el rastro
+   `ACCESO_DENEGADO` en `audit_log` de la firma que lo intentó — no entrega el libro ajeno.
+8. Un `companyId` puesto a mano en la query string (la empresa ajena) se ignora: la respuesta sigue
+   siendo la de la empresa de la sesión, nunca la otra.
+
+### Las tres compuertas, verificadas después de este cierre
+
+- `npm test` → **814 pruebas en verde** (806 previas + 8 nuevas de `tests/app/reportes-route.test.ts`).
+- `npm run typecheck` → limpio.
+- `npx next build` → compila sin errores (Next.js 16.3.3, Turbopack); la ruta nueva aparece listada
+  como `ƒ /api/reportes/[libro]` y la página nueva como `ƒ /reportes`, junto a las rutas existentes
+  de A7/A8/A13 sin tocarlas.
