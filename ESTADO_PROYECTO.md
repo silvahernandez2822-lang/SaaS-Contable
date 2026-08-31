@@ -2071,6 +2071,53 @@ ISO 27001 / SOC 2, y habilitación DIAN. Están declarados como no hechos en `do
 
 ---
 
+---
+
+## Qué le falta al sistema para tener un PRIMER CLIENTE REAL operando
+
+> Sección escrita por A0 el 2026-08-31, a petición del usuario. **Solo lista, no resuelve.**
+> Distingue tres cosas que se confunden con facilidad: lo que impide **probar** (nada, ya se puede),
+> lo que impide **operar con un cliente real**, y lo que impide **vender el servicio a terceros**.
+> El sistema hoy: 914 pruebas en verde, los 20 casos dorados pasando, las 3 olas cerradas y
+> verificadas de forma adversarial, y la secuencia de arranque corrida de punta a punta por A14
+> contra PostgreSQL real.
+
+### A. Bloqueos duros — sin esto NO se puede operar con un cliente real
+
+| # | Qué falta | Por qué bloquea | Dueño |
+|---|---|---|---|
+| A-1 | **Verificación humana de los datos normativos faltantes** | El motor se niega a calcular lo que no sabe (correcto), pero eso significa que hoy **no puede liquidar** ICA en Bogotá ni Cali por actividad, ni autorretención por CIIU fuera de 4 ejemplos, ni retención de salarios. Un cliente real con esas operaciones queda a medias. Ver «Pendiente de verificación normativa humana» | **Humano con las fuentes** |
+| A-2 | **Un XML real de la DIAN, extremo a extremo** | Los 11 fixtures son construidos a mano, no capturas de producción. A4 dejó 5 puntos a re-verificar: autenticidad del CUFE, su ubicación y `schemeName` exactos, códigos DIAN reales, el bloque `DianExtensions` (que no se lee) y la forma real del `AttachedDocument` de un proveedor tecnológico | A4 + humano |
+| A-3 | **Buzón de correo real y proveedor de inbound email** | El pipeline existe y está probado, pero **no hay proveedor contratado**. Sin esto las facturas hay que cargarlas a mano | A13 + humano |
+| A-4 | **Prueba de restauración de respaldos** | La 14.1 la exige y **nunca se ha ejecutado**. Hoy la conservación a 10 años con reproducción exacta está *afirmada*, no verificada. Es requisito legal (art. 28 Ley 962 de 2005) | A15 + humano |
+| A-5 | **Revisión jurídica de los 8 documentos de cumplimiento** | Están redactados y citan la norma, pero ningún abogado los ha visto. Incluye actualizarlos para nombrar al proveedor de LLM (EE. UU., país sin nivel adecuado según la SIC) | **Abogado** |
+
+### B. Operativamente necesario — se puede arrancar sin ello, pero duele pronto
+
+| # | Qué falta | Consecuencia real | Dueño |
+|---|---|---|---|
+| B-1 | **Pantalla de inscripción de MFA** | El motor TOTP está completo, pero un usuario **no puede activárselo solo**. La 14.1 pide MFA *disponible*: hoy lo está a medias | A12 |
+| B-2 | **V-11: cabecera de IP en el despliegue** | La aprobación falla con mensaje claro si falta `x-forwarded-for`/`x-real-ip`, pero **nadie garantiza que el proxy la envíe**. Si no llega, no se puede aprobar nada | A15 |
+| B-3 | **`company.es_agente_retencion_*` con valor por defecto** | Misma familia que V-20: una empresa recién creada **solo practica retefuente** hasta que alguien active IVA e ICA. Es configuración que el operador conoce, pero silenciosa | A2 + A12 |
+| B-4 | **Pantallas de administración que faltan** | No son editables desde la interfaz: PUC y mapeo NIIF, alta de municipios y CIIU nuevos, matriz de agentes de ReteIVA, calendario tributario, formatos de exógena, y conceptos de causación. El modelo de datos los soporta; falta la pantalla | A8 |
+| B-5 | **Marcar las cuentas de efectivo** | Sin ello el Estado de Flujos de Efectivo **sale vacío** (con su papel de trabajo, correctamente). Es configuración de una vez por empresa | Humano, por A8 |
+| B-6 | **Causación de ventas** | El producto solo procesa facturas de **compra**, por diseño. Los formatos 1003 y 1006 de exógena quedan incompletos salvo que las ventas se causen por otra vía | Fuera de alcance del mega-prompt |
+
+### C. Antes de vender el servicio a terceros
+
+| # | Qué falta | Dueño |
+|---|---|---|
+| C-1 | Despliegue real en Render Starter, con `DATABASE_URL` de Postgres gestionada, `APP_ENCRYPTION_KEY` rotable y respaldos activos | A15 + humano |
+| C-2 | Ejercitar el procedimiento de incidentes ante la SIC — **nunca se ha ensayado**, y el canal está atado al RNBD, al que no estamos inscritos | A12 + humano |
+| C-3 | Prueba de carga real: la §12 pide 5.000 facturas en cola sin degradar el request HTTP. Con `ANALYZE` resuelto (84 s → 6-13 ms) el camino está despejado, pero **no se ha corrido a ese volumen** | A15 |
+| C-4 | Conciliación contra el portal de la DIAN. El canal de correo **no es exhaustivo al 100 %** y el producto debe ofrecerla (§10.1) | A4 + A7 |
+| C-5 | Archivado en frío del XML. El espacio está reservado (migración 031) y A15 calculó que a 10 años **rompe el techo de USD 50/mes** si vive en la Postgres transaccional. No implementado | A15 + A4 |
+
+### Lo que NO falta
+
+Para que quede dicho, porque es fácil suponer lo contrario: el ledger inmutable, el aislamiento entre firmas, el motor de retenciones con sus 20 casos dorados, la parametrización sin desplegar código, la memoria de clasificación que evita llamar al LLM, la bandeja multiempresa con aprobación en lote, los libros y estados financieros en Excel, la exógena, el arranque sin SQL y los datos de ejemplo **están construidos, probados y verificados de forma adversarial**. Lo que falta arriba es casi todo **dato, contrato, despliegue o juicio humano** — no motor.
+
+
 ## Pendiente de verificación normativa humana
 
 Estado al cerrar la Ola 1. **A1 no inventó ni un valor**, y eso se comprobó: las 28 filas de `tax_rule`
