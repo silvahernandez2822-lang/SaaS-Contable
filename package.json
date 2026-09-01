@@ -15,6 +15,7 @@
     "migrate": "tsx --env-file-if-exists=.env --env-file-if-exists=.env.local src/db/migrate-cli.ts",
     "seed": "tsx --env-file-if-exists=.env --env-file-if-exists=.env.local src/db/seed-cli.ts",
     "datos-ejemplo": "tsx --env-file-if-exists=.env --env-file-if-exists=.env.local src/bootstrap/datos-ejemplo-cli.ts",
+    "plantillas-masivas": "tsx scripts/generar-plantillas-masivas.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:gates": "vitest run tests/gates",

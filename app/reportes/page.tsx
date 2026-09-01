@@ -11,9 +11,18 @@
  * empresa NUNCA viaja en el formulario, la toma la ruta de la cookie de
  * sesión ya verificada (D-021/D-022); aquí solo se piden fechas y filtros
  * propios de cada reporte.
+ *
+ * A16 (Ola 4, Tarea 6) le añade el PANEL DE AVISOS de arriba: qué configuración
+ * falta y dónde se carga, ANTES de que el contador pida un reporte y se
+ * encuentre un archivo que no dice lo que esperaba. Es el caso 1 de D-073
+ * contado a tiempo, no a posteriori. Los avisos NO impiden descargar nada: lo
+ * que sí impide descargar (no hay ni una cuenta imputable) lo rechaza la ruta
+ * con su propio mensaje y su enlace.
  */
+import Link from 'next/link';
 import { conSesion } from '../lib/sesion';
 import { tienePermiso, PERMISOS } from '../../src/auth/permisos';
+import { avisosDeConfiguracion, type AvisoConfiguracion } from '../../src/reports/diagnostico';
 
 export const dynamic = 'force-dynamic';
 
@@ -94,8 +103,34 @@ function FormularioDescarga({ reporte }: { reporte: FormularioReporte }) {
   );
 }
 
+function PanelAvisos({ avisos }: { avisos: AvisoConfiguracion[] }) {
+  if (avisos.length === 0) return null;
+  return (
+    <section
+      aria-label="Configuración pendiente que afecta a los reportes"
+      style={{ border: '1px solid #b45309', background: '#fffbeb', padding: '12px 16px', margin: '16px 0' }}
+    >
+      <strong>
+        Hay {avisos.length} cosa{avisos.length === 1 ? '' : 's'} sin configurar que cambia
+        {avisos.length === 1 ? '' : 'n'} lo que verá en los reportes
+      </strong>
+      <ul>
+        {avisos.map((a) => (
+          <li key={a.enlace + a.falta} style={{ marginTop: 6 }}>
+            <strong>{a.falta}</strong> {a.detalle} Afecta a {a.afectaA}.{' '}
+            <Link href={a.enlace}>{a.enlaceTexto}</Link>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export default async function PaginaReportes() {
-  const puedeExportar = await conSesion((tx) => tienePermiso(tx, PERMISOS.REPORTE_EXPORTAR));
+  const { puedeExportar, avisos } = await conSesion(async (tx) => {
+    const puedeExportar = await tienePermiso(tx, PERMISOS.REPORTE_EXPORTAR);
+    return { puedeExportar, avisos: puedeExportar ? await avisosDeConfiguracion(tx) : [] };
+  });
 
   if (!puedeExportar) {
     return (
@@ -112,11 +147,19 @@ export default async function PaginaReportes() {
   return (
     <main style={{ maxWidth: 800, margin: '0 auto', padding: '24px' }}>
       <h1>Reportes</h1>
+
+      <PanelAvisos avisos={avisos} />
+
       <p>
         Cada botón descarga el libro Excel de cuatro hojas (Datos, Papel de trabajo, Trazabilidad y Parámetros) de
         la empresa activa en su sesión — no se puede pedir el reporte de otra empresa desde este formulario ni
         editando la URL: la empresa la fija la sesión verificada, no un campo de este formulario (sección 11.2 y
         D-021/D-022).
+      </p>
+      <p>
+        Si el período que pida no tiene movimiento, no se le entrega un archivo con la hoja en blanco: se le
+        dice «no hay datos» con las fechas y el tercero que pidió, y se le ofrece descargarlo igual por si
+        necesita el papel de trabajo vacío.
       </p>
 
       <h2>Los ocho reportes obligatorios (sección 11.3)</h2>

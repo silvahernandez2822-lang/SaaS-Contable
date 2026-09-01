@@ -50,6 +50,15 @@ function base(terceroId: string): string {
   return `/terceros/${terceroId}/actividades`;
 }
 
+/** A16 (Ola 4, Tarea 5): al volver por un error se conserva el municipio ya
+ *  elegido — si no, el selector en cascada se reinicia y el contador tiene que
+ *  volver a elegirlo antes de poder leer siquiera el mensaje de error. */
+function destinoError(terceroId: string, municipalityId: string, mensaje: string): string {
+  const qs = new URLSearchParams({ error: mensaje });
+  if (municipalityId) qs.set('municipalityId', municipalityId);
+  return `${base(terceroId)}?${qs.toString()}`;
+}
+
 export async function simularAction(formData: FormData): Promise<void> {
   const terceroId = leer(formData, 'terceroId');
   const campos = {
@@ -79,7 +88,7 @@ export async function simularAction(formData: FormData): Promise<void> {
     });
     destino = `${base(terceroId)}?${qs.toString()}`;
   } catch (e) {
-    destino = `${base(terceroId)}?error=${encodeURIComponent(mensajeDeError(e))}`;
+    destino = destinoError(terceroId, campos.municipalityId, mensajeDeError(e));
   }
   redirect(destino);
 }
@@ -112,7 +121,7 @@ export async function confirmarAction(formData: FormData): Promise<void> {
     );
     destino = `/terceros/${terceroId}?ok=1`;
   } catch (e) {
-    destino = `${base(terceroId)}?error=${encodeURIComponent(mensajeDeError(e))}`;
+    destino = destinoError(terceroId, campos.municipalityId, mensajeDeError(e));
   }
   redirect(destino);
 }

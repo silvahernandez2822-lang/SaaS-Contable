@@ -252,14 +252,41 @@ describe('A14 · criterio 1 — los VEINTE libros se descargan de verdad por HTT
 describe('A14 · V-16 de verdad cerrada: ningún libro se queda sin forma de descargarse', () => {
   const fuenteRuta = readFileSync('app/api/reportes/[libro]/route.ts', 'utf8');
 
-  it('la ruta es el ÚNICO importador de `src/reports/` fuera de las pruebas', () => {
+  /**
+   * ACOTAMIENTO HECHO POR A16 EN LA OLA 4 — y por qué NO afloja la invariante.
+   *
+   * La versión original exigía que `app/api/reportes/[libro]/route.ts` fuera el
+   * ÚNICO archivo de `app/` y `src/` que mencionara `src/reports`. Eso no es la
+   * invariante: la invariante es que ningún GENERADOR de libros quede huérfano
+   * ni se sirva por un camino que se salte la ruta auditada —y con ella el
+   * rastro EXPORT de la 14.1 que la ruta escribe—.
+   *
+   * `src/reports/diagnostico.ts` no genera ningún libro: dice qué configuración
+   * falta y adónde ir a cargarla. `app/reportes/page.tsx` lo importa para
+   * enseñar esos avisos ANTES de que el contador pida un reporte (Ola 4, Tarea
+   * 6). Prohibirlo obligaría a duplicar esas consultas fuera de `src/reports/`,
+   * que es justo lo contrario de lo que persigue esta compuerta.
+   *
+   * Así que se comprueba lo que importa: fuera de la ruta, NADIE nombra un
+   * `generarXxx`. Un archivo que importara `generarLibroMayor` para servirlo
+   * por su cuenta seguiría haciendo fallar esta prueba.
+   */
+  it('nadie fuera de la ruta invoca un generador de libros: no hay descarga sin rastro', () => {
     // La afirmación de A9 se comprueba contra el árbol, no contra su palabra.
     const salida = execSync('git grep -l -E "src/reports|\\.\\./reports" -- app src', {
       encoding: 'utf8',
     }).trim();
     const importadores = salida ? salida.split(/\r?\n/) : [];
-    const fuera = importadores.filter((f) => !f.startsWith('src/reports/'));
-    expect(fuera).toEqual(['app/api/reportes/[libro]/route.ts']);
+    const fuera = importadores.filter(
+      (f) => !f.startsWith('src/reports/') && f !== 'app/api/reportes/[libro]/route.ts',
+    );
+
+    const conGenerador = fuera.filter((f) =>
+      /\bgenerar(Libro|Balance|Certificado|Relacion|Movimiento|Detalle|Estado|Notas|Formato)/.test(
+        readFileSync(f, 'utf8'),
+      ),
+    );
+    expect(conGenerador).toEqual([]);
   });
 
   it('los veinte generadores públicos están cableados a un slug', async () => {

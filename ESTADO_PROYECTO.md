@@ -1,7 +1,15 @@
 # ESTADO_PROYECTO.md
 
 > Memoria única entre sesiones. Todo agente lo lee al empezar y lo actualiza al terminar.
-> Última actualización: 2026-08-31 — **A14, compuerta del LOTE POSTERIOR A LA OLA 3 (V-17/A8, V-18/A11,
+> Última actualización: 2026-09-01 — **A16 entrega la OLA 4, «Operación real»: navegación compartida,
+> carga masiva de quince catálogos con plantillas de Excel, PUC genérico + PUC propio por empresa,
+> ReteICA en cascada por municipio, los tres motivos separados por los que un reporte no sale, y el
+> módulo de administración de usuarios, roles y permisos con el rol todopoderoso blindado en el motor.
+> Once decisiones nuevas (D-063 … D-073) y la migración `170_a16_ola4_operacion_real.sql`. Suite:
+> **993 en verde** (48 archivos), typecheck limpio, `next build` exit 0 con 28 rutas.
+> **PENDIENTE: la compuerta de A14.** Ver «Ola 4 — qué entregó A16».
+>
+> Registro histórico: 2026-08-31 — **A14, compuerta del LOTE POSTERIOR A LA OLA 3 (V-17/A8, V-18/A11,
 > arranque y repaso 14.1/A12, datos de ejemplo/A1, entorno y despliegue/A15). Veredicto: LOTE APROBADO,
 > con tres vulnerabilidades encontradas por A14 y CORREGIDAS por A14 en la misma pasada (V-20, V-21,
 > V-22).** A14 no verificó por reporte: corrió la secuencia completa del README contra un PostgreSQL de
@@ -41,6 +49,14 @@
 | **1 — Núcleo del dominio** | A1, A3, A4, A6, A14 | **PASA los cuatro criterios**, verificados de forma independiente por A14 con pruebas propias. Bloqueada primero por V-4 y V-6, cerrados por A1 en `ffaf3db` y **reverificados** por A14 sin creerle al reporte. Ver «Compuerta de la Ola 1 — veredicto de A14» | *pendiente — lo pone A0* | 2026-08-27 |
 | **2 — Inteligencia, parametrización e interfaz** | A5, A7, A8, A13, A14 | **PASA los tres criterios**, verificados por A14 **por la interfaz real** (`tests/adversarial/compuerta-ola2-interfaz.test.ts`) y con instrumentos propios (`tests/adversarial/compuerta-ola2.test.ts`). Dos defectos reales encontrados y **corregidos por A14** (D-049, D-050); uno declarado y asignado (V-11). Ver «Compuerta de la Ola 2 — veredicto de A14» | *pendiente — lo pone A0* | 2026-08-27 |
 | **3 — Salidas contables y fiscales** | A9, A10, A11, A14 | **PASA los dos criterios**, en la segunda pasada. Bloqueada primero por V-16 (no existía forma de descargar ningún reporte), cerrada por A9 con `GET /api/reportes/:libro` + `/reportes` y **reverificada por A14 atacando la ruta**, no leyendo el reporte. Un defecto nuevo encontrado y corregido por A14 en el ataque (V-19). Ver «Compuerta de la Ola 3 — veredicto de A14» | *pendiente — lo pone A0* | 2026-08-31 |
+| **4 — Operación real** | A16 | *pendiente — la ejecuta A14* | *pendiente* | 2026-09-01 |
+
+**Ola 4: ENTREGADA por A16, SIN COMPUERTA TODAVÍA.** No está cerrada: falta que A14 la verifique él
+mismo, como todas las demás. Lo que entregó, tarea por tarea, está en «Ola 4 — qué entregó A16».
+Resumen: el producto pasó de «se puede demostrar» a «una firma lo puede operar» — hay por dónde volver
+del sitio donde uno esté, hay cómo cargar de golpe los catálogos que antes solo se poblaban con SQL, el
+plan de cuentas se puede hacer propio de cada empresa, el selector de ReteICA dejó de mentir, un reporte
+que no sale dice cuál de las tres cosas pasó, y la firma puede crearse sus propios roles sin tocar código.
 
 **Ola 3: CERRADA por A14, en la segunda pasada. Con ella termina la construcción del proyecto.** En la
 primera pasada (2026-08-30) el criterio duro —el balance de prueba contra el ledger con 10.000 asientos
@@ -1105,6 +1121,308 @@ consumidor no está terminado*.
 
 ---
 
+## Decisiones de la Ola 4 (A16) — «Operación real»
+
+### D-063 — La carga masiva deja UNA fila de auditoría por archivo, no una por registro
+
+**Problema:** `audit_log.accion` no contemplaba una carga de archivo. Con solo la auditoría fila a fila de
+`app.trg_audit`, cargar 400 terceros dejaba 400 filas `INSERT` sin nada que las atara entre sí: nadie
+podía responder «¿de qué archivo salió esto y quién lo subió?», que es exactamente la pregunta que se hace
+un revisor tres meses después.
+
+**Decidido:** acción `'CARGA_MASIVA'` y función `app.registrar_carga_masiva(entidad, archivo, filas_ok,
+filas_error, detalle)`. Escribe una cabecera —catálogo, nombre de archivo, filas que entraron, filas que
+se rechazaron— **dentro de la misma transacción** que inserta las filas. No sustituye la auditoría fila a
+fila: la resume y la ata a un archivo.
+
+**Trampa que costó una pasada:** el `CHECK` de `audit_log.accion` se reescribe entero, no se «amplía».
+La primera versión copió la lista de 009 y perdió los dos verbos de token que había añadido 090; el motor
+no lo avisa al migrar, lo avisa mucho después, cuando el canal de correo intenta escribir su rastro.
+
+### D-064 — El PUC de una empresa SOBREESCRIBE el genérico cuenta por cuenta; no lo reemplaza
+
+**Problema reportado por el usuario:** al sacar reportes el sistema pedía cuentas del PUC y no había
+ninguna cargada. El PUC genérico de los seeds cubre los veinte casos dorados, no una empresa real, y no
+existía ni pantalla ni servicio para cargar el propio.
+
+**Decidido:** para cada `codigo` gana la fila del alcance más específico que exista —**empresa > firma >
+global**— y esa regla vive en la **base**, en la vista `v_account_efectivo`, no en TypeScript. Se hizo así
+porque el ledger, los reportes, la causación y la pantalla tienen que ver EXACTAMENTE el mismo PUC: con la
+regla repartida en consultas, el primer servicio que la olvidara imputaría contra una cuenta que la
+pantalla dice que no existe.
+
+**Alternativa descartada:** «el PUC propio reemplaza el genérico entero» como comportamiento por defecto.
+Obligaría a cargar las ~200 cuentas del 2650 a toda empresa que solo quiera añadir tres auxiliares, y el
+primer efecto de un archivo incompleto sería un ledger sin cuentas donde imputar.
+
+**Cómo se esconde una cuenta heredada:** no se borra —la RLS no deja escribir la fila global, y borrarla
+se la quitaría a las otras 59 empresas de la firma—. Se crea la propia con el mismo código y
+`activo = false`, y la precedencia hace el resto (`ocultarCuentaGenerica`).
+
+### D-065 — «Usar solo mi PUC» es un interruptor explícito por empresa, y se niega a dejarla sin cuentas
+
+**Decidido:** una empresa que trae su plan de cuentas de otro software sí puede querer el reemplazo total.
+Se enciende a mano, por empresa, en `company_setting` clave `'puc.solo_propio'`, y entonces
+`v_account_efectivo` deja de mostrarle lo global y lo de la firma. **Nunca es efecto colateral de cargar
+un archivo.**
+
+`fijarModoPuc` se **niega** a encenderlo si la empresa todavía no tiene ninguna cuenta propia imputable:
+hacerlo dejaría el ledger sin ningún destino válido y el síntoma aparecería mucho después, al intentar
+causar una factura, con un error que no menciona esa pantalla.
+
+### D-066 — El rol todopoderoso lo es por definición, no por sus filas de `role_permission`
+
+**Problema:** `admin_firma` era todopoderoso solo porque 014 le insertó todas las filas. Un `DELETE` sobre
+esa tabla —desde la pantalla de administración nueva, o desde un `psql`— dejaba a la firma **sin nadie que
+pudiera volver a otorgar permisos**. La Ola 4 pedía un rol «blindado a nivel de código, no solo de datos».
+
+**Decidido:** un `if` en la capa de servicio cumpliría la letra y no el fondo: la interfaz no es el único
+camino a la base. El blindaje son tres cosas del motor (migración 170):
+
+1. `app.tiene_permiso` concede CUALQUIER permiso a un rol `es_todopoderoso` **sin mirar
+   `role_permission`**. Vaciar la tabla no lo desarma.
+2. Un trigger rechaza con `RL001` todo `UPDATE`/`DELETE` sobre las filas de `role_permission` de ese rol
+   — también para el superusuario: el trigger no mira quién es.
+3. Otro trigger rechaza degradarlo, inactivarlo o borrarlo, **y también rechaza crear uno nuevo desde una
+   sesión de aplicación**: una firma que pudiera fabricarse roles todopoderosos convertiría el blindaje
+   en un adorno. `es_todopoderoso` solo se enciende sin sesión, es decir por migración.
+
+La prueba que lo demuestra no cuenta filas: inserta en `permission` un permiso que **nadie tiene
+otorgado** y comprueba que la sesión de `admin_firma` lo ejerce igual, y que la de `contador` no.
+
+### D-067 — Roles propios de la firma, presentados como matriz «módulo × ver / editar / aprobar»
+
+**Decidido:** `role.tenant_id` ya permitía roles de firma desde 002; faltaba (i) poder inactivar un rol
+sin borrarlo (`role.activo`; un rol inactivo no concede nada, ni siquiera lo que tenga otorgado) y (ii) el
+EJE VERTICAL para presentar el catálogo como lo pide un administrador. Ese eje es
+`permission.accion_tipo` (`ver` / `editar` / `aprobar` / `administrar`), una **columna del catálogo**, no
+una tabla nueva: es un atributo del permiso, no una entidad.
+
+**Lo que NO se hizo:** inventar permisos «de interfaz». Cada casilla de la matriz es un código de permiso
+real de los que exigen los triggers de la base, y `fijarPermisosDeRol` rechaza cualquier código que no
+esté en el catálogo del producto — una firma no puede inventarse permisos.
+
+**Borrar un rol que alguien tiene otorgado no lo borra: lo inactiva.** El `ON DELETE CASCADE` de
+`role_permission` dejaría a esas personas sin rol de un golpe, sin que nadie lo pidiera.
+
+### D-068 — «El junior corrige, el revisor aprueba» es un ESTADO del recurso, no un permiso especial
+
+**Decidido:** `document_correction.estado` (`pendiente_revision` / `aprobado` / `rechazado`). El permiso
+`documento.aprobar_correccion` decide **quién** mueve el estado; el estado vive en los datos, y por eso se
+puede consultar, filtrar y auditar. `obtenerCorreccionesVigentes` (A7) filtra por `estado = 'aprobado'`:
+el motor solo usa las aprobadas.
+
+**Por qué el estado inicial depende de quién corrige, y no es siempre `pendiente_revision`:** un contador
+que corrige su propio documento no tiene a quién pedirle la aprobación. Quedaría una bandeja que nadie
+vacía y, en la práctica, la gente aprobaría su propia fila — que es peor que no tener circuito. Quien ya
+tiene el permiso inserta directamente en `aprobado`, firmado por él; quien no lo tiene deja la corrección
+pendiente.
+
+**Qué pasa si nadie aprueba:** el documento se causa como si la corrección no existiera —el comportamiento
+anterior a la Ola 4— y la corrección sigue visible como pendiente. Nunca se aplica a medias.
+
+**Los DATOS de una corrección siguen siendo inmutables** (`RL002`): lo único que se puede mover es su
+estado, y solo desde `pendiente_revision`. Corregir una corrección es insertar otra.
+
+### D-069 — La contraseña que fija un administrador sirve para UNA entrada
+
+**Problema:** un administrador que le fija la contraseña a otro **la conoce**. Si esa contraseña siguiera
+valiendo indefinidamente, sería un suplantador permanente de cualquiera de su firma, y ningún registro de
+auditoría podría distinguir al uno del otro.
+
+**Decidido:** `"user".debe_cambiar_password`. La ponen `crearUsuario` y `fijarPasswordDeUsuario`; la apaga
+solo el propio usuario al cambiarla en `/cambiar-password`, y la portada le desvía ahí mientras esté
+puesta. Las dos operaciones de administrador **revocan las sesiones abiertas** del usuario en la misma
+transacción: sin eso, «cambiarle la contraseña» no echaría a nadie, que es la mitad de las veces por lo
+que se hace.
+
+`cambiarMiPassword` exige la contraseña ACTUAL aunque la sesión ya esté abierta: una sesión ajena —un
+portátil sin bloquear, una cookie filtrada— no debe poder convertirse en la toma de control permanente de
+la cuenta.
+
+**Detalle que destapó la prueba:** `app.trg_permiso_usuario` (016) tiene una lista blanca de columnas de
+credencial propia, y `debe_cambiar_password` no estaba en ella. Apagarla exigía ser administrador, así que
+la única persona que no podía cumplir la obligación era justo aquella a quien se le había impuesto. La
+migración 170 reescribe la función con la columna dentro.
+
+### D-070 — Una fila de un archivo es una VIGENCIA NUEVA, nunca un `UPDATE` de un valor
+
+**Decidido:** para las tablas versionadas, la carga masiva no es un «upsert». Si la fila choca con una
+vigencia abierta de la misma clave lógica, `src/services/catalogos.ts` **no reimplementa el cierre**:
+llama a la función de `parametrizacion.ts` que ya lo sabe hacer (`editarTarifaTaxRule`, `editarUvtValue`,
+`editarMunicipioIcaRule`…). Así la carga masiva hereda gratis las seis conductas de la sección 6.2 —norma
+obligatoria, no retroactividad sobre lo publicado, append-only, permiso, auditoría, simulador—.
+
+Los catálogos SIN vigencia (municipio, CIIU, concepto tributario, centro de costo) sí admiten
+actualización directa: no llevan `vigente_desde`, no entran en ninguna resolución por fecha, y corregirle
+el nombre a un municipio no reescribe ningún hecho económico.
+
+### D-071 — La plantilla y el validador son la misma lista leída dos veces
+
+**Decidido:** `src/services/carga-masiva/definiciones.ts` es la única fuente de verdad de la carga masiva.
+De ella salen las tres cosas que si no habría que mantener sincronizadas a mano: los `.xlsx` de
+`/archivos-masivos/`, la validación de cada fila que sube el usuario, y la pantalla `/carga-masiva` que
+explica cada columna. Si el esquema gana una columna obligatoria, se añade una vez y las tres cambian
+juntas.
+
+**Consecuencia de diseño que importa:** `validar()` es una función PURA que solo convierte texto a tipos y
+comprueba formatos, e `insertar()` no valida nada de negocio — llama al servicio de dominio que ya existía
+para la carga fila a fila. Si algún día alguien mete una regla tributaria en `validar()`, habrá dos
+motores tributarios y uno de los dos estará mal.
+
+La ruta `GET /api/plantillas/:catalogo` **genera la plantilla en el momento** en vez de servir el archivo
+de `/archivos-masivos/`: un despliegue con el directorio viejo entregaría plantillas que su propio
+importador rechaza. El directorio existe para poder mirarlas sin levantar el producto y para que un
+cambio de esquema se vea en el `git diff`.
+
+**Los importes y las tarifas se convierten con cadenas, nunca con `Number`** (Regla de Oro 5), y el
+separador de miles **no se adivina**: «1.500» es mil quinientos en Colombia y uno coma cinco en el resto
+del mundo. Se rechaza y se le pide al usuario que lo quite. Sin esa comprobación —que faltaba en la
+primera versión y destapó una prueba— «1.500» habría entrado como un peso con cincuenta, en silencio.
+
+### D-072 — Todo el archivo o nada, y nunca a medias en silencio
+
+**Decidido:** tres cosas, con su motivo.
+
+1. **Se valida todo antes de escribir nada.** Dos pasadas de solo lectura —formato de cada celda, y luego
+   resolución de los códigos contra la base— antes del primer `INSERT`. Un contador que sube 400 terceros
+   necesita la lista COMPLETA de lo que está mal, no el primer error.
+2. **Si hay errores, por defecto no se escribe nada.** Se devuelve el informe (fila tal como se ve en
+   Excel, columna y motivo) y el usuario elige: corregir y volver a subir, o pedir **explícitamente** que
+   se carguen solo las filas válidas. Una carga parcial silenciosa deja al contador creyendo que tiene 400
+   proveedores cuando tiene 383, y el descubrimiento llega el día del cierre.
+3. **Una transacción por archivo, SIN savepoints por fila.** Es el caso opuesto al de D-050: allí 50
+   aprobaciones independientes debían sobrevivir a que una fallara; aquí un savepoint por fila haría que
+   el archivo entrara a medias, que es justo lo que el punto 2 evita.
+
+El informe de errores viaja **dentro** de la excepción (`CargaRechazadaError`): hay que lanzar para que la
+transacción se deshaga, y hay que devolver datos para poder enseñarle al contador qué filas fallaron.
+
+### D-073 — Tres motivos por los que un reporte no sale, tres mensajes distintos
+
+**Problema reportado:** pedir un reporte de una empresa recién abierta devolvía un `.xlsx` con la hoja
+«Datos» vacía y ninguna explicación, o —cuando faltaba una cuenta— un JSON con el mensaje crudo de
+PostgreSQL en la pestaña del navegador.
+
+**Decidido:**
+
+1. **Falta configuración sin la cual el reporte no puede existir** (ninguna cuenta imputable; una cuenta o
+   un tercero que no están en esta empresa) → `409`, con el **enlace exacto** donde se arregla. No es un
+   error del sistema: es una tarea pendiente.
+2. **La configuración está y no hubo movimiento** → no es un fallo, es una respuesta. A un **navegador**
+   se le dice «no hay datos para tales criterios» con las fechas y el nombre del tercero dentro, más un
+   enlace para descargar el archivo vacío de todos modos; a un **programa** se le entrega el `.xlsx`,
+   porque el criterio de salida de la Ola 3 dice que todo reporte se descarga. Es la única diferencia de
+   comportamiento de la ruta, y es de PRESENTACIÓN: el archivo y sus filas son idénticos.
+3. **Fallo técnico** → mensaje genérico al usuario y detalle SOLO en el registro del servidor. El mensaje
+   crudo del motor en pantalla no ayuda a nadie y sí le cuenta a un atacante cómo está montado el sistema.
+
+**Lo que NO es bloqueante, y por qué se corrigió a mitad de la ola:** la primera versión bloqueaba con 409
+los estados financieros sin `niif_mapping` y la exógena sin `exogena_account_mapping`. Lo destapó la
+compuerta de la Ola 3 de A14: **A10 y A11 ya contemplan que falte el mapeo** —A10 cae al nombre del grupo
+PUC como rótulo y deja una advertencia en el papel de trabajo; A11 dice explícitamente que el saldo solo
+sale si el contador mapeó las cuentas—. Bloquear era sustituir por un rechazo un comportamiento ya
+diseñado y bien resuelto, y encima rompía un criterio de salida. Ahora son **avisos** en `/reportes`,
+antes de pedir el reporte, y el archivo se descarga igual.
+
+---
+
+## Ola 4 — qué entregó A16 (2026-09-01)
+
+**Sin compuerta todavía.** A14 no ha verificado nada de esto; el orden del proyecto es que lo verifique él
+mismo antes de dar la ola por cerrada.
+
+| # | Tarea | Qué se entregó |
+|---|---|---|
+| 0 | Navegación | `app/_navegacion.tsx` + `app/layout.tsx`: breadcrumb y botón «Volver» en el **layout raíz**, así que toda ruta lo hereda por construcción — incluidas las que se añadan después. Es el único componente de cliente del proyecto, porque `usePathname()` solo existe ahí; no lee datos ni decide nada de seguridad. |
+| 1 | Inventario | Quince tablas de catálogo identificadas y cubiertas; lo que quedó fuera está declarado con su motivo (abajo). |
+| 2 | Plantillas | `npm run plantillas-masivas` escribe quince `.xlsx` independientes en `/archivos-masivos/`, con encabezados exactos, fila de ejemplo, obligatorias en rojo con asterisco, opcionales en azul, listas desplegables en los campos de conjunto cerrado y hoja «Instrucciones» columna por columna. Se generan también en caliente en `GET /api/plantillas/:catalogo` (D-071). |
+| 3 | Carga masiva | `/carga-masiva` y `/carga-masiva/:catalogo`, `.xlsx` y `.csv`, validación en dos pasadas, informe fila/columna/motivo, «solo las válidas» bajo petición explícita, transacción por archivo y auditoría `CARGA_MASIVA` (D-070, D-071, D-072). |
+| 4 | PUC | `v_account_efectivo`, `/parametros/puc`, plantilla de `account` y de `niif_mapping`, e interruptor «solo mi PUC» (D-064, D-065). |
+| 5 | ReteICA en cascada | `listarActividadesIcaDeMunicipio`: el selector de actividad **filtra por el municipio elegido** y, cuando no hay tarifas, dice por qué y adónde ir. |
+| 6 | Errores de reportes | `src/reports/diagnostico.ts` + panel de avisos en `/reportes` (D-073). |
+| 7 | Administración | `/admin/usuarios`, `/admin/roles`, `/admin/correcciones`, `/cambiar-password` (D-066, D-067, D-068, D-069). |
+
+### Las quince tablas cubiertas por la carga masiva, y su módulo
+
+Cárguense en este orden: cada una solo depende de las anteriores.
+
+| # | Tabla | Catálogo | Módulo |
+|---|---|---|---|
+| 1 | `municipality` | Municipios (DANE) | Parámetros › ReteICA |
+| 2 | `ciiu_activity` | Actividades CIIU | Parámetros |
+| 3 | `account` | Plan de cuentas (PUC) | Parámetros › Plan de cuentas |
+| 4 | `cost_center` | Centros de costo | Parámetros › Plan de cuentas |
+| 5 | `niif_mapping` | Mapeo PUC → NIIF para PYMES | Parámetros › Plan de cuentas |
+| 6 | `tax_concept` | Conceptos tributarios | Parámetros › Tarifas |
+| 7 | `tax_rule` | Tarifas (retefuente, ReteIVA, ReteICA, autorretención, IVA) | Parámetros › Tarifas |
+| 8 | `tax_rule` (tipo `retefuente_salarios`) | Tabla progresiva del art. 383 ET, con tramos en UVT | Parámetros › Tarifas |
+| 9 | `municipality_ica_rule` | Bases mínimas y tarifa general de ReteICA | Parámetros › ReteICA |
+| 10 | `uvt_value` | UVT por año | Parámetros › Valores base |
+| 11 | `smmlv_value` | SMMLV y auxilio de transporte por año | Parámetros › Valores base |
+| 12 | `tax_calendar` | Calendario tributario (vencimientos) | Parámetros |
+| 13 | `third_party` | Terceros | Terceros |
+| 14 | `third_party_fiscal_attribute` | Atributos fiscales versionados (las nueve banderas) | Terceros |
+| 15 | `third_party_activity` | Actividad económica por municipio (ReteICA) | Terceros |
+
+**La tabla progresiva del art. 383 y el calendario tributario NO se diseñaron: ya existían.** `tax_rule`
+tiene `rango_desde_uvt`, `rango_hasta_uvt` y `uvt_adicionales` desde 006, y `tax_calendar` desde la misma
+migración. Crear tablas nuevas habría sido un segundo sitio donde el mismo hecho puede quedar
+desactualizado; lo que faltaba era la plantilla y el camino de carga, no el modelo.
+
+### Qué quedó FUERA de la carga masiva, y por qué
+
+- **Asientos contables.** El ledger es append-only y solo nace de una causación aprobada (Regla de Oro 1).
+  Un archivo de asientos sería una puerta trasera al libro.
+- **Facturas.** Entran por el buzón de correo como XML DIAN, con deduplicación por CUFE. Cargarlas por
+  Excel perdería el CUFE y la trazabilidad al documento original.
+- **Usuarios y roles.** Se administran en `/admin/usuarios`. Crear usuarios en bloque desde un archivo,
+  con contraseñas dentro, es exactamente la clase de cosa que no debe existir.
+- **`concepto_causacion` y `exogena_account_mapping`.** Referencian a la vez cuentas PUC y conceptos
+  tributarios, y su semántica está enredada con el clasificador de A5. Quedan para una ola posterior; hoy
+  se editan uno a uno. **Es deuda declarada, no un olvido.**
+- **`rounding_rule`.** Son tres filas por firma; no cumple el criterio de «volumen esperable de muchas
+  filas» y ya tiene pantalla propia en `/parametros/valores-base`.
+
+### Defectos que A16 encontró y corrigió mientras construía
+
+| Qué | Dónde | Cómo se vio |
+|---|---|---|
+| El `CHECK` de `audit_log.accion` reescrito perdía los dos verbos de token de A13 | `170` | Las pruebas de integraciones, no el migrador |
+| `document_correction.revisado_por` era una FK sin guardia de alcance (D-032/D-037) | `170` | El barrido de `evasion.test.ts` |
+| `admin_firma` dejaba de tener «todos los permisos del catálogo» al añadir uno nuevo | `170` | La compuerta de arranque |
+| `debe_cambiar_password` no estaba en la lista blanca de credencial propia: la única persona que no podía cambiar su contraseña era a quien se la habían fijado | `170` | Prueba propia de la Ola 4 |
+| «1.500» entraba como un peso con cincuenta en vez de mil quinientos | `carga-masiva/valores.ts` | Prueba propia de la Ola 4 |
+| Esconder una cuenta heredada exigía cargar toda su cadena de ancestros | `services/puc.ts` | Prueba propia de la Ola 4 |
+| Bloquear con 409 los estados financieros sin mapeo NIIF rompía «todo reporte se descarga» | `api/reportes` | La compuerta de la Ola 3 de A14 |
+
+### Pruebas de A14 que A16 acotó, con su justificación escrita
+
+Las dos siguen la regla de D-047: **se actualizan al estado nuevo sin bajar la vara, y quien las toca lo
+declara.** A14 revisa el diff, no el reporte.
+
+1. `evasion.test.ts` — «app_user no es miembro de app_auth ni al revés». La consulta barría CUALQUIER
+   membresía que tocara a los dos roles, incluida «X es miembro de app_user», que es lo que la migración
+   161 tiene que hacer para que la aplicación arranque contra un Postgres gestionado. Se acotó a las dos
+   direcciones que SÍ son escalada, **y se añadió una prueba nueva y más estricta**: todo el que sea
+   miembro de `app_user`/`app_auth` tiene que ser superusuario o el dueño del esquema.
+2. `compuerta-ola3-ruta.test.ts` — «la ruta es el ÚNICO importador de `src/reports/`». La invariante real
+   (D-062) es que ningún GENERADOR quede huérfano ni se sirva saltándose el rastro EXPORT.
+   `src/reports/diagnostico.ts` no genera libros. Se comprueba ahora que **nadie fuera de la ruta nombre
+   un `generarXxx`**; un archivo que importara `generarLibroMayor` para servirlo por su cuenta seguiría
+   haciendo fallar la prueba.
+
+### Lo que A16 NO verificó, y le toca a A14
+
+- No corrió la secuencia del README contra un PostgreSQL de verdad: todo lo de arriba está probado contra
+  PGlite y con `next build`, no contra Neon ni recorriendo las pantallas a mano.
+- No hay prueba «por la interfaz real» de las pantallas nuevas al estilo de
+  `compuerta-ola2-interfaz.test.ts`: los servicios y la ruta de reportes sí se atacan, las acciones de
+  servidor de `/carga-masiva` y `/admin/**` no.
+- El tope de 5.000 filas y 8 MB por archivo no se probó con un archivo grande de verdad.
+
+---
+
 ## Vulnerabilidades — registro de A14
 
 | Id | Qué es | Gravedad | Estado | De quién |
@@ -2157,6 +2475,53 @@ sin broker, tal como exige la sección 5.
 ---
 
 ## Próximo paso
+
+**OLA 4 ENTREGADA por A16 (2026-09-01). PENDIENTE: la compuerta de A14.** Nada de la Ola 4 está cerrado
+hasta que A14 lo verifique él mismo, sin creerle a este documento. Estado medido por A16: **993 pruebas en
+verde** (48 archivos), `npx tsc --noEmit` limpio, `npx next build` exit 0 con **28 rutas**.
+
+Qué tiene que atacar A14, en orden de riesgo:
+
+1. **El blindaje del rol todopoderoso (D-066).** Está en `tests/adversarial/compuerta-ola4.test.ts`, pero
+   lo escribió quien construyó el blindaje. A14 debería intentar degradarlo por caminos que a A16 no se le
+   ocurrieron: `ALTER TABLE ... DISABLE TRIGGER`, un `UPDATE` sobre `pg_trigger`, revocar el acceso del
+   único usuario que lo tiene en vez de tocar el rol.
+2. **La carga masiva como puerta a otra firma.** Un archivo no nombra empresa ni firma en ninguna columna,
+   y la RLS gobierna la escritura; A14 debería comprobar que eso aguanta con una columna extra inventada,
+   con un `codigo_dane` que ya existe en la firma de al lado, y con la sesión de una empresa a la que el
+   usuario perdió el acceso a mitad de la carga.
+3. **`v_account_efectivo` con `security_invoker`.** Es una vista nueva en el camino de los reportes y del
+   ledger: conviene un `SET ROLE app_user` directo comprobando que no enseña ni una cuenta de otra firma,
+   y que `app.puc_solo_propio()` no se puede engañar escribiendo `company_setting` de otra empresa.
+4. **La aprobación jerárquica (D-068).** El cambio de comportamiento más delicado de la ola: desde ahora
+   `obtenerCorreccionesVigentes` filtra por `estado = 'aprobado'`. A14 debería confirmar contra el motor
+   que una corrección pendiente no altera NINGÚN cálculo, y que aprobarla no reescribe un asiento ya
+   publicado.
+5. **Las dos pruebas suyas que A16 acotó**, con la justificación escrita en «Ola 4 — qué entregó A16».
+   Son exactamente el caso de D-047: A14 revisa el diff, no el reporte.
+
+Ficheros nuevos de la Ola 4:
+
+- `db/migrations/170_a16_ola4_operacion_real.sql`
+- `src/services/puc.ts`, `src/services/catalogos.ts`, `src/services/administracion.ts`
+- `src/services/carga-masiva/` (`definiciones.ts`, `valores.ts`, `tabla.ts`, `importar.ts`, `plantilla.ts`)
+- `src/reports/diagnostico.ts`
+- `scripts/generar-plantillas-masivas.ts` + `/archivos-masivos/` (quince `.xlsx` y su `LEEME.md`)
+- `app/_navegacion.tsx`, `app/carga-masiva/**`, `app/api/plantillas/[catalogo]/route.ts`,
+  `app/parametros/puc/**`, `app/admin/**`, `app/cambiar-password/**`
+- `tests/services/ola4-carga-masiva.test.ts`, `tests/adversarial/compuerta-ola4.test.ts`,
+  `tests/app/reportes-diagnostico.test.ts`
+
+Ficheros existentes que A16 tocó: `app/layout.tsx`, `app/page.tsx`, `app/reportes/page.tsx`,
+`app/parametros/page.tsx`, `app/terceros/[id]/actividades/{page.tsx,acciones.ts}`,
+`app/api/reportes/[libro]/route.ts`, `src/services/terceros.ts`, `src/services/bandeja.ts`,
+`src/auth/permisos.ts`, `next.config.ts`, `package.json`, `tsconfig.json`, y las dos pruebas de A14
+declaradas arriba.
+
+---
+
+## Próximo paso — lote posterior a la Ola 3 (histórico)
+
 
 **LOTE POSTERIOR A LA OLA 3 APROBADO por A14 (2026-08-31).** Verificado punta a punta contra un
 PostgreSQL real, corriendo la secuencia completa del README como la correría el usuario que no

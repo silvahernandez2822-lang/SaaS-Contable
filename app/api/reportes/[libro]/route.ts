@@ -39,6 +39,15 @@ import { SesionInvalidaError, EmpresaNoAutorizadaError } from '../../../../src/d
 import { PermisoInsuficienteError } from '../../../../src/auth/permisos';
 import { conSesion, SesionNoPresenteError } from '../../../lib/sesion';
 import {
+  ConfiguracionFaltanteError,
+  SinDatosEnRangoError,
+  describirCriterios,
+  exigirCuentaExistente,
+  exigirPucCargado,
+  libroTieneFilas,
+  nombreDeTercero,
+} from '../../../../src/reports/diagnostico';
+import {
   libroABuffer,
   generarLibroDiario,
   generarLibroMayor,
@@ -266,6 +275,70 @@ const REPORTES: Record<string, GeneradorReporte> = {
 };
 
 // =============================================================================
+// A16 (Ola 4, Tarea 6) — LOS TRES MOTIVOS POR LOS QUE UN REPORTE NO SALE
+//
+// Antes de generar nada se comprueba que EXISTA lo que el reporte necesita para
+// poder existir; después de generarlo se comprueba que traiga alguna fila. Así
+// los tres casos de D-073 llegan al usuario separados:
+//
+//   409 configuracion_faltante -> no hay ni una cuenta imputable en el PUC, o
+//                                 la cuenta o el tercero que pidió no están en
+//                                 esta empresa. Con el enlace donde arreglarlo.
+//   200 sin datos              -> a un NAVEGADOR, «no hay datos para <criterios>»
+//                                 con un enlace para descargarlo igual; a un
+//                                 programa, el `.xlsx` (vacío pero válido).
+//   500 error                  -> mensaje genérico + referencia; el detalle va
+//                                 al registro del servidor, nunca a la pantalla.
+//
+// LO QUE NO ES BLOQUEANTE, Y POR QUÉ. Falta de `niif_mapping` o de
+// `exogena_account_mapping` NO impide descargar: A10 y A11 ya contemplan ese
+// caso dentro del propio libro (rótulos por grupo PUC y una advertencia en el
+// papel de trabajo). Se avisa en `/reportes` antes de pedirlo — ver
+// `avisosDeConfiguracion` — pero el archivo se entrega, porque el criterio de
+// salida de la Ola 3 dice «todo reporte se descarga en Excel» y bloquearlo
+// sería cambiar por un rechazo un comportamiento que ya estaba bien resuelto.
+// =============================================================================
+
+/**
+ * Comprueba lo que el reporte necesita ANTES de gastar una generación entera,
+ * y de paso resuelve el nombre del tercero para poder nombrarlo si al final no
+ * hay datos. Un identificador de tercero o de cuenta que no existe es
+ * configuración faltante (caso 1), no «no hay datos» (caso 2): son cosas
+ * distintas y el usuario tiene que hacer algo distinto con cada una.
+ */
+async function comprobarPrecondiciones(tx: SqlClient, sp: URLSearchParams): Promise<string> {
+  await exigirPucCargado(tx);
+
+  const accountId = sp.get('accountId');
+  if (accountId) await exigirCuentaExistente(tx, accountId);
+
+  const terceroId = sp.get('terceroId');
+  const tercero = terceroId ? await nombreDeTercero(tx, terceroId) : null;
+
+  const desde = sp.get('desde');
+  const hasta = sp.get('hasta');
+  return describirCriterios({
+    'el rango': desde && hasta ? `${desde} a ${hasta}` : null,
+    'el corte a': sp.get('fechaCorte'),
+    'el año gravable': sp.get('anioGravable'),
+    'el tercero': tercero,
+    'la cuenta': accountId,
+    'el nivel del PUC': sp.get('nivel'),
+  });
+}
+
+/**
+ * ¿A quién le estamos respondiendo? Un navegador que llega desde el formulario
+ * de `/reportes` manda `Accept: text/html`; `fetch`, `curl` y las pruebas de
+ * A14 no. Es la única diferencia de comportamiento de esta ruta, y es de
+ * PRESENTACIÓN, no de autorización: el archivo que se entrega y las filas que
+ * lleva dentro son idénticos en los dos casos.
+ */
+function esNavegador(request: Request): boolean {
+  return (request.headers.get('accept') ?? '').includes('text/html');
+}
+
+// =============================================================================
 // Nombre de archivo: razón social + NIT salen del propio libro generado
 // (hoja "Papel de trabajo", filas 2 y 3 — ver `src/reports/excel.ts`), nunca
 // de un parámetro de la petición.
@@ -293,8 +366,53 @@ function nombreDeArchivo(workbook: ExcelJS.Workbook, slug: string, periodo: stri
   return `${partes.join('_')}.xlsx`;
 }
 
-function respuestaError(status: number, motivo: string, detalle: string): Response {
-  return Response.json({ ok: false, motivo, detalle }, { status });
+/**
+ * Respuesta de error. Un navegador que llega aquí desde el formulario de
+ * `/reportes` recibe HTML legible con el enlace donde arreglar lo que falta;
+ * cualquier otro cliente recibe el mismo contenido en JSON.
+ *
+ * Antes esto devolvía SIEMPRE JSON, y un contador que pedía el libro mayor de
+ * una empresa sin PUC se encontraba un volcado `{"ok":false,...}` en la
+ * pestaña del navegador. Era técnicamente correcto e inservible.
+ */
+function respuestaError(
+  status: number,
+  motivo: string,
+  detalle: string,
+  opciones: { request?: Request; titulo?: string; enlace?: string; enlaceTexto?: string } = {},
+): Response {
+  const acepta = opciones.request?.headers.get('accept') ?? '';
+  if (!acepta.includes('text/html')) {
+    return Response.json(
+      { ok: false, motivo, detalle, enlace: opciones.enlace ?? null },
+      { status },
+    );
+  }
+
+  const titulo = opciones.titulo ?? 'No se pudo generar el reporte';
+  const enlace = opciones.enlace
+    ? `<p><a href="${escaparHtml(opciones.enlace)}">${escaparHtml(opciones.enlaceTexto ?? 'Ir a arreglarlo')}</a></p>`
+    : '';
+  const cuerpo = `<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>${escaparHtml(titulo)}</title></head>
+<body style="font-family:system-ui,sans-serif;max-width:720px;margin:40px auto;padding:0 16px;line-height:1.5">
+<h1 style="font-size:1.4rem">${escaparHtml(titulo)}</h1>
+<p>${escaparHtml(detalle)}</p>
+${enlace}
+<p><a href="/reportes">« Volver a Reportes</a></p>
+</body></html>`;
+  return new Response(cuerpo, {
+    status,
+    headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+  });
+}
+
+function escaparHtml(texto: string): string {
+  return texto
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 export async function GET(request: Request, ctx: { params: Promise<{ libro: string }> }): Promise<Response> {
@@ -310,6 +428,7 @@ export async function GET(request: Request, ctx: { params: Promise<{ libro: stri
       404,
       'reporte_desconocido',
       `No existe el reporte "${libro}". Reportes disponibles: ${Object.keys(REPORTES).sort().join(', ')}.`,
+      { request, titulo: 'Ese reporte no existe' },
     );
   }
 
@@ -317,7 +436,20 @@ export async function GET(request: Request, ctx: { params: Promise<{ libro: stri
 
   try {
     const { workbook, periodo } = await conSesion(async (tx) => {
+      // CASO 1 antes de generar nada: si falta configuración obligatoria, no
+      // tiene sentido construir un libro que saldría vacío por esa razón.
+      const criterios = await comprobarPrecondiciones(tx, sp);
+
       const resultado = await generar(tx, sp);
+
+      // CASO 2: la configuración está y el libro no trae ni una fila. A una
+      // PERSONA se le dice qué preguntó, en vez de darle un archivo con la
+      // hoja en blanco que la deja adivinando si el sistema está roto. A un
+      // programa —y a quien pulse «descargar igual»— se le entrega el archivo.
+      if (!libroTieneFilas(resultado.workbook) && esNavegador(request) && sp.get('permitirVacio') !== '1') {
+        throw new SinDatosEnRangoError(libro, criterios);
+      }
+
       // Rastro EXPORT de la sección 14.1 (A12, migración 140). Va DENTRO de la
       // misma transacción y de la misma sesión verificada que autorizó la
       // lectura: si el rastro no se puede escribir, el archivo no se entrega.
@@ -341,17 +473,58 @@ export async function GET(request: Request, ctx: { params: Promise<{ libro: stri
     });
   } catch (error) {
     if (error instanceof SesionNoPresenteError || error instanceof SesionInvalidaError) {
-      return respuestaError(401, 'no_autenticado', error.message);
+      return respuestaError(401, 'no_autenticado', error.message, { request, titulo: 'Su sesión no está activa' });
     }
     if (error instanceof EmpresaNoAutorizadaError) {
-      return respuestaError(403, 'empresa_no_autorizada', error.message);
+      return respuestaError(403, 'empresa_no_autorizada', error.message, {
+        request,
+        titulo: 'Sin acceso a esa empresa',
+      });
     }
     if (error instanceof PermisoInsuficienteError) {
-      return respuestaError(403, 'permiso_insuficiente', error.message);
+      return respuestaError(403, 'permiso_insuficiente', error.message, {
+        request,
+        titulo: 'Le falta un permiso',
+      });
     }
     if (error instanceof ParametroReporteInvalidoError) {
-      return respuestaError(400, 'parametro_invalido', error.message);
+      return respuestaError(400, 'parametro_invalido', error.message, {
+        request,
+        titulo: 'Falta un dato del formulario',
+      });
     }
-    return respuestaError(500, 'error', error instanceof Error ? error.message : String(error));
+    // CASO 1 (D-073): falta configuración. 409 y no 500: el sistema está bien,
+    // le falta un dato que el usuario puede cargar, y se le dice dónde.
+    if (error instanceof ConfiguracionFaltanteError) {
+      return respuestaError(409, error.motivo, error.message, {
+        request,
+        titulo: 'Falta configuración para este reporte',
+        enlace: error.enlace,
+        enlaceTexto: error.enlaceTexto,
+      });
+    }
+    // CASO 2 (D-073): no es un fallo, es una respuesta. 200 con el mensaje y
+    // con el enlace que descarga el archivo vacío de todos modos, por si el
+    // contador necesita el papel de trabajo aunque no haya movimiento.
+    if (error instanceof SinDatosEnRangoError) {
+      const url = new URL(request.url);
+      url.searchParams.set('permitirVacio', '1');
+      return respuestaError(200, error.motivo, error.message, {
+        request,
+        titulo: 'No hay datos para lo que pidió',
+        enlace: `${url.pathname}${url.search}`,
+        enlaceTexto: 'Descargar el archivo vacío de todos modos',
+      });
+    }
+    // CASO 3 (D-073): fallo técnico. Detalle solo al registro del servidor.
+    console.error('[reportes] fallo técnico generando', libro, Object.fromEntries(sp), error);
+    return respuestaError(
+      500,
+      'error',
+      'El reporte no se pudo generar por un problema técnico del sistema. No es un dato que le falte a ' +
+        'usted. Avise al administrador con la hora, el reporte y el período que pidió; el detalle quedó en ' +
+        'el registro del servidor.',
+      { request, titulo: 'Error del sistema' },
+    );
   }
 }

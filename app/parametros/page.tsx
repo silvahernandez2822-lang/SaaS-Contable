@@ -53,6 +53,18 @@ export default async function PaginaParametros() {
           </Link>
         </li>
         <li>
+          <Link href="/parametros/puc">
+            Plan de cuentas (PUC) — genérico de la firma y propio de cada empresa, con su regla de
+            precedencia (A16, Ola 4)
+          </Link>
+        </li>
+        <li>
+          <Link href="/carga-masiva">
+            Carga masiva — quince catálogos con plantilla de Excel: municipios, CIIU, PUC, mapeo NIIF,
+            conceptos y tarifas, ReteICA, UVT, SMMLV, calendario tributario y terceros (A16, Ola 4)
+          </Link>
+        </li>
+        <li>
           <Link href="/terceros">
             Terceros — maestro de proveedores, atributos fiscales versionados y actividad económica
             por municipio (cierre de V-17)
@@ -60,16 +72,27 @@ export default async function PaginaParametros() {
         </li>
       </ul>
 
+      <h2>Editables solo por archivo (carga masiva), todavía sin pantalla propia</h2>
+      <p>
+        A16 (Ola 4) les dio plantilla de Excel, validación fila a fila y auditoría de la carga, pero no
+        una pantalla de edición individual. Se editan subiendo un archivo en{' '}
+        <Link href="/carga-masiva">carga masiva</Link>:
+      </p>
+      <ul>
+        <li>Catálogo de municipios (DANE) y catálogo CIIU: alta de identidad nueva.</li>
+        <li>Conceptos tributarios (el «qué se retiene» del que cuelgan las tarifas).</li>
+        <li>Calendario tributario (vencimientos por año, obligación y último dígito de NIT).</li>
+        <li>Mapeo de cuentas PUC a NIIF para PYMES, y centros de costo.</li>
+      </ul>
+
       <h2>Todavía NO editables desde esta interfaz</h2>
       <p>
         El modelo de datos ya soporta vigencias append-only, permiso restringido y auditoría para
-        estas tablas (A2/A12, Ola 0), pero esta ola no construyó su pantalla de edición:
+        estas tablas (A2/A12, Ola 0), pero ninguna ola ha construido su pantalla de edición ni su
+        plantilla:
       </p>
       <ul>
-        <li>Plan de cuentas (PUC) completo y su mapeo a NIIF para PYMES.</li>
-        <li>Catálogo CIIU y catálogo de municipios (alta de identidad nueva; ver más abajo la edición de sus reglas de ICA).</li>
         <li>Matriz de agentes de retención de ReteIVA por tipo de tercero.</li>
-        <li>Calendario tributario (vencimientos por año, obligación y último dígito de NIT).</li>
         <li>Formatos de exógena y el mapeo de cuentas PUC a sus conceptos.</li>
         <li>Conceptos de causación (el puente entre un documento y las reglas tributarias).</li>
       </ul>

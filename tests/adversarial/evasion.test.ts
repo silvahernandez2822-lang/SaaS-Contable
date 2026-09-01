@@ -390,11 +390,54 @@ describe('A14 · D-024 — las invariantes de despliegue que SÍ son comprobable
            FROM pg_auth_members am
            JOIN pg_roles m ON m.oid = am.member
            JOIN pg_roles g ON g.oid = am.roleid
-          WHERE m.rolname IN ('app_user','app_auth') OR g.rolname IN ('app_user','app_auth')`,
+          WHERE m.rolname IN ('app_user','app_auth')
+             OR (g.rolname IN ('app_user','app_auth') AND m.rolname IN ('app_user','app_auth'))`,
       );
       return rows.map((r) => `${r.miembro}->${r.en}`);
     });
     expect(membresias).toEqual([]);
+  });
+
+  /**
+   * ACOTAMIENTO DE LA CONSULTA ANTERIOR, HECHO POR A16 EN LA OLA 4 — y por qué
+   * NO afloja la invariante.
+   *
+   * La consulta original barría `m.rolname IN (...) OR g.rolname IN (...)`, es
+   * decir CUALQUIER membresía que tocara a los dos roles, en cualquier
+   * dirección. Eso incluía «X es miembro de app_user», que es exactamente lo
+   * que la migración 161 tiene que hacer para que la aplicación pueda arrancar
+   * contra un Postgres gestionado: el rol dueño de `DATABASE_URL` necesita
+   * membresía explícita para poder hacer `SET LOCAL ROLE app_user`, y sin ella
+   * el producto no abre ni una sesión (se depuró a mano contra Neon el
+   * 31/08/2026).
+   *
+   * Lo que la invariante protege de verdad son dos cosas, y las dos siguen
+   * comprobadas arriba:
+   *   1. Que `app_user` y `app_auth` no sean miembros de NADA — si lo fueran,
+   *      el rol de la aplicación podría escalar con un `SET ROLE`.
+   *   2. Que ninguno de los dos sea miembro del otro.
+   *
+   * Lo que NO es una escalada es que el DUEÑO del esquema sea miembro de
+   * ellos: ya puede hacer todo lo que ellos pueden, por ser el dueño. Eso es
+   * justo lo que comprueba esta prueba: todo el que sea miembro de `app_user` o
+   * de `app_auth` tiene que ser superusuario o el dueño del esquema `public`.
+   * Un rol cualquiera con membresía —una cuenta de informes, un usuario de
+   * soporte— la haría fallar.
+   */
+  it('los únicos que pueden ser miembros de app_user/app_auth son el superusuario o el dueño del esquema', async () => {
+    const intrusos = await db.asAdmin(async (tx) => {
+      const { rows } = await tx.query<{ miembro: string }>(
+        `SELECT m.rolname AS miembro
+           FROM pg_auth_members am
+           JOIN pg_roles m ON m.oid = am.member
+           JOIN pg_roles g ON g.oid = am.roleid
+          WHERE g.rolname IN ('app_user','app_auth')
+            AND NOT m.rolsuper
+            AND m.oid <> (SELECT nspowner FROM pg_namespace WHERE nspname = 'public')`,
+      );
+      return rows.map((r) => r.miembro);
+    });
+    expect(intrusos).toEqual([]);
   });
 
   it('app_user no es dueño de ninguna tabla, vista, secuencia ni función: con FORCE RLS, ser dueño sería la puerta trasera', async () => {

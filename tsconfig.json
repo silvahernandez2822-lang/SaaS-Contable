@@ -36,6 +36,7 @@
   "include": [
     "instrumentation.ts",
     "src/**/*.ts",
+    "scripts/**/*.ts",
     "tests/**/*.ts",
     "app/**/*.ts",
     "app/**/*.tsx",

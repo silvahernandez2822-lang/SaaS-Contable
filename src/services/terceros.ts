@@ -482,12 +482,179 @@ export async function listarMunicipiosParaSelector(tx: SqlClient): Promise<Opcio
   return rows.map((r) => ({ id: r.id, codigo: r.codigo_dane, nombre: `${r.nombre} (${r.departamento})` }));
 }
 
-/** Catálogo CIIU visible para la sesión, para el selector de actividad económica. */
-export async function listarCiiuParaSelector(tx: SqlClient): Promise<OpcionCatalogo[]> {
+/**
+ * Catálogo CIIU visible para la sesión, para el selector de actividad económica.
+ *
+ * Sin `municipalityId` devuelve el catálogo completo — que es lo correcto para
+ * una ficha de empresa o una consulta genérica, y lo INCORRECTO para el
+ * selector de ReteICA. Ver `listarActividadesIcaDeMunicipio` justo debajo.
+ */
+export async function listarCiiuParaSelector(
+  tx: SqlClient,
+  municipalityId?: string | null,
+): Promise<OpcionCatalogo[]> {
+  if (municipalityId) {
+    return (await listarActividadesIcaDeMunicipio(tx, municipalityId)).opciones;
+  }
   const { rows } = await tx.query<{ id: string; codigo: string; nombre: string }>(
     `SELECT id, codigo, nombre FROM ciiu_activity WHERE activo ORDER BY codigo`,
   );
   return rows.map((r) => ({ id: r.id, codigo: r.codigo, nombre: r.nombre }));
+}
+
+export interface CatalogoActividadesIca {
+  municipalityId: string;
+  municipalityNombre: string;
+  /** Hay una fila de `municipality_ica_rule` vigente para este municipio. */
+  tieneReglaMunicipio: boolean;
+  /** El municipio practica ReteICA (si no, no hay nada que elegir). */
+  practicaReteica: boolean;
+  /** La tarifa sale de la actividad económica (lo habitual) o es general. */
+  usaTarifaDeActividad: boolean;
+  /** Actividades con tarifa de ReteICA cargada para ESTE municipio. */
+  opciones: OpcionCatalogo[];
+  /**
+   * Por qué `opciones` viene vacía, en palabras que un contador entiende.
+   * `null` cuando no está vacía. La interfaz lo muestra tal cual: una lista
+   * desplegable vacía sin explicación es peor que un error.
+   */
+  motivoVacio: string | null;
+}
+
+/**
+ * A16 (Ola 4, Tarea 5) — CIERRE DE UN DEFECTO REAL DE RETEICA.
+ *
+ * QUÉ ESTABA MAL. El selector de actividad económica de un tercero
+ * (`/terceros/[id]/actividades`) llamaba a `listarCiiuParaSelector(tx)` sin
+ * ningún filtro, así que ofrecía las MISMAS 40 actividades para Medellín que
+ * para Bucaramanga o Cartagena, municipios que hoy no tienen ni una tarifa de
+ * ReteICA cargada. Un contador podía guardar «actividad 4711 en Bucaramanga»
+ * con toda naturalidad, y el motor —correctamente— no encontraba tarifa y
+ * mandaba el documento a revisión manual sin que nadie entendiera por qué.
+ * El dato quedaba registrado, con su norma de respaldo y su vigencia, y era
+ * inútil.
+ *
+ * POR QUÉ SE CONSULTA `tax_rule` Y NO UNA TABLA DE «ACTIVIDADES DEL
+ * MUNICIPIO». Porque esa tabla no existe ni debe existir: la relación
+ * municipio × actividad × tarifa YA ES `tax_rule` (tipo 'reteica',
+ * `municipality_id`, `ciiu_activity_id`), versionada por vigencia como todo lo
+ * demás. Inventar un catálogo paralelo de «qué actividades aplican en tal
+ * municipio» sería un segundo lugar donde el mismo hecho puede estar
+ * desactualizado. Aquí se pregunta por la fuente de verdad: qué actividades
+ * tienen tarifa VIGENTE en ese municipio a la fecha.
+ *
+ * MUNICIPIOS CON TARIFA GENERAL. Algunos acuerdos municipales no diferencian
+ * por actividad (`municipality_ica_rule.usa_tarifa_de_actividad = false`, con
+ * `tarifa_general`). En ese caso limitar la lista a las actividades con
+ * `tax_rule` propia dejaría el selector vacío por un motivo equivocado: se
+ * devuelve el catálogo completo y se avisa de que la tarifa no depende de la
+ * actividad elegida.
+ *
+ * ESTA FUNCIÓN NO CALCULA NINGUNA TARIFA (Regla de Oro 4) y no devuelve
+ * ninguna: solo dice QUÉ actividades tienen una cargada. Quién la resuelve y
+ * la aplica sigue siendo `src/domain/repositorio.ts`, a la fecha del hecho
+ * económico.
+ */
+export async function listarActividadesIcaDeMunicipio(
+  tx: SqlClient,
+  municipalityId: string,
+  fecha: string = hoyIso(),
+): Promise<CatalogoActividadesIca> {
+  requerirFechaIso(fecha);
+
+  const { rows: municipio } = await tx.query<{ nombre: string; departamento: string }>(
+    'SELECT nombre, departamento FROM municipality WHERE id = $1',
+    [municipalityId],
+  );
+  const m = municipio[0];
+  if (!m) {
+    throw new TerceroInvalidoError(
+      `No existe (o no es visible para esta sesión) el municipio ${municipalityId}.`,
+    );
+  }
+  const municipalityNombre = `${m.nombre} (${m.departamento})`;
+
+  // Regla del municipio VIGENTE a la fecha, del alcance más específico que
+  // exista (empresa > firma > global): la RLS ya limita lo visible, aquí solo
+  // se elige cuál de las visibles manda.
+  const { rows: regla } = await tx.query<{
+    practica_reteica: boolean;
+    usa_tarifa_de_actividad: boolean;
+  }>(
+    `SELECT practica_reteica, usa_tarifa_de_actividad
+       FROM municipality_ica_rule
+      WHERE municipality_id = $1
+        AND app.esta_vigente(vigente_desde, vigente_hasta, $2::date)
+      ORDER BY (company_id IS NOT NULL) DESC, (tenant_id IS NOT NULL) DESC
+      LIMIT 1`,
+    [municipalityId, fecha],
+  );
+  const r = regla[0] ?? null;
+
+  const { rows: conTarifa } = await tx.query<{ id: string; codigo: string; nombre: string }>(
+    `SELECT DISTINCT ci.id, ci.codigo, ci.nombre
+       FROM tax_rule tr
+       JOIN ciiu_activity ci ON ci.id = tr.ciiu_activity_id
+      WHERE tr.tipo = 'reteica'
+        AND tr.municipality_id = $1
+        AND ci.activo
+        AND app.esta_vigente(tr.vigente_desde, tr.vigente_hasta, $2::date)
+      ORDER BY ci.codigo`,
+    [municipalityId, fecha],
+  );
+
+  const base = {
+    municipalityId,
+    municipalityNombre,
+    tieneReglaMunicipio: r !== null,
+    practicaReteica: r?.practica_reteica ?? false,
+    usaTarifaDeActividad: r?.usa_tarifa_de_actividad ?? true,
+  };
+
+  if (r !== null && !r.practica_reteica) {
+    return {
+      ...base,
+      opciones: [],
+      motivoVacio:
+        `${municipalityNombre} está cargado como municipio que NO practica retención de ICA ` +
+        `a la fecha ${fecha}. No hay actividad que registrar aquí para efectos de ReteICA.`,
+    };
+  }
+
+  if (r !== null && !r.usa_tarifa_de_actividad) {
+    const { rows: todas } = await tx.query<{ id: string; codigo: string; nombre: string }>(
+      'SELECT id, codigo, nombre FROM ciiu_activity WHERE activo ORDER BY codigo',
+    );
+    return {
+      ...base,
+      opciones: todas.map((a) => ({ id: a.id, codigo: a.codigo, nombre: a.nombre })),
+      motivoVacio:
+        todas.length > 0
+          ? null
+          : 'No hay ninguna actividad CIIU cargada en el catálogo. Cárguelas en /carga-masiva antes de registrar actividades de terceros.',
+    };
+  }
+
+  if (conTarifa.length === 0) {
+    return {
+      ...base,
+      opciones: [],
+      motivoVacio: r === null
+        ? `${municipalityNombre} no tiene ninguna regla de ReteICA cargada todavía (ni bases mínimas ` +
+          `ni tarifas por actividad) con vigencia al ${fecha}. Cárguela en ` +
+          `/parametros/reteica-municipios, o suba las tarifas por actividad en /carga-masiva, ` +
+          'antes de registrar aquí la actividad económica del tercero.'
+        : `${municipalityNombre} tiene regla de ReteICA, pero ninguna tarifa por actividad ` +
+          `cargada con vigencia al ${fecha}. Cargue las tarifas del acuerdo municipal en ` +
+          '/parametros/tarifas/reteica o en /carga-masiva.',
+    };
+  }
+
+  return {
+    ...base,
+    opciones: conTarifa.map((a) => ({ id: a.id, codigo: a.codigo, nombre: a.nombre })),
+    motivoVacio: null,
+  };
 }
 
 // =============================================================================
@@ -787,6 +954,18 @@ export async function registrarActividad(
   const tercero = await obtenerTercero(tx, input.terceroId);
   if (!tercero) throw new TerceroNoEncontradoError(input.terceroId);
 
+  // A16 (Ola 4, Tarea 5). El selector en cascada impide ELEGIR una actividad
+  // sin tarifa en el municipio, pero este servicio también lo recibe de la
+  // carga masiva y de las pruebas. Aquí no se BLOQUEA —un contador puede
+  // registrar legítimamente la actividad antes de que le carguen el acuerdo
+  // municipal— pero la fila queda marcada como pendiente de verificación
+  // humana, para que aparezca en el banner de alertas (§17.5) en vez de
+  // quedarse callada y luego mandar el documento a revisión sin explicación.
+  const catalogo = await listarActividadesIcaDeMunicipio(tx, input.municipalityId, input.vigenteDesde);
+  const tieneTarifa =
+    input.tarifaIcaOverride != null ||
+    catalogo.opciones.some((o) => o.id === input.ciiuActivityId);
+
   const { rows } = await tx.query<FilaActividadAnterior>(
     `SELECT id, vigente_desde::text FROM third_party_activity
       WHERE third_party_id = $1 AND municipality_id = $2 AND ciiu_activity_id = $3
@@ -828,8 +1007,15 @@ export async function registrarActividad(
       input.tarifaIcaOverride ?? null,
       input.vigenteDesde,
       normaRespaldo,
-      input.notas ?? null,
-      input.requiereVerificacionHumana ?? false,
+      tieneTarifa
+        ? input.notas ?? null
+        : [
+            input.notas,
+            `Sin tarifa de ReteICA cargada para ${catalogo.municipalityNombre} a la fecha ${input.vigenteDesde}.`,
+          ]
+            .filter(Boolean)
+            .join(' — '),
+      (input.requiereVerificacionHumana ?? false) || !tieneTarifa,
     ],
   );
   return { id: nueva[0]!.id, vigenciaAnteriorCerrada: Boolean(anterior) };

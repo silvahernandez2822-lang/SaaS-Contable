@@ -100,6 +100,17 @@ function jsonComoObjeto<T>(valor: unknown): T {
  * Lee la corrección MÁS RECIENTE por (documento, línea/tipo). `document_correction`
  * es append-only (Regla de Oro 6): una corrección nueva no borra la anterior,
  * esta función decide cuál vale.
+ *
+ * A16 (Ola 4, D-068) añadió el filtro `estado = 'aprobado'`. El motor solo usa
+ * las correcciones APROBADAS: la que registró alguien sin
+ * `documento.aprobar_correccion` queda 'pendiente_revision' y el documento se
+ * causa como si no existiera —que es el comportamiento anterior a la Ola 4—
+ * hasta que un revisor la apruebe. Nunca se aplica «a medias»: o vale entera o
+ * no vale, y en los dos casos la corrección sigue visible y auditada.
+ *
+ * Nótese que el filtro va también en el `DISTINCT ON`: sin él, una corrección
+ * pendiente MÁS RECIENTE ocultaría a la aprobada anterior y el motor perdería
+ * un dato que sí estaba autorizado a usar.
  */
 export async function obtenerCorreccionesVigentes(
   tx: SqlClient,
@@ -115,6 +126,7 @@ export async function obtenerCorreccionesVigentes(
             tipo, linea_numero, valor_aiu_centavos::text, municipio_operacion_id
        FROM document_correction
       WHERE source_document_id = $1
+        AND estado = 'aprobado'
       ORDER BY tipo, linea_numero, creado_en DESC`,
     [sourceDocumentId],
   );

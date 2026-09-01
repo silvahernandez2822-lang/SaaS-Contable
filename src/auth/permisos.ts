@@ -18,6 +18,10 @@ export const PERMISOS = {
   DOCUMENTO_LEER: 'documento.leer',
   DOCUMENTO_CARGAR: 'documento.cargar',
   DOCUMENTO_REPROCESAR: 'documento.reprocesar',
+  /** A16 (170, D-068): aprobar o rechazar la corrección de AIU o de municipio
+   * que registró OTRO usuario. Es el permiso que separa al junior que corrige
+   * del revisor que valida; el estado vive en `document_correction.estado`. */
+  DOCUMENTO_APROBAR_CORRECCION: 'documento.aprobar_correccion',
   CAUSACION_CREAR: 'causacion.crear',
   CAUSACION_EDITAR_BORRADOR: 'causacion.editar_borrador',
   CAUSACION_APROBAR: 'causacion.aprobar',
