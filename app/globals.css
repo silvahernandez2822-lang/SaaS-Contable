@@ -158,6 +158,46 @@
   color-scheme: dark;
 }
 
+/* -----------------------------------------------------------------------------
+ * ESCOTILLA DE TEMA POR SUBÁRBOL (D-078). Las dos reglas de arriba solo miran
+ * `<html data-tema="...">`: fijan el tema de TODA la aplicación. `body` lee
+ * `var(--color-texto)` una sola vez y ese `color` computado es lo que heredan
+ * las pantallas sin `color` propio — así que en modo oscuro del sistema, el
+ * texto que `body` reparte se aclara.
+ *
+ * CAUSA RAÍZ DEL BUG DE CONTRASTE (D-078, tarea 1): las rutas aún sin migrar
+ * (terceros, parámetros, PUC, reportes, admin, carga masiva — ver D-077) usan
+ * `style` en línea con hexadecimales fijos (`background: '#fffbeb'`,
+ * `color: '#166534'`...) pensados solo para fondo claro; NINGUNA lee
+ * `var(--color-texto)`. No es una caja aislada con el bug: es que esas
+ * pantallas nunca fueron escritas para el modo oscuro, y heredan el `color`
+ * aclarado de `body` sobre sus fondos claros fijos — texto claro sobre fondo
+ * claro, invisible. La solución de fondo no es recorrer archivo por archivo
+ * poniéndole un `color` fijo a cada caja: es fijar el tema claro para ESE
+ * subárbol, una sola vez, en el contenedor que ya envuelve a todas
+ * (`AppShell`, ver su comentario de cabecera), hasta que cada módulo se migre
+ * al kit de `app/_ui/` y deje de necesitarlo.
+ *
+ * Por qué funciona en un contenedor que NO es `<html>`: las variables de
+ * color son propiedades CSS normales, así que heredan hacia abajo como
+ * cualquier otra — un elemento que las redeclara vale para su subárbol sin
+ * tocar el resto de la página. `[data-tema='claro']` de abajo hace eso: fija
+ * los mismos valores claros que ya declara `--theme static` arriba, para
+ * cualquier contenedor que lleve el atributo, no solo la raíz.
+ * -------------------------------------------------------------------------- */
+[data-tema='claro'] {
+  --color-superficie: #f8f9fa;
+  --color-superficie-elevada: #ffffff;
+  --color-texto: #1a1a1a;
+  --color-texto-suave: #6b7280;
+  --color-borde: #e5e7eb;
+  --color-primario-tinta-oscura: #1e3a5f;
+  --color-exito-tinta: #047857;
+  --color-error-tinta: #b91c1c;
+  --color-pendiente-tinta: #92400e;
+  color-scheme: light;
+}
+
 @layer base {
   :root {
     color-scheme: light;

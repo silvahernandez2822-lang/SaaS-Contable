@@ -81,6 +81,20 @@ const ETIQUETAS: Record<string, string> = {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * D-078 · Fase 1 — módulos que TODAVÍA no migraron su cuerpo al kit de
+ * `app/_ui/` (ver el corte declarado en D-077). Sus pantallas usan
+ * hexadecimales fijos que solo contrastan en modo claro (causa raíz en
+ * `globals.css`, sección "ESCOTILLA DE TEMA POR SUBÁRBOL"): mientras estén en
+ * esta lista, su contenido se pinta con `data-tema="claro"` fijo, tema aparte
+ * del resto de la interfaz. Cuando un módulo migre, se borra su prefijo de
+ * aquí — un solo sitio, no un `style` por archivo. */
+const PREFIJOS_SIN_MIGRAR = ['/terceros', '/parametros', '/reportes', '/admin', '/carga-masiva'];
+
+function esRutaSinMigrar(pathname: string): boolean {
+  return PREFIJOS_SIN_MIGRAR.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
 function etiquetaDe(seg: string): string {
   if (ETIQUETAS[seg]) return ETIQUETAS[seg];
   if (UUID.test(seg)) return 'Detalle';
@@ -361,7 +375,11 @@ export function AppShell({
               ))}
             </ol>
           </div>
-          <div data-densidad={densidad} className="min-h-0 flex-1 overflow-auto">
+          <div
+            data-densidad={densidad}
+            data-tema={esRutaSinMigrar(pathname) ? 'claro' : undefined}
+            className="min-h-0 flex-1 overflow-auto bg-superficie text-texto"
+          >
             {children}
           </div>
         </main>

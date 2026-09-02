@@ -92,6 +92,9 @@ const BOTON_CLASE: Record<VarianteBoton, string> = {
   peligro: 'bg-superficie-elevada text-error-tinta border border-borde hover:bg-error/5',
 };
 
+const CLASE_BOTON_BASE =
+  'inline-flex items-center justify-center gap-2 rounded-md px-3.5 py-2 text-[13px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-50';
+
 export function Boton({
   variante = 'primario',
   tipo = 'button',
@@ -105,9 +108,30 @@ export function Boton({
   return (
     <button
       type={tipo}
-      className={`inline-flex items-center justify-center gap-2 rounded-md px-3.5 py-2 text-[13px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${BOTON_CLASE[variante]} ${className}`}
+      className={`${CLASE_BOTON_BASE} ${BOTON_CLASE[variante]} ${className}`}
       {...props}
     />
+  );
+}
+
+/** Un enlace con la pinta de `Boton` — para "ir a X", nunca dentro de un
+ *  `<form>`. NO envolver `<Boton>` en `<Link>`: un `<button>` dentro de un
+ *  `<a>` es HTML inválido (contenido interactivo anidado). */
+export function EnlaceBoton({
+  href,
+  variante = 'primario',
+  className = '',
+  children,
+}: {
+  href: string;
+  variante?: VarianteBoton;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <Link href={href} className={`${CLASE_BOTON_BASE} ${BOTON_CLASE[variante]} ${className}`}>
+      {children}
+    </Link>
   );
 }
 
@@ -198,11 +222,42 @@ export function Selector(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
   return <select {...props} className={`${CLASE_CONTROL} ${props.className ?? ''}`} />;
 }
 
-/* ------------------------------------------------------------------- tablas */
+/* ------------------------------------------------------------------- tablas
+ *
+ * D-078 · Fase 1 de interfaz — encabezado fijo y primera columna fija, en el
+ * componente, no tabla por tabla. `Th` siempre queda `sticky top-0`: no tiene
+ * costo cuando la tabla no desborda verticalmente, y así toda tabla que se
+ * migre a este kit hereda el encabezado fijo sin pedirlo. La primera columna
+ * (la identificadora — cuenta, NIT, código...) es opt-in con
+ * `fijarPrimeraColumna`, porque no toda tabla tiene una columna así: se aplica
+ * con un selector de descendiente en el contenedor de scroll, no repitiendo
+ * una prop en cada `Td`/`Th` de la tabla. Las celdas fijas llevan
+ * `bg-superficie-elevada` opaco para que el contenido no se transparente por
+ * debajo al desplazar. */
 
-export function Tabla({ children, className = '' }: { children: ReactNode; className?: string }) {
+export function Tabla({
+  children,
+  className = '',
+  fijarPrimeraColumna = false,
+  alturaMaxima = '70vh',
+}: {
+  children: ReactNode;
+  className?: string;
+  /** Fija la primera columna (identificadora) al hacer scroll horizontal. */
+  fijarPrimeraColumna?: boolean;
+  /** Alto máximo del contenedor de scroll — dentro de él el encabezado queda
+   *  pegado arriba. `null` deja que la tabla crezca libre, sin scroll propio. */
+  alturaMaxima?: string | null;
+}) {
   return (
-    <div className="overflow-x-auto">
+    <div
+      className={`overflow-auto ${
+        fijarPrimeraColumna
+          ? '[&_th:first-child]:sticky [&_th:first-child]:left-0 [&_th:first-child]:z-20 [&_td:first-child]:sticky [&_td:first-child]:left-0 [&_td:first-child]:z-[5] [&_td:first-child]:bg-superficie-elevada'
+          : ''
+      }`}
+      style={alturaMaxima ? { maxHeight: alturaMaxima } : undefined}
+    >
       <table className={`w-full border-collapse text-[12.5px] ${className}`}>{children}</table>
     </div>
   );
@@ -211,7 +266,7 @@ export function Tabla({ children, className = '' }: { children: ReactNode; class
 export function Th({ children, alineado = 'left' }: { children?: ReactNode; alineado?: 'left' | 'right' }) {
   return (
     <th
-      className={`whitespace-nowrap px-3 py-2 font-medium text-texto-suave ${alineado === 'right' ? 'text-right' : 'text-left'}`}
+      className={`sticky top-0 z-10 whitespace-nowrap bg-superficie-elevada px-3 py-2 font-medium text-texto-suave ${alineado === 'right' ? 'text-right' : 'text-left'}`}
     >
       {children}
     </th>

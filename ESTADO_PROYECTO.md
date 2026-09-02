@@ -37,6 +37,16 @@
 > uno con sus rutas listadas en D-077. `app/diseno/**` NO se borra hasta migrar todo. Sin comitear:
 > pendiente de `npm run dev`. **Próximo paso:** módulo 2 (terceros) desde D-077.
 >
+> 2026-09-02, después de eso — **Fase 1 (ajustada) de la ola de refinamiento de interfaz: bug de contraste
+> de fondo, tabla con encabezado y primera columna fijos, Inicio como panel real, logo (D-078).** Corrige
+> el texto invisible en las rutas que D-077 dejó con «su cuerpo viejo» (terceros, parámetros, PUC,
+> reportes, admin, carga masiva), añade encabezado y primera columna fijos al componente `Tabla` de
+> `app/_ui/componentes.tsx`, rediseña `/` como panel real con datos reales, y decide (sin poder aplicar) el
+> logo. `tsc` limpio, `npm test` **993 en verde** (48 archivos). `next build` **no se pudo verificar en
+> este entorno** — ver el punto 5. `app/diseno/**` sigue intacto, sin tocar. **Próximo paso:** módulo 2
+> (terceros) desde D-077 — esta fase no migra ningún módulo, solo corrige el fondo y prepara el terreno.
+> Ver «D-078» para el detalle completo.
+>
 > Registro histórico: 2026-08-31 — **A14, compuerta del LOTE POSTERIOR A LA OLA 3 (V-17/A8, V-18/A11,
 > arranque y repaso 14.1/A12, datos de ejemplo/A1, entorno y despliegue/A15). Veredicto: LOTE APROBADO,
 > con tres vulnerabilidades encontradas por A14 y CORREGIDAS por A14 en la misma pasada (V-20, V-21,
@@ -1623,6 +1633,103 @@ verde**, incluida la pasada adversarial de la Regla de Oro 2 (los hex nuevos no 
 
 **Canvas de las tres direcciones:** artifact `437e151c-5dad-4478-9b5f-fa8bb68d4418` (Dirección A en la
 página «elegida», B y C en «descartadas»).
+
+---
+
+### D-078 — Fase 1 (ajustada) de la ola de refinamiento de interfaz
+
+**Encargo, tal como llegó:** cuatro tareas sobre lo que D-077 ya dejó migrado (shell, navegación, login),
+sin migrar ningún módulo nuevo de los que D-077 dejó pendientes (terceros, parámetros, PUC, reportes,
+admin).
+
+**1) Bug de contraste en los módulos aún no migrados.** Causa raíz encontrada en `app/globals.css`: `body`
+fija `color: var(--color-texto)` una sola vez; en modo oscuro del sistema esa variable se aclara
+(`--color-texto: #fafafa`). Las pantallas de `/terceros`, `/parametros` (incluida `/puc`), `/reportes`,
+`/admin/**` y `/carga-masiva` usan `style` en línea con hexadecimales fijos pensados solo para fondo claro
+(`background: '#fffbeb'`, `color: '#166534'`...) que **nunca leen ese token**: heredan el `color` aclarado
+de `body` sobre sus fondos claros fijos — texto claro sobre fondo claro, invisible. No es un defecto por
+caja: ninguna de esas pantallas fue escrita pensando en modo oscuro.
+
+Corrección **sistémica, no parche por parche**: una escotilla de tema por subárbol. `globals.css` gana una
+regla `[data-tema='claro']` (no solo `:root[data-tema='claro']`, que ya existía) que redeclara los mismos
+valores claros para CUALQUIER contenedor que lleve el atributo — las variables de color son propiedades
+CSS normales y heredan hacia abajo como cualquier otra. `AppShell.tsx` la aplica en el ÚNICO contenedor que
+ya envuelve a todas las pantallas (`<div data-densidad ...>`), con una lista `PREFIJOS_SIN_MIGRAR` (los
+mismos cinco módulos de la tarea, más `/carga-masiva`, que D-077 también dejó con su cuerpo viejo aunque no
+apareciera en su tabla del corte). Un solo sitio: cuando un módulo migre, se borra su prefijo de esa lista,
+no se toca ni un archivo de la pantalla. `/bandeja` y `/` (ya migradas al kit) no llevan el atributo y
+siguen respondiendo al tema del sistema con normalidad.
+
+**2) Encabezado y primera columna fijos en `Tabla` (`app/_ui/componentes.tsx`).** `Th` queda `sticky
+top-0` siempre — sin costo cuando la tabla no desborda verticalmente, así que toda tabla que se migre al
+kit lo hereda sin pedirlo. La primera columna es opt-in con la prop nueva `fijarPrimeraColumna` (no toda
+tabla tiene una columna identificadora), aplicada con un selector de descendiente
+(`[&_td:first-child]:sticky...`) en el contenedor de scroll — no una prop repetida en cada `Td`. Prop nueva
+`alturaMaxima` (por defecto `'70vh'`, `null` para desactivar) porque el encabezado fijo necesita un
+contenedor con alto acotado para tener contra qué pegarse; sin ella, en una tabla corta como las de
+`/bandeja` no cambia nada visible. Ninguna pantalla migrada se tocó: el cambio vive entero en el
+componente, y beneficia a PUC y a cualquier tabla larga en cuanto se migre.
+
+**3) `/` rediseñada como panel real.** Antes: pantalla plana de A12 (elegir empresa + lista de enlaces en
+texto), fuera del shell (`Chrome.tsx` la trataba como ruta sin shell). Ahora entra al shell como cualquier
+módulo (se borra de `RUTAS_SIN_SHELL`) y usa el kit (`Panel`, `Encabezado`, `MensajeEstado`, `Boton`).
+Datos, todos reales, del MISMO servicio que ya usan las pantallas migradas — nada se recalcula con lógica
+propia:
+- Facturas pendientes de aprobación / revisión → `obtenerBandejaConsolidada()` (`app/lib/bandeja.ts`), el
+  agregador exacto que ya usa `/bandeja`, con enlace directo a `/bandeja`.
+- Alertas de parámetros (`FALTA DATO` / `VERIFICAR`) → `detectarAlertasParametrizacion()`
+  (`src/services/parametrizacion.ts`), el mismo que alimenta el `BannerAlertas` de `/parametros`, con
+  enlace directo a `/parametros`.
+- Seis tarjetas de acceso rápido a los módulos que NO son la bandeja (ésta ya tiene su propio panel de
+  resumen arriba con su propio botón), dentro del sistema de diseño (`grid` de tarjetas con ícono, no
+  lista de texto).
+- Si no hay empresa elegida (o el usuario no tiene ninguna): `MensajeEstado` explícito y, si tiene
+  empresas pero ninguna elegida, un `Panel` con el selector ahí mismo (mismo
+  `cambiarEmpresaActivaAction` que usa el selector del shell, `destino="/"`).
+
+Se retiró `app/acciones.ts` (`elegirEmpresaAction`): quedó duplicado exacto de `cambiarEmpresaActivaAction`
+(`app/_ui/acciones.ts`, D-077) en cuanto `/` empezó a usar este último; nada más lo importaba.
+
+**Hallazgo propio, corregido en la misma pasada (revisión A14 — arquitecto):** la primera versión envolvía
+`<Boton>` dentro de `<Link>` para los botones "Ir a la bandeja" / "Ir a parámetros" — un `<button>` dentro
+de un `<a>` es HTML inválido (contenido interactivo anidado), y no había precedente de ese patrón en el
+resto del kit. Se añadió `EnlaceBoton` a `componentes.tsx` (un `<Link>` con la misma pinta de `Boton`,
+compartiendo `CLASE_BOTON_BASE`) y se usó ahí y en el `not-found.tsx` nuevo; `Boton` sigue siendo
+exclusivamente de `<form>`/`onClick`.
+
+**4) Logo.** Se revisó `/logos` en la raíz del repo (11 archivos: 10 PNG + 1 SVG). **Ninguna variante es
+adecuada para ningún uso** — no falta un formato o un fondo: el logo entero es de una marca distinta.
+Las imágenes son el ícono «D/S» con el texto «AUTOMATIZACIÓN · IA», que es la marca personal de
+automatización/IA del usuario, no la de este producto (`Contable CO`, la marca en azul `#1E3A5F` que ya
+fijó D-074 y que usan el header y el login desde D-077). Ponerle este logo al header, al favicon o al
+login de un SaaS contable multi-tenant sería vestir el producto con la marca equivocada — más caro de
+deshacer después que no hacerlo ahora. **No se integró nada de `/logos`.** Lo único que se tocó: no existía
+NINGÚN favicon; se creó `app/icon.svg` (convención de Next.js: archivo especial servido automáticamente),
+el mismo trazo que ya usa `IconoMarca` (`app/_ui/iconos.tsx`) en cuadrado redondeado `--color-primario`. El
+header y el login siguen con `IconoMarca` + el texto «Contable CO», que ya son la marca real del producto.
+Si en algún momento se decide un logo verdadero para `Contable CO`, esta ficha es la referencia de por qué
+`/logos` no lo resolvió.
+
+**5) Verificación — con una limitación declarada.** `npx tsc --noEmit` limpio. `npm test`: **993 en
+verde** (48 archivos) — incluyó corregir un falso positivo real del propio detector de la Regla de Oro 2
+que la tarea 3 introdujo: `mt-0.5` (clase de espaciado fraccional de Tailwind) coincide con el patrón
+`0\.\d+` que caza tarifas quemadas (`0.19` de IVA, etc.); se cambió a `mt-[2px]`, la misma convención en
+píxeles arbitrarios que YA usa `componentes.tsx` en dos sitios por la misma razón. `npx next build`: **no
+se pudo verificar en esta sesión** — falla con `TypeError: The "path" argument must be of type string or
+an instance of Buffer or URL` al prerenderizar `/_not-found`, y **se confirmó que el fallo es previo a esta
+fase**: revertidos todos los cambios de esta sesión (`git stash`), el mismo build falla igual, byte por
+byte, sobre el commit de cierre de D-077. Es infraestructura de build de este entorno, no del código: el
+import estático de `@electric-sql/pglite` en `src/db/client.ts` (el motor WASM de pruebas) se arrastra a
+TODO el árbol de servidor por `app/lib/db.ts` → el layout raíz, y algo en la resolución de la ruta del
+`.wasm` bajo Node 22 + este Next 16.3.3 (reproducido igual con Turbopack y con `--webpack`) revienta al
+prerenderizar la página `/_not-found` implícita. D-077 sí reportó `next build` exit 0; no hay forma de
+saber desde aquí si su entorno difería (versión de Node, caché de `.next`) o si el mismo problema ya
+estaba latente. **Queda declarado, no oculto ni inventado un «pasa» que no se verificó.** Se probó además
+declarar un `app/not-found.tsx` propio (mejora real, se queda) por si evitaba la ruta implícita — no la
+evitó, Next la genera de todos modos.
+
+**Sin comitear hasta que el usuario lo revise.** `app/diseno/**` sigue intacto: ningún módulo se migró en
+esta fase, así que la regla de no borrarlo hasta migrar todo sigue vigente sin cambios.
 
 ---
 

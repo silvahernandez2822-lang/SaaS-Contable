@@ -1,136 +1,249 @@
 /**
- * A12 — Portada: elegir empresa y llegar a las pantallas del producto.
+ * Inicio — panel real (D-078, Fase 1 de la ola de refinamiento de interfaz).
  *
- * Es el eslabón que faltaba para poder USAR el sistema: hasta A12 existían
- * `/bandeja`, `/parametros`, `/terceros` y `/reportes`, pero no había forma de
- * iniciar sesión ni de fijar la cookie `company_id` que todas ellas esperan.
+ * Hasta D-078 esta era la portada plana de A12: elegir empresa y una lista de
+ * enlaces en texto. Ahora es el panel que un contador ve al entrar: cuánto
+ * trabajo real le espera (facturas listas para aprobar, alertas de datos
+ * tributarios pendientes) y acceso directo a los seis módulos, dentro del
+ * mismo `AppShell` y kit de `app/_ui/` que ya usan `/bandeja` y `/entrar` —
+ * no una pantalla aparte con su propio lenguaje visual.
  *
- * No hay ninguna decisión de seguridad aquí. Si no hay sesión, `conSesion`
- * lanza y se redirige a `/entrar`; qué empresas se muestran lo decide
- * `app.empresas_accesibles()` a partir del token verificado, nunca esta página.
+ * Los NÚMEROS son reales, no maqueta: `obtenerBandejaConsolidada` es
+ * literalmente el mismo servicio que agrega `/bandeja` (una sesión real por
+ * empresa, D-021/D-022) y `detectarAlertasParametrizacion` es el mismo que usa
+ * `/parametros` para su banner de alertas (advertencia 17.5). Nada se calcula
+ * dos veces con lógica distinta: se reutiliza tal cual y solo se resume.
  *
- * A16 (Ola 4) le añade dos cosas:
- *  · el desvío a `/cambiar-password` mientras la contraseña la haya fijado un
- *    administrador (D-069). No es una medida de seguridad —quien tiene sesión
- *    válida puede llamar a las acciones de servidor igual— sino la forma de que
- *    la obligación se cumpla en la práctica.
- *  · los módulos nuevos en la lista de destinos. La navegación de vuelta ya no
- *    vive aquí: está en el layout raíz (`app/_navegacion.tsx`), donde toda ruta
- *    la hereda por construcción.
+ * Ninguna decisión de seguridad ni de negocio nueva: si no hay sesión,
+ * `conSesionEmpresa` lanza y se redirige a `/entrar`, igual que antes de
+ * D-078; si la contraseña la fijó un administrador, el desvío a
+ * `/cambiar-password` (D-069) sigue intacto.
  */
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
-import { conSesionEmpresa, COOKIE_COMPANY_ID, SesionNoPresenteError } from './lib/sesion';
-import { listarEmpresasAccesibles } from '../src/services/bandeja';
+import { conSesion, conSesionEmpresa, COOKIE_COMPANY_ID, SesionNoPresenteError } from './lib/sesion';
+import { obtenerBandejaConsolidada } from './lib/bandeja';
 import { estadoDeMiCredencial } from '../src/services/administracion';
+import { detectarAlertasParametrizacion } from '../src/services/parametrizacion';
 import { SesionInvalidaError } from '../src/db/tenant-context';
-import { elegirEmpresaAction } from './acciones';
-import { salirAction } from './entrar/acciones';
+import { cambiarEmpresaActivaAction } from './_ui/acciones';
+import { EnlaceBoton, Encabezado, MensajeEstado, Panel } from './_ui/componentes';
+import {
+  IconoAdmin,
+  IconoParametros,
+  IconoPuc,
+  IconoReportes,
+  IconoSubir,
+  IconoTerceros,
+} from './_ui/iconos';
 
 export const dynamic = 'force-dynamic';
 
 type BusquedaParams = Record<string, string | string[] | undefined>;
 
-export default async function PortadaPage({ searchParams }: { searchParams: Promise<BusquedaParams> }) {
+/** Los seis módulos que no son la bandeja (ésta ya tiene su propio panel de
+ *  resumen arriba, con su propio acceso directo). */
+const ACCESOS_RAPIDOS = [
+  {
+    href: '/terceros',
+    texto: 'Terceros',
+    descripcion: 'Proveedores, atributos fiscales y actividad por municipio',
+    icono: IconoTerceros,
+  },
+  {
+    href: '/parametros',
+    texto: 'Parámetros tributarios',
+    descripcion: 'Tarifas, UVT, ReteICA por municipio',
+    icono: IconoParametros,
+  },
+  {
+    href: '/parametros/puc',
+    texto: 'PUC / Plan de cuentas',
+    descripcion: 'El genérico de la firma y el propio de cada empresa',
+    icono: IconoPuc,
+  },
+  {
+    href: '/carga-masiva',
+    texto: 'Carga masiva',
+    descripcion: 'Cargar catálogos completos desde Excel',
+    icono: IconoSubir,
+  },
+  { href: '/reportes', texto: 'Reportes', descripcion: 'Libros y papeles de trabajo en Excel', icono: IconoReportes },
+  {
+    href: '/admin/usuarios',
+    texto: 'Administración',
+    descripcion: 'Usuarios, roles, permisos y correcciones por revisar',
+    icono: IconoAdmin,
+  },
+] as const;
+
+export default async function InicioPage({ searchParams }: { searchParams: Promise<BusquedaParams> }) {
   const sp = await searchParams;
   const ok = typeof sp.ok === 'string' ? sp.ok : '';
 
-  let empresas;
   let credencial;
   try {
-    // Sesión "de firma" (sin empresa): es exactamente para lo que sirve —
-    // saber qué empresas hay ANTES de elegir una (D-022).
-    [empresas, credencial] = await conSesionEmpresa('', async (tx) => [
-      await listarEmpresasAccesibles(tx),
-      await estadoDeMiCredencial(tx),
-    ] as const);
+    // Sesión "de firma" (sin empresa, D-022): saber quién es y si le falta
+    // cambiar la contraseña no depende de tener una empresa elegida.
+    credencial = await conSesionEmpresa('', (tx) => estadoDeMiCredencial(tx));
   } catch (error) {
     if (error instanceof SesionNoPresenteError || error instanceof SesionInvalidaError) {
       redirect('/entrar');
     }
     throw error;
   }
-
   if (credencial?.debeCambiarPassword) redirect('/cambiar-password');
+
+  // Mismo agregador que `/bandeja` (D-021/D-022: una sesión real por empresa,
+  // en secuencia — el cliente de base de datos no abre transacciones
+  // concurrentes entre sí). Nada de esto se recalcula con lógica propia.
+  const { empresas, pendientesAprobacion, pendientesRevision } = await obtenerBandejaConsolidada();
+  const alertas = await conSesion((tx) => detectarAlertasParametrizacion(tx));
 
   const jarra = await cookies();
   const elegida = jarra.get(COOKIE_COMPANY_ID)?.value ?? '';
   const actual = empresas.find((e) => e.companyId === elegida) ?? null;
+  const alertasAltas = alertas.filter((a) => a.severidad === 'alta').length;
 
   return (
-    <main style={{ maxWidth: 900, margin: '0 auto', padding: '24px' }}>
-      <h1>Contable CO</h1>
-      {ok && (
-        <p role="status" style={{ border: '1px solid #15803d', color: '#15803d', padding: '8px 12px' }}>
-          {decodeURIComponent(ok)}
-        </p>
-      )}
+    <div className="mx-auto max-w-6xl p-5">
+      <Encabezado
+        titulo={credencial ? `Hola, ${credencial.nombreCompleto}` : 'Inicio'}
+        descripcion={
+          actual
+            ? `Trabajando sobre ${actual.razonSocial} (NIT ${actual.nit}) · ${empresas.length} empresa(s) accesible(s)`
+            : `Sin empresa elegida · ${empresas.length} empresa(s) accesible(s)`
+        }
+      />
 
-      <section>
-        <h2>Empresa en contexto</h2>
-        {empresas.length === 0 ? (
-          <p>
-            Su usuario no tiene acceso vigente a ninguna empresa-cliente. Pídale al administrador de la firma
-            que se lo otorgue.
-          </p>
-        ) : (
-          <form action={elegirEmpresaAction}>
-            <label htmlFor="companyId">Trabajar sobre</label>{' '}
-            <select id="companyId" name="companyId" defaultValue={elegida}>
-              <option value="">— sin empresa (parámetros de la firma) —</option>
-              {empresas.map((e) => (
-                <option key={e.companyId} value={e.companyId}>
-                  {e.razonSocial} (NIT {e.nit}) — rol: {e.rolCodigo}
-                </option>
+      {ok && <MensajeEstado tipo="sin-datos" titulo={decodeURIComponent(ok)} />}
+
+      {empresas.length === 0 ? (
+        <MensajeEstado tipo="configuracion" titulo="Su usuario no tiene acceso vigente a ninguna empresa-cliente.">
+          Pídale al administrador de la firma que se lo otorgue.
+        </MensajeEstado>
+      ) : !actual ? (
+        <Panel
+          titulo="Elija una empresa para empezar"
+          descripcion="Sin empresa elegida solo puede editar los parámetros compartidos de la firma — la bandeja y los reportes necesitan una empresa."
+          className="mb-5"
+        >
+          <ul className="flex flex-col divide-y divide-borde p-1">
+            {empresas.map((e) => (
+              <li key={e.companyId}>
+                <form action={cambiarEmpresaActivaAction}>
+                  <input type="hidden" name="companyId" value={e.companyId} />
+                  <input type="hidden" name="destino" value="/" />
+                  <button
+                    type="submit"
+                    className="flex w-full items-center justify-between gap-3 rounded-md px-3 py-2.5 text-left text-[13px] hover:bg-superficie"
+                  >
+                    <span>
+                      <span className="font-semibold text-texto">{e.razonSocial}</span>{' '}
+                      <span className="text-texto-suave tabular-nums">NIT {e.nit}</span>
+                    </span>
+                    <span className="text-[11px] text-texto-suave">rol {e.rolCodigo}</span>
+                  </button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        </Panel>
+      ) : null}
+
+      <div className="mb-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+        <Panel
+          titulo="Facturas pendientes de aprobación"
+          descripcion={`${pendientesAprobacion.length} lista(s) para aprobar · ${pendientesRevision.length} en revisión manual, en sus ${empresas.length} empresa(s)`}
+          acciones={
+            <EnlaceBoton href="/bandeja" variante="secundario">
+              Ir a la bandeja
+            </EnlaceBoton>
+          }
+        >
+          {pendientesAprobacion.length === 0 ? (
+            <div className="p-4">
+              <MensajeEstado tipo="sin-datos" titulo="No hay facturas listas para aprobar en ninguna de sus empresas." />
+            </div>
+          ) : (
+            <ul className="divide-y divide-borde">
+              {pendientesAprobacion.slice(0, 5).map((doc) => (
+                <li key={doc.sourceDocumentId} className="flex items-center justify-between gap-3 px-4 py-2.5 text-[13px]">
+                  <span className="truncate">
+                    <span className="font-medium text-texto">{doc.companyNombre}</span>{' '}
+                    <span className="text-texto-suave">· documento {doc.numeroDocumento}</span>
+                  </span>
+                  <span className="shrink-0 tabular-nums text-[11px] text-texto-suave">{doc.fechaHechoEconomico}</span>
+                </li>
               ))}
-            </select>{' '}
-            <button type="submit">Elegir</button>
-          </form>
-        )}
-        <p>
-          {actual
-            ? `Ahora mismo: ${actual.razonSocial}.`
-            : 'Ahora mismo: sin empresa. La bandeja y los reportes necesitan una empresa elegida.'}
-        </p>
-      </section>
+              {pendientesAprobacion.length > 5 && (
+                <li className="px-4 py-2 text-[12px] text-texto-suave">
+                  y {pendientesAprobacion.length - 5} más en la bandeja
+                </li>
+              )}
+            </ul>
+          )}
+        </Panel>
 
-      <section>
-        <h2>Ir a</h2>
-        <ul>
-          <li>
-            <a href="/bandeja">Bandeja de causación</a> — aprobar o rechazar lo que llegó
-          </li>
-          <li>
-            <a href="/terceros">Terceros</a> — proveedores, atributos fiscales y actividad por municipio
-          </li>
-          <li>
-            <a href="/parametros">Parámetros</a> — tarifas, UVT, ReteICA por municipio
-          </li>
-          <li>
-            <a href="/parametros/puc">Plan de cuentas (PUC)</a> — el genérico y el propio de esta empresa
-          </li>
-          <li>
-            <a href="/carga-masiva">Carga masiva</a> — cargar catálogos completos desde Excel
-          </li>
-          <li>
-            <a href="/reportes">Reportes</a> — libros y papeles de trabajo en Excel
-          </li>
-          <li>
-            <a href="/admin/usuarios">Administración</a> — usuarios, roles, permisos y correcciones por revisar
-          </li>
-        </ul>
-      </section>
+        <Panel
+          titulo="Alertas de parámetros"
+          descripcion={`${alertas.length} dato(s) pendiente(s) de verificación humana (sección 17.5)${
+            alertasAltas > 0 ? ` · ${alertasAltas} de severidad alta` : ''
+          }`}
+          acciones={
+            <EnlaceBoton href="/parametros" variante="secundario">
+              Ir a parámetros
+            </EnlaceBoton>
+          }
+        >
+          {alertas.length === 0 ? (
+            <div className="p-4">
+              <MensajeEstado tipo="sin-datos" titulo="Sin alertas: no hay ningún dato tributario pendiente de verificar." />
+            </div>
+          ) : (
+            <ul className="divide-y divide-borde">
+              {alertas.slice(0, 5).map((a, i) => (
+                <li key={`${a.categoria}-${i}`} className="flex items-start gap-2 px-4 py-2.5 text-[13px]">
+                  <span
+                    className={`mt-[2px] shrink-0 rounded px-1.5 py-[1px] text-[10px] font-bold tracking-wide ${
+                      a.severidad === 'alta' ? 'bg-error/12 text-error' : 'bg-pendiente/12 text-pendiente'
+                    }`}
+                  >
+                    {a.severidad === 'alta' ? 'FALTA DATO' : 'VERIFICAR'}
+                  </span>
+                  <span className="text-texto-suave">{a.mensaje}</span>
+                </li>
+              ))}
+              {alertas.length > 5 && (
+                <li className="px-4 py-2 text-[12px] text-texto-suave">y {alertas.length - 5} más en parámetros</li>
+              )}
+            </ul>
+          )}
+        </Panel>
+      </div>
 
-      <section>
-        <h2>Mi cuenta</h2>
-        <p>
-          {credencial ? `${credencial.nombreCompleto} <${credencial.email}>` : ''} ·{' '}
-          <a href="/cambiar-password">Cambiar mi contraseña</a>
-        </p>
-        <form action={salirAction}>
-          <button type="submit">Cerrar sesión</button>
-        </form>
-      </section>
-    </main>
+      <h2 className="mb-2 text-[13px] font-semibold text-texto">Módulos</h2>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {ACCESOS_RAPIDOS.map((m) => {
+          const Icono = m.icono;
+          return (
+            <Link
+              key={m.href}
+              href={m.href}
+              className="flex items-start gap-3 rounded-lg border border-borde bg-superficie-elevada p-4 transition hover:border-primario hover:shadow-sm dark:hover:border-primario-tinta-oscura"
+            >
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primario/10 text-primario dark:bg-primario-tinta-oscura/15 dark:text-primario-tinta-oscura">
+                <Icono width={18} height={18} />
+              </span>
+              <span>
+                <span className="block text-[13px] font-semibold text-texto">{m.texto}</span>
+                <span className="mt-[2px] block text-[12px] text-texto-suave">{m.descripcion}</span>
+              </span>
+            </Link>
+          );
+        })}
+      </div>
+    </div>
   );
 }
