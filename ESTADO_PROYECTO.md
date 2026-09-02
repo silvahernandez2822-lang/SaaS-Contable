@@ -9,6 +9,34 @@
 > **993 en verde** (48 archivos), typecheck limpio, `next build` exit 0 con 28 rutas.
 > **PENDIENTE: la compuerta de A14.** Ver «Ola 4 — qué entregó A16».
 >
+> 2026-09-01, después de eso — **capa de diseño: los tokens, antes que las pantallas (D-074).** La paleta
+> y la tipografía aprobadas quedan escritas una sola vez en `app/globals.css` (Tailwind v4, `@theme
+> static`) e importadas una sola vez en el layout raíz, con modo oscuro, Inter servida desde el propio
+> dominio y cifras tabulares. **No se construyó ni se migró ninguna pantalla**: solo los tokens. Dos
+> valores del modo oscuro quedan DERIVADOS y declarados como no aprobados. Typecheck limpio, `next build`
+> exit 0 con las mismas 28 rutas. Sin compuerta de A14, como el resto de la Ola 4.
+>
+> 2026-09-01, después de eso — **sistema de interfaz, prototipo y tercer token derivado (D-075).**
+> `--color-primario-tinta-oscura: #5B8DBE` cierra el «pendiente» de D-074 (azul aclarado para tinta sobre
+> oscuro). Prototipo navegable de las 8 pantallas en `app/diseno/**` (Next 16 + Tailwind v4 + TS strict),
+> Dirección A «Consola de operación», con navegación global (selector de empresa, lateral de 6 módulos,
+> breadcrumb, toggle de densidad) y el componente reusable de carga masiva. **No toca ninguna ruta ni
+> servicio real** — vive aparte con datos de maqueta; migrar las pantallas canónicas contra este lenguaje
+> es la siguiente ola de front. Valores tributarios como marcadores `[tarifa]` (Regla de Oro 2, sin
+> exención en el detector). `tsc` limpio, `next build` exit 0 con 38 rutas, `npm test` 993 en verde. Sin
+> comitear: pendiente de que el usuario lo pruebe con `npm run dev`.
+>
+> 2026-09-01, después de eso — **MIGRACIÓN del sistema de interfaz a las rutas reales: MÓDULO 0 (base +
+> shell) y MÓDULO 1 (bandeja) (D-077).** El kit compartido pasa a `app/_ui/` como canónico y se conecta a
+> los servicios reales: `EmpresaProvider` con `listarEmpresasAccesibles`, `CargaMasiva` con
+> `cargarArchivoAction` (el importador real, cero simulación), shell en el layout raíz con sesión de firma,
+> selector de empresa a `cambiarEmpresaActivaAction`. `app/_navegacion.tsx` eliminado (lo reemplaza el
+> shell). Migradas: `/entrar`, `/cambiar-password`, `/bandeja` — sin tocar una acción de servidor, un
+> permiso ni una aserción de la suite. `tsc` limpio, `next build` exit 0 (38 rutas), `npm test` **993 en
+> verde**. **Corte declarado:** faltan los módulos 2–6 (terceros, parámetros, PUC, reportes, admin), cada
+> uno con sus rutas listadas en D-077. `app/diseno/**` NO se borra hasta migrar todo. Sin comitear:
+> pendiente de `npm run dev`. **Próximo paso:** módulo 2 (terceros) desde D-077.
+>
 > Registro histórico: 2026-08-31 — **A14, compuerta del LOTE POSTERIOR A LA OLA 3 (V-17/A8, V-18/A11,
 > arranque y repaso 14.1/A12, datos de ejemplo/A1, entorno y despliegue/A15). Veredicto: LOTE APROBADO,
 > con tres vulnerabilidades encontradas por A14 y CORREGIDAS por A14 en la misma pasada (V-20, V-21,
@@ -1423,6 +1451,246 @@ declara.** A14 revisa el diff, no el reporte.
 
 ---
 
+## Tokens de diseño — D-074 (2026-09-01)
+
+**Sin compuerta de A14.** Entra antes de construir una sola pantalla, a propósito: es la capa que las
+pantallas van a consumir, y ponerla después obligaría a reescribirlas.
+
+### D-074 — El color y la tipografía viven en un solo archivo, no en cada `style` inline
+
+**Problema:** hasta la Ola 4 el color estaba escrito a mano, pantalla por pantalla, dentro de `style`
+inline (`#b45309` en el banner de alertas de A8, `#dc2626` en su badge, `#b91c1c` en el mensaje de error,
+`#64748b` en el badge de alcance). Siete grises distintos, ningún modo oscuro posible y ningún sitio
+donde cambiar el azul de la marca: cambiarlo era barrer el repositorio a mano.
+
+**Decidido:** la paleta y la tipografía aprobadas viven **una sola vez**, en `app/globals.css`, como
+variables CSS bajo `@theme static` de Tailwind v4. Se importan **una vez** en el layout raíz
+(`app/layout.tsx`), así que toda ruta las hereda por construcción — el mismo argumento por el que la
+navegación vive ahí (Ola 4, Tarea 0).
+
+| Token | Claro | Oscuro |
+|---|---|---|
+| `--color-primario` | `#1E3A5F` | *igual* (ver abajo) |
+| `--color-primario-contraste` | `#FFFFFF` | *igual* |
+| `--color-superficie` | `#F8F9FA` | `#09090B` |
+| `--color-superficie-elevada` | `#FFFFFF` | `#18181B` |
+| `--color-texto` | `#1A1A1A` | `#FAFAFA` |
+| `--color-texto-suave` | `#6B7280` | `#A1A1AA` *(derivado)* |
+| `--color-exito` | `#10B981` | *igual* |
+| `--color-error` | `#EF4444` | *igual* |
+| `--color-pendiente` | `#F59E0B` | *igual* |
+| `--color-borde` | `#E5E7EB` | `#27272A` *(derivado)* |
+
+**Por qué Tailwind v4 y no un `tailwind.config.js`:** en la versión 4 la configuración ES CSS. El bloque
+`@theme` define a la vez (a) las variables que puede usar cualquier `style` inline de las pantallas que ya
+existen y (b) las utilidades (`bg-superficie`, `text-texto-suave`, `border-borde`) para las que se escriban
+a partir de ahora. Un solo sitio, dos formas de consumirlo, **sin migrar nada de lo ya construido**: las
+pantallas de A8, A7, A9 y A16 siguen funcionando exactamente igual.
+
+**Por qué `@theme static` y no `@theme` a secas:** Tailwind v4 **poda** del CSS final las variables que
+ninguna utilidad usa, y las pantallas ya construidas las consumen desde `style` inline, donde Tailwind no
+puede verlas. Comprobado sobre el CSS compilado: sin `static`, `--color-exito`, `--color-error`,
+`--color-pendiente`, `--color-borde` y `--color-texto-suave` **no llegaban al navegador**. Con `static`,
+las diez del cuadro están.
+
+**Modo oscuro, tres estados y en este orden de mando:** `<html data-tema="oscuro">` o `data-tema="claro"`
+mandan sobre `prefers-color-scheme`, que manda cuando no hay decisión explícita. Solo se redefinen los
+tokens que cambian; los nombres no. Una pantalla escrita contra `--color-superficie` funciona en los dos
+modos sin una sola condición.
+
+**Dos valores del modo oscuro son DERIVADOS, no aprobados,** y están marcados como tales en el archivo:
+el texto secundario (`#A1A1AA`) y el borde (`#27272A`). La paleta aprobada solo fija tres valores para
+oscuro (base, elevada y texto). El `#6B7280` del modo claro sobre `#09090B` da **4,17:1**, por debajo del
+4,5:1 que exige WCAG AA para texto normal; `#A1A1AA` da 7,8:1. No se inventó un valor de marca: se
+eligió el mínimo legible y queda declarado para que se decida.
+
+**`--color-primario` NO cambia en oscuro,** y es deliberado: sigue sirviendo como FONDO con
+`--color-primario-contraste` encima. Como TINTA sobre fondo oscuro no tiene contraste suficiente, y no se
+inventa aquí un azul claro que nadie aprobó. **Pendiente de decisión de diseño humana.**
+
+**Tipografía:** Inter en toda la interfaz, cargada con `next/font/google` en el layout raíz. No es un
+`<link>` a Google Fonts: `next/font` descarga la fuente **en el build** y la sirve desde el propio dominio
+— quita una petición a un tercero en cada carga (y con ella el dato de qué usuario visita qué, que es
+justo lo que el capítulo de habeas data no quiere regalar) y elimina el salto de texto al cargar. Se
+publica como `--fuente-inter` y la consume el token `--font-sans`: la fuente entra por el mismo sitio que
+el color, no por una `font-family` suelta en cada página.
+
+**Cifras tabulares, obligatorias en toda columna numérica.** Un balance de prueba se lee comparando
+magnitudes de un vistazo: con figuras proporcionales el «1» ocupa menos que el «8» y las cifras dejan de
+alinearse por unidad, decena y centena — un contador detecta ahí un descuadre que en una columna
+desalineada no vería. Aplica a valores, bases, tarifas, NIT, fechas y CUFE. Dos formas, el mismo efecto:
+`class="cifra"` para las pantallas ya construidas (que no usan Tailwind) y `class="tabular-nums"` para las
+nuevas.
+
+**Lo que NO se hizo, a propósito:** no se construyó ni se retocó **ninguna** pantalla, y no se migró un
+solo `style` inline existente. Los tokens quedan listos; la migración de lo viejo y la construcción de lo
+nuevo son trabajo del módulo de front, y se harán contra estos nombres.
+
+**Verificado:** `npm run typecheck` limpio, `npm run build` exit 0 con las mismas 28 rutas, y los diez
+tokens del cuadro presentes en el CSS compilado (`.next/static/chunks/*.css`). Las dos vulnerabilidades
+moderadas que reporta `npm audit` son las de siempre (`exceljs` → `uuid`), no las trae Tailwind.
+
+---
+
+## Sistema de interfaz — D-075 (2026-09-01)
+
+**Sin compuerta de A14.** Prototipo de diseño, no toca ninguna ruta ni servicio existente; entra para
+elegir y fijar el lenguaje visual antes de migrar las pantallas reales.
+
+### D-075 — Un tercer token derivado (`--color-primario-tinta-oscura`) y el prototipo del sistema de interfaz
+
+**Decidido, dos cosas:**
+
+1. **`--color-primario-tinta-oscura: #5B8DBE`** entra en `app/globals.css` como el tercer valor DERIVADO
+   no aprobado del modo oscuro, junto a `--color-texto-suave` y `--color-borde`. Es el azul primario
+   **aclarado** para usarse como TINTA (texto, ícono, borde de acento) directamente sobre superficie
+   oscura, sin fondo de contraste debajo — no para el relleno de un botón, donde el `--color-primario`
+   normal ya contrasta con `--color-primario-contraste` encima. En modo claro vale lo mismo que
+   `--color-primario`; se redefine a `#5B8DBE` solo en los dos bloques de oscuro (5,9:1 sobre `#09090B`,
+   por encima de 4,5:1 WCAG AA). **Pendiente de decisión de diseño humana**, igual que los otros dos.
+   Cierra el «pendiente» que D-074 dejó abierto («cuando haya decisión, entra como token nuevo en este
+   mismo bloque»).
+
+2. **Prototipo navegable del sistema de interfaz**, en `app/diseno/**` (Next 16 App Router, Tailwind v4,
+   TS strict). Se generaron **tres direcciones** sobre la misma pantalla (Bandeja de causación) y se
+   eligió la **A — «Consola de operación»**: barra y lateral en el azul de marca, densidad compacta
+   disponible, maestro-detalle siempre visible. Referente: el software denso que las firmas ya usan
+   (Siigo / World Office / Helisa).
+
+**Por qué en `app/diseno/**` y no sobre las rutas reales.** Las pantallas canónicas (`/bandeja`,
+`/terceros`, `/parametros`, `/reportes`, `/admin/*`, `/entrar`) están cableadas a `conSesion` + servicios
++ server actions, y hay pruebas que dependen de sus módulos (`app/bandeja/ip.ts`). Reescribirlas en una
+sola ola era arriesgar el build y la suite. El prototipo vive aparte, con datos de maqueta, para que se
+pueda ver y navegar con `npm run dev` sin tocar nada en verde. **La migración de las 8 pantallas reales
+contra este lenguaje es el trabajo de la siguiente ola de front.** `app/_navegacion.tsx` aprendió a
+callarse bajo el prefijo `/diseno` (el prototipo monta su propio shell).
+
+**Qué trae el prototipo:**
+
+| # | Pantalla | Ruta | Nota |
+|---|---|---|---|
+| — | Navegación global | `app/diseno/_ui/AppShell.tsx` | Selector de empresa activa siempre visible, lateral de 6 módulos, breadcrumb automático desde la ruta, toggle de densidad cómodo/compacto (persistido en `localStorage`). |
+| 1 | Login | `/diseno/entrar` | Panel de marca + formulario; segundo factor opcional (campo siempre presente, nota de «vacío si no lo tienes»). Fuera del shell. |
+| 2 | Bandeja de causación | `/diseno/bandeja` | Cola tipo inbox, maestro-detalle. Lista con estado visual; detalle con asiento propuesto editable; tabla de trazabilidad «por qué el motor aplicó cada retención» (base, regla, vigencia, norma; incluye las que no aplicaron con su motivo). |
+| 3 | Terceros | `/diseno/terceros` | Lista con búsqueda por nombre/NIT + densidad; ficha con atributos fiscales e **historial de vigencias visible**; **cascada municipio → actividad** para ReteICA, con mensaje explícito cuando el municipio no tiene actividades con tarifa (nunca lista vacía ni actividades de otro municipio). |
+| 4 | Parámetros tributarios | `/diseno/parametros` | Submódulos; panel de alertas con badges **FALTA DATO** (error) y **VERIFICAR** (pendiente); tabla con estado por fila; formulario de edición «guardar como nueva vigencia» + historial; carga masiva por submódulo. |
+| 5 | PUC / Plan de cuentas | `/diseno/parametros/puc` | Interruptor «usar solo mi PUC» por empresa; tabla con badge **Propia** vs **Genérica** por fila; carga masiva. |
+| 6 | Reportes | `/diseno/reportes` | Los **tres estados de mensaje** diferenciados (`MensajeEstado`): falta configuración → accionable con enlace; sin datos → neutro; error técnico → genérico sin detalle crudo (D-073). |
+| 7 | Administración | `/diseno/admin/usuarios`, `/roles`, `/correcciones` | Usuarios con estado activo/inactivo, alta, restablecer contraseña (enlace de un solo uso, no muestra clave). Roles: matriz módulo × Ver/Editar/Aprobar, checkboxes editables, rol todopoderoso **bloqueado** (todo marcado, `disabled`). Correcciones: mismo patrón de cola de trabajo que la Bandeja, badge «Pendiente de revisión». |
+| 8 | Carga masiva (patrón reusable) | `app/diseno/_ui/CargaMasiva.tsx` | Botón → modal de subida → vista de resultado (filas válidas vs. con error: fila + campo + motivo) → «cargar solo las válidas» bajo acción explícita. Se usa en Terceros, PUC y Parámetros. Refleja D-072. |
+
+**Regla de Oro 2 en un prototipo de diseño.** Las pantallas del prototipo **no queman ni un valor
+tributario**: las tarifas, la UVT, el SMMLV y las bases van como marcadores visibles (`[tarifa]`,
+`[UVT vigente]`, `[SMMLV vigente]`), y los montos de ejemplo van como cadenas ya formateadas. Esto
+satisface a la vez la Regla 2 (el valor vive en la tabla paramétrica, el motor lo resuelve) y el
+criterio de diseño de no fabricar hechos que faltan. El barrido de `tests/adversarial/valores-tributarios.test.ts`
+pasa sobre `app/diseno/**` sin exención — no se tocó el detector.
+
+**Caveat de color declarado (no aprobado, para decisión humana).** Los tokens de estado
+(`--color-exito|error|pendiente`) tienen un solo valor y como texto normal sobre blanco quedan por debajo
+de 4,5:1. Los badges los usan a plena tinta con `font-semibold`, tamaño ≥11px y fondo `/12` del mismo
+tono, que sí contrasta. Para el texto plano de estado se añadió una «tinta» de cada estado — ver D-076.
+
+**Verificado (mismo estándar que la Ola 4):** `npx tsc --noEmit` limpio · `npx next build` exit 0 con 38
+rutas (28 previas + 10 de `/diseno`) · `npm test` **993 en verde** (48 archivos), incluida la pasada
+adversarial de la Regla de Oro 2. Sin comitear: el usuario prueba con `npm run dev` y comitea si se ve y
+funciona bien.
+
+### D-076 — Tintas de estado (`--color-*-tinta`) para texto plano con contraste AA
+
+**Decidido:** tres tokens derivados más en `app/globals.css`, mismo criterio que
+`--color-primario-tinta-oscura`:
+
+| Token | Claro | Oscuro | Contraste (texto normal) |
+|---|---|---|---|
+| `--color-exito-tinta` | `#047857` | `#34D399` | 5,5:1 sobre `#fff` · 10:1 sobre `#09090b` |
+| `--color-error-tinta` | `#B91C1C` | `#F87171` | 6,5:1 sobre `#fff` · 7:1 sobre `#09090b` |
+| `--color-pendiente-tinta` | `#92400E` | `#FBBF24` | 7,1:1 sobre `#fff` · 12:1 sobre `#09090b` |
+
+Los tres colores de estado base (`#10B981`, `#EF4444`, `#F59E0B`) están calibrados como RELLENO; como
+texto plano sobre blanco dan 2,5:1 / 3,8:1 / 1,9:1, por debajo del 4,5:1 de WCAG AA. La tinta oscurece
+cada tono en modo claro y lo aclara en oscuro (donde el texto va sobre superficie oscura), igual que la
+tinta primaria. **Derivadas, no aprobadas** — se cambian en `globals.css` en cuanto haya decisión.
+
+**Uso en `app/diseno/**`:** solo donde el color de estado es TEXTO/ícono plano sobre fondo claro (o su
+box `/8`): botón `peligro`, asterisco de campo requerido, íconos de `MensajeEstado`, número de fila con
+error en la carga masiva, aviso de municipio sin actividades, alerta de retención en la traza,
+encabezado «Después» de una corrección. **No** en los badges con fondo `/12` (ya contrastan con
+`font-semibold`), ni en las barras de acento de 3px (borde decorativo, no texto).
+
+**Verificado:** `npx tsc --noEmit` limpio · `npx next build` exit 0 (38 rutas) · `npm test` **993 en
+verde**, incluida la pasada adversarial de la Regla de Oro 2 (los hex nuevos no la disparan).
+
+**Canvas de las tres direcciones:** artifact `437e151c-5dad-4478-9b5f-fa8bb68d4418` (Dirección A en la
+página «elegida», B y C en «descartadas»).
+
+---
+
+### D-077 — Migración del sistema de interfaz a las rutas reales: MÓDULO 0 (base + shell) y MÓDULO 1 (bandeja)
+
+**Contexto.** D-075 dejó el prototipo navegable en `app/diseno/**` con datos de maqueta. Esta ola
+empieza a migrarlo a las rutas reales conectándolo a los servicios y acciones de servidor que ya
+existen. Es un cambio de **capa visual sobre lógica existente**: no se reescribe ni un permiso, ni una
+validación, ni una consulta RLS.
+
+**El kit compartido vive ahora en `app/_ui/`** (canónico), no en `app/diseno/_ui/`:
+
+| Archivo | Qué cambió respecto al prototipo |
+|---|---|
+| `componentes.tsx`, `iconos.tsx` | Copiados **verbatim** (son puros, sin dependencia de ubicación). |
+| `contextos.tsx` | `EmpresaProvider` ya NO tiene lista de maqueta: recibe `empresas` (de `listarEmpresasAccesibles`) y `activaId` (cookie `company_id`) como props del layout de servidor. `DensidadProvider` idéntico (localStorage). |
+| `AppShell.tsx` | `BASE` real, módulos reales (`/bandeja`, `/terceros`, `/parametros`, `/parametros/puc`, `/carga-masiva`, `/reportes`, `/admin/usuarios`), breadcrumb con las etiquetas fusionadas de `_navegacion.tsx`. Selector de empresa = un `<form>` por opción a `cambiarEmpresaActivaAction`. Menú de usuario real (nombre, correo, cambiar contraseña, cerrar sesión con `salirAction`). Sin datos quemados. |
+| `CargaMasiva.tsx` | **Conectado al importador real.** Llama a `cargarArchivoAction` (`app/carga-masiva/acciones.ts`) con `useActionState` — la MISMA acción que `/carga-masiva/[catalogo]`. Cero simulación: todo el archivo entra en un solo `conSesion` (una transacción); si una fila falla, no se escribe nada (D-072); informe completo fila+columna+motivo; «cargar solo las válidas» reenvía con `soloValidas=1`. Props: `clave` (clave de `DEFINICIONES`), `titulo`, `permiso`, `puede`. |
+| `acciones.ts` (nuevo) | `cambiarEmpresaActivaAction`: idéntica en efecto a `elegirEmpresaAction` (D-022) — reescribe la cookie `company_id` — pero vuelve a la pantalla en la que estaba (`destino`), no a la portada. Valida forma (UUID) y que `destino` sea ruta interna. |
+| `Chrome.tsx` (nuevo) | Envoltura de cliente que decide shell vs. pantalla completa según `usePathname()`. Sin shell: `/`, `/entrar`, `/cambiar-password`. |
+
+**Por qué un `Chrome` de cliente y NO un grupo de rutas `(interno)`:** mover las nueve carpetas de ruta
+a un grupo obligaría a reescribir los imports relativos de ~25 archivos de servidor **sin poder probar
+el resultado en `next dev`** (el usuario se reserva esa prueba). Un componente de cliente que mira la
+ruta consigue lo mismo —toda ruta interna hereda el shell por construcción— con radio de cambio mínimo.
+`app/_navegacion.tsx` (la barra de A16) **se eliminó**: el shell la reemplaza entera. Su lógica de
+etiquetas y de rutas migró al `AppShell`.
+
+**El shell se resuelve en el layout raíz** (`app/layout.tsx`, ahora `async`): abre una sesión de firma
+(`conSesionEmpresa('')`, D-022) para traer las empresas accesibles y la credencial. Si no hay sesión NO
+redirige (haría un bucle en `/entrar`): pinta sin datos de shell y cada página interna hace su propio
+desvío. `next build` sigue en exit 0 porque todas las rutas ya eran `ƒ` (dinámicas).
+
+**Pantallas migradas en esta pasada:**
+- **`/entrar`** — lenguaje visual nuevo (panel de marca azul + formulario sobrio). El comportamiento NO
+  cambia: `<form action={entrarAction}>`, mensaje único de error, campo de 2FA siempre visible.
+- **`/cambiar-password`** — kit nuevo (`Panel`, `Campo`, `MensajeEstado`). Misma acción, mismo mínimo de
+  12 caracteres (lo impone el servicio), mismo desvío desde la portada mientras `debe_cambiar_password`.
+- **`/bandeja`** (MÓDULO 1) — restyle completo con `Panel` / `Tabla` / `EtiquetaEstado` / `MensajeEstado`
+  y `app/bandeja/_componentes.tsx` migrado. **Los nombres de campo de formulario NO cambian**
+  (`sel = companyId::journalEntryId`, `aiuLinea_N`, `municipioOperacionId`, `motivo`, `companyId`,
+  `sourceDocumentId`): son el contrato con `app/bandeja/acciones.ts` y con la suite adversarial. Sigue
+  agregando `obtenerBandejaConsolidada` (una sesión real por empresa), sigue mostrando la traza completa
+  de cada retención evaluada (base, tarifa, norma, vigencia, incluidas las que no aplicaron).
+
+**Verificado:** `npx tsc --noEmit` limpio · `npx next build` exit 0 (38 rutas, todas `ƒ`) · `npm test`
+**993 en verde** (48 archivos), incluidas `tests/app/bandeja-acciones.test.ts` y
+`tests/adversarial/compuerta-ola2-interfaz.test.ts` sin tocar una aserción.
+
+**Corte declarado — lo que FALTA (próxima pasada), por módulo:**
+| Módulo | Rutas | Estado |
+|---|---|---|
+| 2 · Terceros | `/terceros`, `/terceros/nuevo`, `/terceros/[id]`, `/terceros/[id]/actividades`, `/terceros/[id]/atributos-fiscales` | **sin migrar.** La cascada municipio→actividad YA usa `listarActividadesIcaDeMunicipio` de verdad (A16, dos pasos `method=get`); solo falta el restyle. Enganchar `CargaMasiva` (`third_party`, `third_party_fiscal_attribute`, `third_party_activity`). |
+| 3 · Parámetros | `/parametros`, `/parametros/tarifas/[tipo]`, `/parametros/valores-base`, `/parametros/reteica-municipios` | **sin migrar.** Los 3 estados de mensaje ya existen en el kit (`MensajeEstado`); enganchar `CargaMasiva` de `tax_rule`, `uvt_value`, etc. |
+| 4 · PUC | `/parametros/puc` | **sin migrar.** Interruptor «usar solo mi PUC» (D-065), badge Propia/Genérica (D-064), `CargaMasiva` de `account`. |
+| 5 · Reportes | `/reportes` | **sin migrar.** Los tres motivos ya están distinguidos en el servidor (D-073) — hay que mapearlos a `MensajeEstado` tipo `configuracion` / `sin-datos` / `error`. |
+| 6 · Admin | `/admin/usuarios`, `/admin/roles`, `/admin/correcciones` | **sin migrar.** Matriz de permisos (D-067), rol todopoderoso blindado (D-066), «el junior corrige, el revisor aprueba» (D-068). |
+
+Mientras quede un módulo sin migrar, **`app/diseno/**` NO se borra** (regla del proyecto: el prototipo
+se retira cuando TODO está migrado, no antes). El prototipo sigue intacto y funcional en `/diseno/**`
+contra su propio `app/diseno/_ui/`. Portada `/` no está en el encargo y queda con su interfaz actual.
+Las páginas aún sin migrar (`/parametros`, `/reportes`, `/admin/**`, `/terceros`, `/carga-masiva`) ya
+heredan el shell nuevo alrededor de su cuerpo viejo: la navegación funciona en todas.
+
+**Sin comitear:** pendiente de que el usuario lo pruebe con `npm run dev`.
+
+---
+
 ## Vulnerabilidades — registro de A14
 
 | Id | Qué es | Gravedad | Estado | De quién |
@@ -1684,7 +1952,9 @@ src/reports/                   Libros, Excel, estados financieros, exógena (A9/
 src/db/                        Cliente, runner de migraciones, contexto de sesion (A2 + A12)
 src/auth/                      Contrasenas, TOTP, cifrado, sesiones, permisos (A12)
 app/                           Next.js App Router: UI y route handlers
+app/globals.css                Tokens de diseño: paleta y tipografía aprobadas, una sola vez (D-074)
 instrumentation.ts             Hook de arranque de Next: lanza el worker de la cola (A15)
+postcss.config.mjs             Engancha Tailwind v4. No hay `tailwind.config`: en v4 la config es el CSS
 next.config.ts                 Configuración de Next. Hoy solo `agentRules: false` (V-22)
 tests/                         Vitest. tests/golden/ = los 20 casos dorados
 docs/                          Cumplimiento, ADRs, contratos de API
@@ -1698,6 +1968,8 @@ docs/                          Cumplimiento, ADRs, contratos de API
 - Toda tabla paramétrica: `vigente_desde DATE NOT NULL`, `vigente_hasta DATE NULL`, `norma_respaldo TEXT NOT NULL`.
 - Prohibido: literales numéricos tributarios en `src/` y `app/`. A14 hace grep. La única constante permitida es la lógica de resolución.
 - Migraciones ya aplicadas no se editan: se agrega una nueva. El runner guarda el checksum y aborta si cambia.
+- Prohibido un color escrito a mano en `app/`: se usa el token de `app/globals.css` (`var(--color-…)` o la utilidad de Tailwind). Un `#hex` suelto en una pantalla es la deuda que D-074 vino a cerrar.
+- Toda columna numérica lleva cifras tabulares: `class="cifra"` (pantallas viejas) o `class="tabular-nums"` (nuevas).
 - **`src/reports/` es de SOLO LECTURA sobre el ledger** (invariante de la Ola 3, verificado por A14): generar los veinte libros deja `journal_entry`, `journal_line`, `retention_applied`, `approval` y `source_document` con la misma huella exacta. Lo que escribe vive en `src/services/` (hoy, `cierre.ts`), porque escribir es un caso de uso. Si un reporte necesita escribir, no es un reporte.
 - **Todo módulo nuevo de `src/` necesita un consumidor fuera de `tests/`.** El canario de inventario de A14 comprueba que el módulo está declarado, no que alguien lo use; un `grep` de importadores es lo que separa «entregado» de «alcanzable» (V-16).
 

@@ -1,0 +1,142 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; background: #F8F9FA; color: #1A1A1A; -webkit-font-smoothing: antialiased; }
+    a { color: #1E3A5F; text-decoration: none; }
+    a:hover { color: #16324f; }
+    .num { font-variant-numeric: tabular-nums; }
+  </style>
+</helmet>
+
+<div style="width: 1440px; height: 1000px; display: flex; background: #F8F9FA; overflow: hidden;">
+
+  <!-- Rail lateral estrecho -->
+  <nav style="width: 76px; background: #FFFFFF; border-right: 1px solid #E5E7EB; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; padding: 14px 0; gap: 4px;">
+    <div style="width: 34px; height: 34px; border-radius: 8px; background: #1E3A5F; display: flex; align-items: center; justify-content: center; margin-bottom: 10px;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M4 10h16M10 4v16"/></svg>
+    </div>
+    <div style="width: 48px; height: 48px; border-radius: 10px; background: #EEF3F8; color: #1E3A5F; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; position: relative;">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.5 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.5A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.5z"/></svg>
+      <span class="num" style="position: absolute; top: 4px; right: 4px; background: #F59E0B; color: #1A1A1A; font-weight: 700; font-size: 9px; border-radius: 8px; padding: 0 4px;">18</span>
+    </div>
+    <div style="width: 48px; height: 48px; border-radius: 10px; color: #6B7280; display: flex; align-items: center; justify-content: center;">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+    </div>
+    <div style="width: 48px; height: 48px; border-radius: 10px; color: #6B7280; display: flex; align-items: center; justify-content: center;">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18"/></svg>
+    </div>
+    <div style="width: 48px; height: 48px; border-radius: 10px; color: #6B7280; display: flex; align-items: center; justify-content: center;">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+    </div>
+    <div style="width: 48px; height: 48px; border-radius: 10px; color: #6B7280; display: flex; align-items: center; justify-content: center;">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l3-3 3 3 5-6"/></svg>
+    </div>
+    <div style="width: 48px; height: 48px; border-radius: 10px; color: #6B7280; display: flex; align-items: center; justify-content: center;">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.2.63.77 1.06 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </div>
+  </nav>
+
+  <div style="flex: 1; min-width: 0; display: flex; flex-direction: column;">
+
+    <!-- Barra superior -->
+    <header style="height: 60px; background: #FFFFFF; border-bottom: 1px solid #E5E7EB; display: flex; align-items: center; gap: 16px; padding: 0 32px; flex-shrink: 0;">
+      <button style="display: flex; align-items: center; gap: 10px; background: #F8F9FA; border: 1px solid #E5E7EB; border-radius: 8px; padding: 8px 14px; font: inherit; font-size: 13.5px; cursor: pointer;">
+        <span style="width: 8px; height: 8px; border-radius: 50%; background: #10B981;"></span>
+        <span style="font-weight: 600;">Distribuidora Andina S.A.S.</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6B7280" stroke-width="2.5" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div style="margin-left: auto; display: flex; align-items: center; gap: 14px;">
+        <div style="display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: #6B7280;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+          <span style="display: flex; border: 1px solid #E5E7EB; border-radius: 8px; overflow: hidden;">
+            <span style="padding: 6px 12px; background: #1E3A5F; color: #FFFFFF; font-weight: 600;">Cómodo</span>
+            <span style="padding: 6px 12px; color: #6B7280;">Compacto</span>
+          </span>
+        </div>
+        <span style="width: 30px; height: 30px; border-radius: 50%; background: #1E3A5F; color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 11px;">MR</span>
+      </div>
+    </header>
+
+    <div style="flex: 1; min-height: 0; overflow: hidden; display: flex; justify-content: center;">
+      <div style="width: 920px; max-width: 100%; padding: 22px 24px 0; display: flex; flex-direction: column;">
+
+        <div style="display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: #6B7280; margin-bottom: 14px;">
+          <a href="#">Inicio</a><span style="color:#C7CDD4;">/</span>
+          <span style="color: #1A1A1A; font-weight: 600;">Bandeja de causación</span>
+        </div>
+
+        <h1 style="margin: 0 0 6px; font-size: 24px; font-weight: 700; letter-spacing: -0.3px;">Bandeja de causación</h1>
+        <p style="margin: 0 0 20px; font-size: 14px; color: #6B7280;">Revisa un documento a la vez. El motor ya propuso el asiento; tú apruebas, corriges o rechazas.</p>
+
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 16px;">
+          <div style="flex: 1; display: flex; align-items: center; gap: 9px; background: #FFFFFF; border: 1px solid #E5E7EB; border-radius: 9px; padding: 11px 14px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6B7280" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <span style="font-size: 13.5px; color: #9AA1A9;">Buscar por proveedor, NIT o CUFE</span>
+          </div>
+          <span style="padding: 8px 14px; border-radius: 20px; background: #1E3A5F; color: #FFFFFF; font-size: 13px;">Pendientes 18</span>
+          <span style="padding: 8px 14px; border-radius: 20px; background: #FFFFFF; border: 1px solid #E5E7EB; color: #6B7280; font-size: 13px;">Aprobados 4</span>
+          <span style="padding: 8px 14px; border-radius: 20px; background: #FFFFFF; border: 1px solid #E5E7EB; color: #6B7280; font-size: 13px;">Rechazados 1</span>
+        </div>
+
+        <div style="flex: 1; overflow: hidden; display: flex; flex-direction: column; gap: 12px;">
+          <a href="#" style="display: block; background: #FFFFFF; border: 1px solid #E5E7EB; border-radius: 12px; padding: 18px 20px; color: inherit;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <span style="width: 9px; height: 9px; border-radius: 50%; background: #F59E0B; flex-shrink: 0;"></span>
+              <span style="font-weight: 600; font-size: 15.5px;">Ferretería El Tornillo Ltda.</span>
+              <span style="font-size: 11px; font-weight: 700; color: #92400E; background: #FEF3E2; border-radius: 5px; padding: 2px 9px;">PENDIENTE</span>
+              <span class="num" style="margin-left: auto; font-weight: 700; font-size: 16px;">$4.760.000</span>
+            </div>
+            <div class="num" style="font-size: 13px; color: #6B7280; margin: 8px 0 0 21px;">Factura FE-4471 · NIT 830.114.902 · hecho económico 12 ago 2026</div>
+            <div style="font-size: 13px; color: #92400E; margin: 8px 0 0 21px; display: flex; align-items: center; gap: 7px;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+              El motor aplicó ReteICA con el municipio del tercero (Bogotá), no el de la operación — confírmalo
+            </div>
+          </a>
+
+          <a href="#" style="display: block; background: #FFFFFF; border: 1px solid #E5E7EB; border-radius: 12px; padding: 18px 20px; color: inherit;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <span style="width: 9px; height: 9px; border-radius: 50%; background: #F59E0B; flex-shrink: 0;"></span>
+              <span style="font-weight: 600; font-size: 15.5px;">Suministros Río Verde S.A.S.</span>
+              <span style="font-size: 11px; font-weight: 700; color: #92400E; background: #FEF3E2; border-radius: 5px; padding: 2px 9px;">PENDIENTE</span>
+              <span class="num" style="margin-left: auto; font-weight: 700; font-size: 16px;">$1.190.000</span>
+            </div>
+            <div class="num" style="font-size: 13px; color: #6B7280; margin: 8px 0 0 21px;">Factura SETP-9920 · NIT 901.556.740 · hecho económico 12 ago 2026</div>
+            <div style="font-size: 13px; color: #6B7280; margin: 8px 0 0 21px;">Retefuente 2,5% · ReteIVA 15% · sin observaciones del motor</div>
+          </a>
+
+          <a href="#" style="display: block; background: #FFFFFF; border: 1px solid #E5E7EB; border-radius: 12px; padding: 18px 20px; color: inherit; opacity: 0.72;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <span style="width: 9px; height: 9px; border-radius: 50%; background: #10B981; flex-shrink: 0;"></span>
+              <span style="font-weight: 600; font-size: 15.5px;">Transportes del Llano Ltda.</span>
+              <span style="font-size: 11px; font-weight: 700; color: #047857; background: #E7F6F0; border-radius: 5px; padding: 2px 9px;">APROBADO</span>
+              <span class="num" style="margin-left: auto; font-weight: 700; font-size: 16px;">$8.400.000</span>
+            </div>
+            <div class="num" style="font-size: 13px; color: #6B7280; margin: 8px 0 0 21px;">Asiento 2026-08-0442 · aprobado por M. Rueda el 11 ago 2026 16:20</div>
+          </a>
+
+          <a href="#" style="display: block; background: #FFFFFF; border: 1px solid #E5E7EB; border-radius: 12px; padding: 18px 20px; color: inherit; opacity: 0.72;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <span style="width: 9px; height: 9px; border-radius: 50%; background: #EF4444; flex-shrink: 0;"></span>
+              <span style="font-weight: 600; font-size: 15.5px;">Papelería Central</span>
+              <span style="font-size: 11px; font-weight: 700; color: #B91C1C; background: #FCEBEB; border-radius: 5px; padding: 2px 9px;">RECHAZADO</span>
+              <span class="num" style="margin-left: auto; font-weight: 700; font-size: 16px;">$320.000</span>
+            </div>
+            <div class="num" style="font-size: 13px; color: #6B7280; margin: 8px 0 0 21px;">Factura PC-0031 · rechazada: CUFE ya causado en el asiento 2026-07-1180</div>
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

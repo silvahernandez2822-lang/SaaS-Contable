@@ -1,31 +1,27 @@
+'use client';
+
 /**
- * A12 — Pantalla de inicio de sesión.
+ * D-075 · Ola 5 — Pantalla 1: LOGIN (/diseno/entrar).
  *
- * D-077 (Ola 5, front): migrada al lenguaje visual del sistema de interfaz
- * (Dirección A). El COMPORTAMIENTO no cambia: un solo mensaje de error para
- * todos los fallos posibles (lo decide `entrarAction`), y el campo de segundo
- * factor SIEMPRE visible en vez de aparecer solo cuando el usuario tiene MFA —
- * si apareciera en un segundo paso, el formulario delataría quién tiene MFA.
- *
- * Fuera del shell (pantalla completa, sin navegación): el `Chrome` la excluye.
+ * Fuera del shell: pantalla completa, sin navegación. Debe transmitir seriedad
+ * y seguridad desde el primer contacto — de ahí el panel de marca en azul a la
+ * izquierda con el recordatorio de aislamiento por firma (Regla de Oro 7) y el
+ * cifrado, y el formulario sobrio a la derecha. Segundo factor OPCIONAL: el
+ * campo está siempre, con la nota de que se deja vacío si la cuenta no lo tiene
+ * activado.
  */
 import Link from 'next/link';
+import { useState } from 'react';
 import { Boton, Campo, Entrada } from '../_ui/componentes';
 import { IconoEscudo, IconoMarca } from '../_ui/iconos';
-import { entrarAction } from './acciones';
 
-export const dynamic = 'force-dynamic';
-
-export default async function EntrarPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ error?: string }>;
-}) {
-  const { error } = await searchParams;
+export default function Entrar() {
+  const [enviando, setEnviando] = useState(false);
 
   return (
     <div className="flex min-h-screen bg-superficie text-texto">
-      <aside className="hidden flex-col justify-between bg-primario p-12 text-white lg:flex lg:w-[440px]">
+      {/* panel de marca */}
+      <aside className="hidden lg:w-[440px] flex-col justify-between bg-primario p-12 text-white lg:flex">
         <div className="flex items-center gap-2.5 text-[17px] font-bold tracking-tight">
           <IconoMarca width={24} height={24} />
           Contable CO
@@ -49,8 +45,16 @@ export default async function EntrarPage({
         </ul>
       </aside>
 
+      {/* formulario */}
       <main className="flex flex-1 items-center justify-center p-8">
-        <form className="w-full max-w-sm" action={entrarAction}>
+        <form
+          className="w-full max-w-sm"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setEnviando(true);
+            setTimeout(() => setEnviando(false), 900);
+          }}
+        >
           <div className="mb-7 flex items-center gap-2 text-[15px] font-bold text-primario lg:hidden dark:text-primario-tinta-oscura">
             <IconoMarca width={20} height={20} />
             Contable CO
@@ -58,21 +62,12 @@ export default async function EntrarPage({
           <h2 className="text-[19px] font-bold text-texto">Entrar</h2>
           <p className="mt-1 text-[13px] text-texto-suave">Acceso para firmas contables registradas.</p>
 
-          {error ? (
-            <p
-              role="alert"
-              className="mt-4 rounded-md border border-error/40 bg-error/8 px-3 py-2 text-[13px] text-error-tinta"
-            >
-              {error}
-            </p>
-          ) : null}
-
           <div className="mt-6 flex flex-col gap-4">
             <Campo etiqueta="Correo" requerido>
-              <Entrada type="email" name="email" autoComplete="username" required placeholder="nombre@firma.com" />
+              <Entrada type="email" name="correo" autoComplete="username" required placeholder="nombre@firma.com" />
             </Campo>
             <Campo etiqueta="Contraseña" requerido>
-              <Entrada type="password" name="password" autoComplete="current-password" required />
+              <Entrada type="password" name="clave" autoComplete="current-password" required />
             </Campo>
             <Campo
               etiqueta="Código de segundo factor"
@@ -80,7 +75,7 @@ export default async function EntrarPage({
             >
               <Entrada
                 type="text"
-                name="codigoTotp"
+                name="totp"
                 inputMode="numeric"
                 autoComplete="one-time-code"
                 pattern="[0-9]*"
@@ -91,20 +86,18 @@ export default async function EntrarPage({
             </Campo>
           </div>
 
-          <Boton tipo="submit" className="mt-6 w-full">
-            Entrar
+          <Boton tipo="submit" className="mt-6 w-full" disabled={enviando}>
+            {enviando ? 'Verificando…' : 'Entrar'}
           </Boton>
 
-          <p className="mt-4 text-[12px] text-texto-suave">
-            ¿Todavía no existe ningún usuario? La primera firma, su primera empresa-cliente y su administrador se
-            crean con <code>npm run arranque</code>, que ejecuta el operador del sistema. No hay registro por esta
-            pantalla, y es a propósito.
-          </p>
-          <p className="mt-3 text-[12px]">
-            <Link href="/" className="text-texto-suave hover:text-texto">
-              Volver a la portada
+          <div className="mt-4 flex items-center justify-between text-[12px]">
+            <Link href="#" className="text-primario underline dark:text-primario-tinta-oscura">
+              Olvidé mi contraseña
             </Link>
-          </p>
+            <Link href="/diseno" className="text-texto-suave hover:text-texto">
+              Ver el prototipo →
+            </Link>
+          </div>
         </form>
       </main>
     </div>

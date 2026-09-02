@@ -1,0 +1,232 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; background: #F8F9FA; color: #1A1A1A; -webkit-font-smoothing: antialiased; }
+    a { color: #1E3A5F; text-decoration: none; }
+    a:hover { color: #16324f; }
+    .num { font-variant-numeric: tabular-nums; }
+  </style>
+</helmet>
+
+<div style="width: 1440px; height: 1000px; display: flex; background: #F8F9FA; overflow: hidden;">
+
+  <!-- ===== NAVEGACIÓN LATERAL CLARA ===== -->
+  <nav style="width: 232px; background: #FFFFFF; border-right: 1px solid #E5E7EB; flex-shrink: 0; display: flex; flex-direction: column; padding: 16px 0;">
+    <div style="display: flex; align-items: center; gap: 9px; padding: 4px 20px 18px; font-weight: 700; font-size: 15px; color: #1E3A5F;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1E3A5F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M4 10h16M10 4v16"/></svg>
+      Contable CO
+    </div>
+
+    <div style="padding: 0 12px; display: flex; flex-direction: column; gap: 3px;">
+      <div style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 7px; background: #EEF3F8; color: #1E3A5F; font-size: 13.5px; font-weight: 600;">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.5 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.5A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.5z"/></svg>
+        Bandeja de causación
+        <span class="num" style="margin-left: auto; background: #1E3A5F; color: #FFFFFF; font-weight: 700; font-size: 11px; border-radius: 9px; padding: 1px 7px;">18</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 7px; color: #4B5563; font-size: 13.5px;">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg>
+        Terceros
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 7px; color: #4B5563; font-size: 13.5px;">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18"/></svg>
+        Parámetros tributarios
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 7px; color: #4B5563; font-size: 13.5px;">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 15l2 2 4-4"/></svg>
+        Reportes
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 7px; color: #4B5563; font-size: 13.5px;">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l3-3 3 3 5-6"/></svg>
+        PUC / Plan de cuentas
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 7px; color: #4B5563; font-size: 13.5px;">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.2.63.77 1.06 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Administración
+      </div>
+    </div>
+
+    <div style="margin-top: auto; padding: 14px 20px 0; border-top: 1px solid #E5E7EB; margin: auto 12px 0; display: flex; align-items: center; gap: 9px; font-size: 12px; color: #6B7280;">
+      <span style="width: 28px; height: 28px; border-radius: 50%; background: #1E3A5F; color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 11px;">MR</span>
+      Mariana Rueda · Contadora
+    </div>
+  </nav>
+
+  <div style="flex: 1; min-width: 0; display: flex; flex-direction: column;">
+
+    <!-- ===== BARRA SUPERIOR CLARA ===== -->
+    <header style="height: 56px; background: #FFFFFF; border-bottom: 1px solid #E5E7EB; display: flex; align-items: center; gap: 16px; padding: 0 24px; flex-shrink: 0;">
+      <button style="display: flex; align-items: center; gap: 10px; background: #FFFFFF; border: 1px solid #E5E7EB; border-radius: 7px; padding: 7px 12px; font: inherit; font-size: 13px; cursor: pointer;">
+        <span style="width: 7px; height: 7px; border-radius: 50%; background: #10B981;"></span>
+        <span style="font-weight: 600;">Distribuidora Andina S.A.S.</span>
+        <span class="num" style="color: #6B7280; font-size: 12px;">· NIT 900.482.113-7</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6B7280" stroke-width="2.5" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+
+      <div style="margin-left: auto; display: flex; align-items: center; gap: 16px;">
+        <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #6B7280;">
+          Densidad
+          <span style="display: flex; border: 1px solid #E5E7EB; border-radius: 7px; overflow: hidden;">
+            <span style="padding: 5px 11px; background: #1E3A5F; color: #FFFFFF; font-weight: 600;">Cómodo</span>
+            <span style="padding: 5px 11px; color: #6B7280;">Compacto</span>
+          </span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Breadcrumb -->
+    <div style="display: flex; align-items: center; gap: 8px; padding: 14px 28px 0; font-size: 12.5px; color: #6B7280;">
+      <a href="#">Inicio</a><span style="color:#C7CDD4;">/</span>
+      <span style="color: #1A1A1A; font-weight: 600;">Bandeja de causación</span>
+    </div>
+
+    <div style="flex: 1; min-height: 0; padding: 16px 28px 0; display: flex; flex-direction: column;">
+      <div style="display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 16px;">
+        <div>
+          <h1 style="margin: 0 0 4px; font-size: 21px; font-weight: 700; letter-spacing: -0.2px;">Bandeja de causación</h1>
+          <p style="margin: 0; font-size: 13px; color: #6B7280;">18 documentos esperan tu revisión · el motor ya propuso el asiento de cada uno</p>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button style="font: inherit; font-size: 13px; background: #FFFFFF; border: 1px solid #E5E7EB; border-radius: 7px; padding: 8px 14px; cursor: pointer;">Filtros</button>
+        </div>
+      </div>
+
+      <div style="flex: 1; min-height: 0; display: flex; gap: 20px;">
+
+        <!-- Lista -->
+        <section style="width: 470px; flex-shrink: 0; display: flex; flex-direction: column; gap: 10px;">
+          <div style="display: flex; align-items: center; gap: 8px; background: #FFFFFF; border: 1px solid #E5E7EB; border-radius: 8px; padding: 9px 12px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#6B7280" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <span style="font-size: 13px; color: #9AA1A9;">Buscar por proveedor, NIT o CUFE</span>
+          </div>
+          <div style="display: flex; gap: 8px; font-size: 12.5px;">
+            <span style="padding: 5px 12px; border-radius: 20px; background: #1E3A5F; color: #FFFFFF;">Pendientes 18</span>
+            <span style="padding: 5px 12px; border-radius: 20px; background: #FFFFFF; border: 1px solid #E5E7EB; color: #6B7280;">Aprobados 4</span>
+            <span style="padding: 5px 12px; border-radius: 20px; background: #FFFFFF; border: 1px solid #E5E7EB; color: #6B7280;">Rechazados 1</span>
+          </div>
+
+          <div style="flex: 1; overflow: hidden; display: flex; flex-direction: column; gap: 10px;">
+            <div style="background: #FFFFFF; border: 1px solid #1E3A5F; border-radius: 10px; padding: 14px 16px; box-shadow: 0 1px 2px rgba(30,58,95,0.06);">
+              <div style="display: flex; justify-content: space-between; gap: 12px;">
+                <span style="font-weight: 600; font-size: 14px;">Ferretería El Tornillo Ltda.</span>
+                <span class="num" style="font-weight: 700; font-size: 14px;">$4.760.000</span>
+              </div>
+              <div class="num" style="font-size: 12.5px; color: #6B7280; margin-top: 4px;">FE-4471 · NIT 830.114.902 · 12 ago 2026</div>
+              <div style="margin-top: 10px; display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 11.5px; font-weight: 600; color: #92400E; background: #FEF3E2; border-radius: 5px; padding: 3px 9px;">PENDIENTE</span>
+                <span style="font-size: 12px; color: #92400E;">Revisar: ReteICA sin municipio de la operación</span>
+              </div>
+            </div>
+
+            <div style="background: #FFFFFF; border: 1px solid #E5E7EB; border-radius: 10px; padding: 14px 16px;">
+              <div style="display: flex; justify-content: space-between; gap: 12px;">
+                <span style="font-weight: 600; font-size: 14px;">Suministros Río Verde S.A.S.</span>
+                <span class="num" style="font-weight: 700; font-size: 14px;">$1.190.000</span>
+              </div>
+              <div class="num" style="font-size: 12.5px; color: #6B7280; margin-top: 4px;">SETP-9920 · NIT 901.556.740 · 12 ago 2026</div>
+              <div style="margin-top: 10px; display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 11.5px; font-weight: 600; color: #92400E; background: #FEF3E2; border-radius: 5px; padding: 3px 9px;">PENDIENTE</span>
+                <span style="font-size: 12px; color: #6B7280;">Retefuente 2,5% · ReteIVA 15%</span>
+              </div>
+            </div>
+
+            <div style="background: #FFFFFF; border: 1px solid #E5E7EB; border-radius: 10px; padding: 14px 16px;">
+              <div style="display: flex; justify-content: space-between; gap: 12px;">
+                <span style="font-weight: 600; font-size: 14px; color: #4B5563;">Transportes del Llano Ltda.</span>
+                <span class="num" style="font-weight: 700; font-size: 14px; color: #4B5563;">$8.400.000</span>
+              </div>
+              <div class="num" style="font-size: 12.5px; color: #6B7280; margin-top: 4px;">TDL-1180 · NIT 830.007.201 · 11 ago 2026</div>
+              <div style="margin-top: 10px; display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 11.5px; font-weight: 600; color: #047857; background: #E7F6F0; border-radius: 5px; padding: 3px 9px;">APROBADO</span>
+                <span style="font-size: 12px; color: #6B7280;">asiento 2026-08-0442 · M. Rueda</span>
+              </div>
+            </div>
+
+            <div style="background: #FFFFFF; border: 1px solid #E5E7EB; border-radius: 10px; padding: 14px 16px;">
+              <div style="display: flex; justify-content: space-between; gap: 12px;">
+                <span style="font-weight: 600; font-size: 14px; color: #4B5563;">Papelería Central</span>
+                <span class="num" style="font-weight: 700; font-size: 14px; color: #4B5563;">$320.000</span>
+              </div>
+              <div class="num" style="font-size: 12.5px; color: #6B7280; margin-top: 4px;">PC-0031 · NIT 43.118.640 · 10 ago 2026</div>
+              <div style="margin-top: 10px; display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 11.5px; font-weight: 600; color: #B91C1C; background: #FCEBEB; border-radius: 5px; padding: 3px 9px;">RECHAZADO</span>
+                <span style="font-size: 12px; color: #6B7280;">factura duplicada (CUFE ya causado)</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Detalle -->
+        <section style="flex: 1; min-width: 0; background: #FFFFFF; border: 1px solid #E5E7EB; border-radius: 12px; overflow: hidden; display: flex; flex-direction: column;">
+          <div style="padding: 20px 24px; border-bottom: 1px solid #E5E7EB;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <h2 style="margin: 0; font-size: 17px; font-weight: 700;">Ferretería El Tornillo Ltda.</h2>
+              <span style="font-size: 11px; font-weight: 700; background: #FEF3E2; color: #92400E; border-radius: 5px; padding: 2px 9px;">PENDIENTE</span>
+            </div>
+            <div class="num" style="font-size: 12.5px; color: #6B7280; margin-top: 5px;">Factura FE-4471 · CUFE 8a3f…c19d · hecho económico 12 ago 2026</div>
+          </div>
+
+          <div style="flex: 1; overflow: hidden; padding: 22px 24px; display: flex; flex-direction: column; gap: 22px;">
+            <div>
+              <div style="font-size: 11px; letter-spacing: 0.8px; text-transform: uppercase; color: #1E3A5F; font-weight: 700; margin-bottom: 10px;">Asiento propuesto · editable</div>
+              <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                <thead>
+                  <tr style="color: #6B7280; text-align: left; border-bottom: 1px solid #E5E7EB;">
+                    <th style="padding: 8px 6px; font-weight: 500;">Cuenta</th>
+                    <th style="padding: 8px 6px; font-weight: 500;">Descripción</th>
+                    <th style="padding: 8px 6px; font-weight: 500; text-align: right;">Débito</th>
+                    <th style="padding: 8px 6px; font-weight: 500; text-align: right;">Crédito</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr style="border-bottom: 1px solid #F1F2F4;"><td class="num" style="padding: 9px 6px;">143501</td><td style="padding: 9px 6px;">Inventario de mercancías</td><td class="num" style="padding: 9px 6px; text-align: right;">4.000.000</td><td class="num" style="padding: 9px 6px; text-align: right; color:#C7CDD4;">—</td></tr>
+                  <tr style="border-bottom: 1px solid #F1F2F4;"><td class="num" style="padding: 9px 6px;">240802</td><td style="padding: 9px 6px;">IVA descontable (19%)</td><td class="num" style="padding: 9px 6px; text-align: right;">760.000</td><td class="num" style="padding: 9px 6px; text-align: right; color:#C7CDD4;">—</td></tr>
+                  <tr style="border-bottom: 1px solid #F1F2F4;"><td class="num" style="padding: 9px 6px;">236540</td><td style="padding: 9px 6px;">Retefuente compras 2,5%</td><td class="num" style="padding: 9px 6px; text-align: right; color:#C7CDD4;">—</td><td class="num" style="padding: 9px 6px; text-align: right;">100.000</td></tr>
+                  <tr style="border-bottom: 1px solid #F1F2F4;"><td class="num" style="padding: 9px 6px;">236805</td><td style="padding: 9px 6px;">ReteIVA 15%</td><td class="num" style="padding: 9px 6px; text-align: right; color:#C7CDD4;">—</td><td class="num" style="padding: 9px 6px; text-align: right;">114.000</td></tr>
+                  <tr style="border-bottom: 1px solid #F1F2F4;"><td class="num" style="padding: 9px 6px;">236805</td><td style="padding: 9px 6px;">ReteICA Bogotá <span style="color:#B91C1C;">(confirmar municipio)</span></td><td class="num" style="padding: 9px 6px; text-align: right; color:#C7CDD4;">—</td><td class="num" style="padding: 9px 6px; text-align: right;">19.240</td></tr>
+                  <tr style="border-bottom: 1px solid #F1F2F4;"><td class="num" style="padding: 9px 6px;">220501</td><td style="padding: 9px 6px;">Proveedores nacionales</td><td class="num" style="padding: 9px 6px; text-align: right; color:#C7CDD4;">—</td><td class="num" style="padding: 9px 6px; text-align: right;">4.526.760</td></tr>
+                  <tr style="border-top: 2px solid #1E3A5F; font-weight: 700;"><td style="padding: 10px 6px;" colspan="2">Sumas iguales</td><td class="num" style="padding: 10px 6px; text-align: right;">4.760.000</td><td class="num" style="padding: 10px 6px; text-align: right;">4.760.000</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div>
+              <div style="font-size: 11px; letter-spacing: 0.8px; text-transform: uppercase; color: #1E3A5F; font-weight: 700; margin-bottom: 10px;">Por qué el motor decidió</div>
+              <div style="display: flex; flex-direction: column; gap: 8px;">
+                <div style="display: flex; gap: 10px; font-size: 12.5px; padding: 10px 12px; background: #F8F9FA; border-radius: 8px;">
+                  <span style="width: 6px; height: 6px; border-radius: 50%; background: #10B981; margin-top: 6px; flex-shrink: 0;"></span>
+                  <div><b>Retefuente 2,5%</b> sobre base $4.000.000 — regla #241 vigente desde 2025-01-01. <span style="color:#6B7280;">Art. 401 ET.</span></div>
+                </div>
+                <div style="display: flex; gap: 10px; font-size: 12.5px; padding: 10px 12px; background: #F8F9FA; border-radius: 8px;">
+                  <span style="width: 6px; height: 6px; border-radius: 50%; background: #10B981; margin-top: 6px; flex-shrink: 0;"></span>
+                  <div><b>ReteIVA 15%</b> sobre IVA $760.000 — regla #88 vigente desde 2023-02-01. <span style="color:#6B7280;">Art. 437-1 ET.</span></div>
+                </div>
+                <div style="display: flex; gap: 10px; font-size: 12.5px; padding: 10px 12px; background: #FEF6EC; border-radius: 8px;">
+                  <span style="width: 6px; height: 6px; border-radius: 50%; background: #F59E0B; margin-top: 6px; flex-shrink: 0;"></span>
+                  <div><b>ReteICA 4,81‰</b> — municipio tomado del tercero (Bogotá), no del documento. Confirma antes de aprobar. <span style="color:#6B7280;">Acuerdo 65/2002.</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style="padding: 16px 24px; border-top: 1px solid #E5E7EB; display: flex; gap: 10px; justify-content: flex-end;">
+            <button style="font: inherit; font-size: 13px; background: #FFFFFF; border: 1px solid #E5E7EB; color: #B91C1C; border-radius: 7px; padding: 9px 16px; cursor: pointer;">Rechazar</button>
+            <button style="font: inherit; font-size: 13px; background: #FFFFFF; border: 1px solid #1E3A5F; color: #1E3A5F; border-radius: 7px; padding: 9px 16px; font-weight: 600; cursor: pointer;">Corregir asiento</button>
+            <button style="font: inherit; font-size: 13px; background: #1E3A5F; border: none; color: #FFFFFF; border-radius: 7px; padding: 9px 20px; font-weight: 600; cursor: pointer;">Aprobar</button>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

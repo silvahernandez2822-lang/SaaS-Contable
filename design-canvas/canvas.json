@@ -1,0 +1,16 @@
+{
+  "pages": [
+    { "id": "elegida", "name": "Dirección elegida" },
+    { "id": "descartadas", "name": "Descartadas" }
+  ],
+  "artboards": [
+    { "file": "Main.dc.html", "title": "Dirección A · Consola de operación (ELEGIDA)", "page": "elegida", "x": 0, "y": 0, "w": 1440, "h": 1000 },
+    { "file": "DirectionB.dc.html", "title": "Dirección B · Libro de trabajo", "page": "descartadas", "x": 0, "y": 0, "w": 1440, "h": 1000 },
+    { "file": "DirectionC.dc.html", "title": "Dirección C · Bandeja tranquila", "page": "descartadas", "x": 1620, "y": 0, "w": 1440, "h": 1000 }
+  ],
+  "annotations": [
+    { "id": "elegida-nota", "page": "elegida", "x": 0, "y": -150, "w": 1000, "text": "ELEGIDA: Dirección A — Consola de operación.\nConstruida en código como Ola 5 / D-075: prototipo navegable en /diseno (Next 16 + Tailwind v4 + TS strict), con las 8 pantallas, la navegacion global (selector de empresa, lateral de 6 modulos, breadcrumb, toggle de densidad) y el componente reusable de carga masiva. Solo tokens de app/globals.css. Los valores tributarios (tarifas, UVT, montos) van como marcadores [tarifa] / [UVT vigente] por la Regla de Oro 2 y por ser datos de ejemplo." },
+    { "id": "descartadas-nota", "page": "descartadas", "x": 0, "y": -150, "w": 1000, "text": "No elegidas. Se conservan como referencia de las otras dos stances (libro de trabajo airy / bandeja enfocada un-documento-a-la-vez)." }
+  ],
+  "launch": { "view": "canvas", "page": "elegida" }
+}

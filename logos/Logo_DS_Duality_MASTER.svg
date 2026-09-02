@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 240" width="400" height="240">
+  <defs>
+    <style>
+      .name { font-family: 'Liberation Sans', Arial, Helvetica, sans-serif; font-weight: 700; font-size: 38px; fill: #FFFFFF; letter-spacing: 4px; }
+      .sub  { font-family: 'Liberation Sans', Arial, Helvetica, sans-serif; font-weight: 400; font-size: 18px; fill: #C0151F; letter-spacing: 3px; }
+      .ltr  { font-family: 'Liberation Sans', Arial, Helvetica, sans-serif; font-weight: 700; font-size: 76px; fill: #FFFFFF; }
+    </style>
+  </defs>
+
+  <!-- Background -->
+  <rect width="400" height="240" fill="#1C2128"/>
+
+  <!-- D square -->
+  <rect x="80" y="24" width="96" height="96" rx="8" fill="#2D333B"/>
+  <text x="128" y="101" text-anchor="middle" class="ltr">D</text>
+
+  <!-- S square -->
+  <rect x="184" y="24" width="96" height="96" rx="8" fill="#C0151F"/>
+  <text x="232" y="101" text-anchor="middle" class="ltr">S</text>
+
+  <!-- Name -->
+  <text x="200" y="156" text-anchor="middle" class="name">DAVID SILVA</text>
+
+  <!-- Subtitle -->
+  <text x="200" y="184" text-anchor="middle" class="sub">AUTOMATIZACIÓN · IA</text>
+</svg>
