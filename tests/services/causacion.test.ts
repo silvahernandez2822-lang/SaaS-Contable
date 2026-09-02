@@ -20,6 +20,7 @@ import {
   reversarAsientoPublicado,
 } from '../../src/services/causacion';
 import { encolarCausacion, reclamarSiguienteJob } from '../../src/services/cola';
+import { listarRechazadas, reintegrarDocumentoRechazado } from '../../src/services/bandeja';
 
 let db: TestDb;
 
@@ -589,5 +590,195 @@ describe('reversarAsientoPublicado — Regla de Oro 1: toda corrección va por r
       SQLSTATE.REVERSA_INVALIDA,
       'publicar una reversa cuyo original nunca se publicó',
     );
+  });
+});
+
+// =============================================================================
+// V-23 — una factura rechazada por error se recupera (A3 + A2)
+// =============================================================================
+describe('V-23 · reproceso de una rechazada: idempotency_key versionada + transición auditada', () => {
+  async function causarRechazarReintegrar(): Promise<{
+    e: Escenario;
+    userId: string;
+    entryUno: string;
+  }> {
+    const { e, jobId } = await montarEscenarioCausacion([
+      { descripcion: 'Servicio recuperable de prueba', baseGravable: 40_000_00, valorIva: 7_600_00 },
+    ]);
+    const primero = await db.asAdmin((tx) =>
+      procesarJobCausacion(tx, { id: jobId, sourceDocumentId: e.sourceDocumentId }),
+    );
+    if (primero.estado !== 'causado') throw new Error('se esperaba causado');
+    const { userId } = await db.emitirSesion(e.tenantId, e.companyId);
+
+    // El revisor la rechaza por error: el borrador se anula, el documento
+    // queda 'rechazado', la clave `causacion:<doc>` sigue en el asiento anulado.
+    await db.asTenant(e.tenantId, e.companyId, (tx) =>
+      aprobarAsiento(tx, {
+        journalEntryId: primero.journalEntryId,
+        decision: 'rechazado',
+        ip: '198.51.100.7',
+        userId,
+        motivo: 'rechazada por error del revisor',
+      }),
+    );
+    return { e, userId, entryUno: primero.journalEntryId };
+  }
+
+  it('la sub-bandeja ofrece reprocesar (el asiento anulado ya no bloquea)', async () => {
+    const { e, userId } = await causarRechazarReintegrar();
+    const rechazadas = await db.asTenant(e.tenantId, e.companyId, (tx) => listarRechazadas(tx), { userId });
+    const fila = rechazadas.find((d) => d.sourceDocumentId === e.sourceDocumentId)!;
+    expect(fila.puedeReprocesar).toBe(true);
+    expect(fila.motivoBloqueoReproceso).toBeNull();
+  });
+
+  it('reintegrar + recausar produce un SEGUNDO asiento con clave versionada, y el anulado queda intacto', async () => {
+    const { e, userId, entryUno } = await causarRechazarReintegrar();
+
+    const job = await db.asTenant(e.tenantId, e.companyId, (tx) =>
+      reintegrarDocumentoRechazado(tx, e.sourceDocumentId, 'el proveedor confirmó que la factura sí va'),
+    );
+
+    const estadoTrasReintegrar = await db.asAdmin((tx) =>
+      tx
+        .query<{ estado: string }>(`SELECT estado FROM source_document WHERE id = $1`, [e.sourceDocumentId])
+        .then((r) => r.rows[0]!.estado),
+    );
+    expect(estadoTrasReintegrar).toBe('parseado');
+
+    const segundo = await db.asAdmin((tx) =>
+      procesarJobCausacion(tx, { id: job.id, sourceDocumentId: e.sourceDocumentId }),
+    );
+    expect(segundo.estado).toBe('causado');
+    if (segundo.estado !== 'causado') return;
+    expect(segundo.journalEntryId).not.toBe(entryUno);
+
+    const asientos = await db.asAdmin((tx) =>
+      tx
+        .query<{ id: string; estado: string; idempotency_key: string }>(
+          `SELECT id, estado, idempotency_key FROM journal_entry
+            WHERE source_document_id = $1 AND idempotency_key LIKE 'causacion:%'
+            ORDER BY created_at`,
+          [e.sourceDocumentId],
+        )
+        .then((r) => r.rows),
+    );
+    expect(asientos).toHaveLength(2);
+    expect(asientos[0]).toMatchObject({ id: entryUno, estado: 'anulado', idempotency_key: `causacion:${e.sourceDocumentId}` });
+    expect(asientos[1]).toMatchObject({ estado: 'draft', idempotency_key: `causacion:${e.sourceDocumentId}#2` });
+
+    // Solo un asiento de causación VIVO.
+    const vivos = asientos.filter((a) => a.estado !== 'anulado');
+    expect(vivos).toHaveLength(1);
+
+    // El documento vuelve a estar pendiente de aprobación: se puede aprobar y publicar.
+    const docEstado = await db.asAdmin((tx) =>
+      tx
+        .query<{ estado: string }>(`SELECT estado FROM source_document WHERE id = $1`, [e.sourceDocumentId])
+        .then((r) => r.rows[0]!.estado),
+    );
+    expect(docEstado).toBe('pendiente_aprobacion');
+  });
+
+  it('el reproceso queda trazado en audit_log: quién, desde qué estado, qué asiento anulado quedó atrás', async () => {
+    const { e, userId, entryUno } = await causarRechazarReintegrar();
+    await db.asTenant(e.tenantId, e.companyId, (tx) =>
+      reintegrarDocumentoRechazado(tx, e.sourceDocumentId, 'motivo trazable'),
+    );
+
+    const fila = await db.asAdmin((tx) =>
+      tx
+        .query<{ user_id: string | null; valor_anterior: unknown; valor_nuevo: unknown }>(
+          `SELECT user_id, valor_anterior, valor_nuevo FROM audit_log
+            WHERE entidad = 'source_document' AND entidad_id = $1
+              AND valor_nuevo->>'estado' = 'parseado'
+            ORDER BY id DESC LIMIT 1`,
+          [e.sourceDocumentId],
+        )
+        .then((r) => r.rows[0]),
+    );
+    expect(fila).toBeTruthy();
+    const j = (v: unknown) => (typeof v === 'string' ? JSON.parse(v) : v) as Record<string, unknown>;
+    expect(fila!.user_id).toBe(userId);
+    expect(j(fila!.valor_nuevo).desde_estado).toBe('rechazado');
+    expect(j(fila!.valor_nuevo).asiento_anulado_previo).toBe(entryUno);
+    expect(j(fila!.valor_nuevo).reproceso_numero).toBe(1);
+    expect(j(fila!.valor_nuevo).motivo).toBe('motivo trazable');
+  });
+
+  it('el resguardo se mantiene: reintegrar con un asiento de causación VIVO (no anulado) sigue bloqueado', async () => {
+    const { e, jobId } = await montarEscenarioCausacion([
+      { descripcion: 'Servicio con asiento vivo', baseGravable: 25_000_00, valorIva: 4_750_00 },
+    ]);
+    const causado = await db.asAdmin((tx) =>
+      procesarJobCausacion(tx, { id: jobId, sourceDocumentId: e.sourceDocumentId }),
+    );
+    if (causado.estado !== 'causado') throw new Error('se esperaba causado');
+    // Forzamos el estado anómalo: documento 'rechazado' pero el asiento sigue 'draft'.
+    await db.asAdmin((tx) =>
+      tx.query(`UPDATE source_document SET estado = 'rechazado', motivo_rechazo = 'anómalo' WHERE id = $1`, [
+        e.sourceDocumentId,
+      ]),
+    );
+    const { userId } = await db.emitirSesion(e.tenantId, e.companyId);
+    await expect(
+      db.asTenant(e.tenantId, e.companyId, (tx) => reintegrarDocumentoRechazado(tx, e.sourceDocumentId), { userId }),
+    ).rejects.toThrow(/REPROCESO_BLOQUEADO/);
+
+    const estado = await db.asAdmin((tx) =>
+      tx
+        .query<{ estado: string }>(`SELECT estado FROM source_document WHERE id = $1`, [e.sourceDocumentId])
+        .then((r) => r.rows[0]!.estado),
+    );
+    expect(estado).toBe('rechazado');
+  });
+
+  it('reprocesar dos veces: cada rechazo-reintegración versiona la clave (#2, #3) y nunca hay dos asientos vivos', async () => {
+    const { e, userId } = await causarRechazarReintegrar();
+
+    // Primer reproceso -> #2, y lo rechazamos otra vez.
+    const job2 = await db.asTenant(e.tenantId, e.companyId, (tx) =>
+      reintegrarDocumentoRechazado(tx, e.sourceDocumentId, 'reproceso 1'),
+    );
+    const seg = await db.asAdmin((tx) =>
+      procesarJobCausacion(tx, { id: job2.id, sourceDocumentId: e.sourceDocumentId }),
+    );
+    if (seg.estado !== 'causado') throw new Error('se esperaba causado');
+    await db.asTenant(e.tenantId, e.companyId, (tx) =>
+      aprobarAsiento(tx, {
+        journalEntryId: seg.journalEntryId,
+        decision: 'rechazado',
+        userId,
+        ip: '198.51.100.7',
+        motivo: 'otra vez no',
+      }),
+    );
+
+    // Segundo reproceso -> #3.
+    const job3 = await db.asTenant(e.tenantId, e.companyId, (tx) =>
+      reintegrarDocumentoRechazado(tx, e.sourceDocumentId, 'reproceso 2'),
+    );
+    const ter = await db.asAdmin((tx) =>
+      procesarJobCausacion(tx, { id: job3.id, sourceDocumentId: e.sourceDocumentId }),
+    );
+    if (ter.estado !== 'causado') throw new Error('se esperaba causado');
+
+    const asientos = await db.asAdmin((tx) =>
+      tx
+        .query<{ estado: string; idempotency_key: string }>(
+          `SELECT estado, idempotency_key FROM journal_entry
+            WHERE source_document_id = $1 AND idempotency_key LIKE 'causacion:%'
+            ORDER BY created_at`,
+          [e.sourceDocumentId],
+        )
+        .then((r) => r.rows),
+    );
+    expect(asientos.map((a) => a.idempotency_key)).toEqual([
+      `causacion:${e.sourceDocumentId}`,
+      `causacion:${e.sourceDocumentId}#2`,
+      `causacion:${e.sourceDocumentId}#3`,
+    ]);
+    expect(asientos.filter((a) => a.estado !== 'anulado')).toHaveLength(1);
   });
 });

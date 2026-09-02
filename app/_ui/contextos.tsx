@@ -134,6 +134,78 @@ export function useDensidad(): DensidadCtx {
   return ctx;
 }
 
+/* --------------------------------------------------------------------- tema
+ *
+ * D-082 · tarea 7 (fusiona D-081). El tema por defecto es CLARO, siempre, sin
+ * importar `prefers-color-scheme` del sistema operativo. El modo oscuro solo se
+ * activa si el usuario lo elige con el toggle de la barra superior; la elección
+ * se guarda en `localStorage` (preferencia de usuario, no derivada del SO) y se
+ * aplica sobre `<html data-tema>` — el mismo atributo que ya lee `globals.css`.
+ * El script en línea de `app/layout.tsx` la aplica antes del primer pintado
+ * para que no haya parpadeo; este provider solo la mantiene en sincronía con la
+ * interfaz de React.
+ */
+export type Tema = 'claro' | 'oscuro';
+
+const CLAVE_TEMA = 'contable-co:tema';
+
+type TemaCtx = {
+  tema: Tema;
+  alternar: () => void;
+  fijar: (t: Tema) => void;
+};
+
+const ContextoTema = createContext<TemaCtx | null>(null);
+
+function aplicarTema(t: Tema) {
+  try {
+    document.documentElement.dataset.tema = t;
+    window.localStorage.setItem(CLAVE_TEMA, t);
+  } catch {
+    /* sin persistencia: no es crítico */
+  }
+}
+
+export function TemaProvider({ children }: { children: ReactNode }) {
+  const [tema, setTema] = useState<Tema>('claro');
+
+  useEffect(() => {
+    try {
+      const guardado = window.localStorage.getItem(CLAVE_TEMA);
+      if (guardado === 'claro' || guardado === 'oscuro') {
+        setTema(guardado);
+        return;
+      }
+    } catch {
+      /* localStorage no disponible */
+    }
+    // Sin elección previa: claro explícito, sin consultar al sistema operativo.
+    setTema('claro');
+  }, []);
+
+  const fijar = useCallback((t: Tema) => {
+    setTema(t);
+    aplicarTema(t);
+  }, []);
+
+  const alternar = useCallback(() => {
+    setTema((t) => {
+      const siguiente: Tema = t === 'claro' ? 'oscuro' : 'claro';
+      aplicarTema(siguiente);
+      return siguiente;
+    });
+  }, []);
+
+  const valor = useMemo<TemaCtx>(() => ({ tema, alternar, fijar }), [tema, alternar, fijar]);
+  return <ContextoTema.Provider value={valor}>{children}</ContextoTema.Provider>;
+}
+
+export function useTema(): TemaCtx {
+  const ctx = useContext(ContextoTema);
+  if (!ctx) throw new Error('useTema fuera de <TemaProvider>');
+  return ctx;
+}
+
 /** Elige entre dos valores según la densidad activa. */
 export function porDensidad<T>(densidad: Densidad, comodo: T, compacto: T): T {
   return densidad === 'comodo' ? comodo : compacto;

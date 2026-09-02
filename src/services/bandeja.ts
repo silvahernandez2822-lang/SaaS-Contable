@@ -43,7 +43,7 @@
 import type { SqlClient } from '../db/types';
 import { exigirPermiso, PERMISOS } from '../auth/permisos';
 import { proyectarLineasParaCausacion, type LineaExtraida } from './ingest';
-import { reencolarJob, type DocumentProcessingJob } from './cola';
+import { encolarCausacion, reencolarJob, type DocumentProcessingJob } from './cola';
 
 // =============================================================================
 // 1. EMPRESAS ACCESIBLES (insumo de la bandeja multi-empresa)
@@ -337,29 +337,28 @@ export async function listarMunicipiosParaCorreccion(tx: SqlClient): Promise<Mun
 // Una factura rechazada desde la bandeja de aprobación pasa a
 // `source_document.estado = 'rechazado'` y desaparece de las vistas de
 // trabajo. La sub-bandeja la vuelve a hacer visible, con dos salidas:
-//   · REPROCESAR — devolverla a la cola de causación. SOLO cuando el
-//     documento no dejó un asiento que colisione con la clave de idempotencia
-//     `causacion:<doc>` (hoy casi siempre la dejó: todo documento que llegó a
-//     'pendiente_aprobacion' generó un borrador que el rechazo anuló). Si la
-//     dejó, se BLOQUEA con un mensaje claro — la reintegración de ese caso
-//     toca el motor de A3 y queda pendiente (D-079).
+//   · REPROCESAR — devolverla a la cola de causación (V-23, A3+A2). Procede si
+//     el documento no dejó asiento, o si el único asiento que dejó quedó
+//     ANULADO por el rechazo (el caso normal): el motor versiona la
+//     `idempotency_key` en el reintento (`causacion:<doc>#2`) y
+//     `app.reintegrar_documento_rechazado` exige que no quede ningún asiento
+//     vivo antes de devolver el documento a la cola. Se BLOQUEA
+//     (`REPROCESO_BLOQUEADO`) solo si hay un asiento en conflicto que NO está
+//     anulado — un draft vivo: estado anómalo que revisa soporte.
 //   · ARCHIVAR — retirarla definitivamente de las vistas SIN borrarla: la
 //     fila, su XML y su `audit_log` permanecen (Regla de Oro 1).
 // =============================================================================
 
-// A14, compuerta de D-079: la versión anterior de este mensaje aconsejaba
-// «vuelva a cargar el documento original desde la carga masiva». A14 lo probó
-// y NO funciona: la ingesta deduplica por (empresa, CUFE) y por (empresa,
-// hash), converge en ESTA MISMA fila, y el motor la da por `ya_procesado`
-// porque su estado ya pasó de `parseado`. El documento se queda rechazado sin
-// decir nada. No se le puede dar al contador una salida que no existe.
+// V-23 (A3+A2): este mensaje ya no describe el caso corriente. Una rechazada
+// cuyo asiento quedó ANULADO por el rechazo SÍ se reintegra ahora: el motor
+// versiona la `idempotency_key` (`causacion:<doc>#2`) y el índice
+// `journal_entry_causacion_viva_uq` impide el duplicado real. Queda como
+// explicación del único caso que sigue bloqueado: un asiento en conflicto que
+// NO está anulado (un draft vivo — estado anómalo que revisa soporte).
 const BLOQUEO_REPROCESO_CON_ASIENTO =
-  'Este documento ya generó un asiento contable (anulado tras el rechazo). ' +
-  'Reintegrarlo a la cola exige liberar la clave de idempotencia de ese asiento y una ' +
-  'transición de estado en el motor de causación que aún no está implementada (pendiente, D-079). ' +
-  'HOY NO HAY CAMINO EN LA INTERFAZ para recausarlo: volver a cargar el mismo XML no sirve ' +
-  '(la ingesta lo reconoce como duplicado de este mismo documento y no lo vuelve a causar). ' +
-  'Regístrelo con soporte antes de archivarlo.';
+  'Este documento tiene un asiento de causación en conflicto que no está anulado. ' +
+  'Una rechazada solo se reintegra cuando su asiento quedó anulado por el rechazo; ' +
+  'un asiento vivo en este punto es un estado anómalo. Regístrelo con soporte antes de archivarlo.';
 
 export interface DocumentoRechazado {
   sourceDocumentId: string;
@@ -395,9 +394,17 @@ export async function listarRechazadas(
             d.fecha_hecho_economico::text, d.motivo_rechazo,
             (SELECT max(a.decidido_en)::text FROM approval a
               WHERE a.source_document_id = d.id AND a.decision = 'rechazado') AS rechazado_en,
+            -- V-32 (A14): el predicado es la CLAVE del motor, no el tipo del
+            -- asiento. Con tipo <> 'reversa', el asiento de una NOTA CREDITO
+            -- --que siempre es de tipo 'reversa'-- quedaba fuera y la sub-bandeja
+            -- ofrecia reprocesar una nota que todavia tenia su asiento vivo.
+            -- Espeja exactamente el filtro de app.reintegrar_documento_rechazado:
+            -- lo que la lista ofrece es lo que el gate de la base acepta.
             EXISTS (SELECT 1 FROM journal_entry je
                      WHERE je.company_id = d.company_id
-                       AND je.idempotency_key = 'causacion:' || d.id::text) AS tiene_asiento
+                       AND je.source_document_id = d.id
+                       AND je.idempotency_key LIKE 'causacion:%'
+                       AND je.estado <> 'anulado') AS tiene_asiento
        FROM source_document d
       WHERE d.estado = 'rechazado'
       ORDER BY d.fecha_hecho_economico DESC
@@ -429,12 +436,27 @@ export async function archivarDocumentoRechazado(
   await tx.query(`SELECT app.archivar_documento_rechazado($1, $2)`, [sourceDocumentId, motivo]);
 }
 
-/** Devuelve una factura rechazada a la cola de causación. `app.reintegrar_documento_rechazado`
- * corta con `REPROCESO_BLOQUEADO` si el documento dejó un asiento en conflicto (D-079). */
+/** Devuelve una factura rechazada a la cola de causación (V-23). El motor
+ * versiona la `idempotency_key`; `app.reintegrar_documento_rechazado` reintegra
+ * cuando el asiento en conflicto está anulado y corta con `REPROCESO_BLOQUEADO`
+ * cuando hay un asiento vivo. `motivo` (opcional) queda en `audit_log`. */
 export async function reintegrarDocumentoRechazado(
   tx: SqlClient,
   sourceDocumentId: string,
+  motivo?: string | null,
 ): Promise<DocumentProcessingJob> {
-  await tx.query(`SELECT app.reintegrar_documento_rechazado($1)`, [sourceDocumentId]);
+  await tx.query(`SELECT app.reintegrar_documento_rechazado($1, $2)`, [
+    sourceDocumentId,
+    motivo?.trim() ? motivo.trim() : null,
+  ]);
+  // `app.reintegrar_documento_rechazado` contempla explícitamente el caso "el
+  // documento no dejó ningún asiento" (`reproceso_numero = 0`), pero
+  // `app.reencolar_job` moría con JOB_INEXISTENTE si ese documento nunca tuvo
+  // un trabajo de causación (A14, V-31): el gate de la base aceptaba y la
+  // capa de servicio reventaba justo después. `encolarCausacion` es idempotente
+  // — no toca el trabajo si ya existe—, así que garantiza la fila antes de
+  // reencolarla y deja `reencolarJob` como el único punto que resetea estado,
+  // intentos y último error.
+  await encolarCausacion(tx, sourceDocumentId);
   return reencolarJob(tx, sourceDocumentId);
 }

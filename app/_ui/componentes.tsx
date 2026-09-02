@@ -13,12 +13,16 @@
  * los colores de estado (`--color-exito|error|pendiente`) tienen UN solo valor
  * y sobre blanco quedan por debajo de 4,5:1 como texto normal. Para los badges
  * se usan a plena tinta con `font-semibold` y tamaño ≥12px, y con un fondo
- * `/12` del mismo tono. Falta en la paleta una «tinta» oscura de cada estado
- * (equivalente a `--color-primario-tinta-oscura` para el azul). No se inventó.
+ * `/12` del mismo tono. Las «tintas» oscuras de cada estado
+ * (`--color-*-tinta`) ya existen desde D-074/075 (derivadas, no aprobadas).
+ *
+ * D-082: tipografía por tokens de rol (`text-metadata|menor|cuerpo|seccion|
+ * titulo`), tarjetas con `--shadow-tarjeta` + `--radius-tarjeta`, botón
+ * `terciario`, y `EstadoVacio` para los «no hay nada aquí» neutros.
  */
 import Link from 'next/link';
 import type { ReactNode } from 'react';
-import { IconoAlerta, IconoInfo } from './iconos';
+import { IconoAlerta, IconoBandeja, IconoInfo } from './iconos';
 
 /* --------------------------------------------------------------- estados */
 
@@ -82,18 +86,27 @@ export function Badge({ tono = 'neutro', children }: { tono?: TonoBadge; childre
 
 /* ---------------------------------------------------------------- botones */
 
-type VarianteBoton = 'primario' | 'secundario' | 'fantasma' | 'peligro';
+/* D-082 · tarea 6. Jerarquía explícita:
+ *   primario   → relleno azul (acción principal, una por vista)
+ *   secundario → borde azul, sin relleno (acción alterna)
+ *   terciario  → solo texto, sin borde ni relleno (acción de bajo peso)
+ *   fantasma   → borde neutro (acción neutra en barras de herramientas)
+ *   peligro    → borde neutro + tinta de error (rechazar / eliminar)
+ * Transición sutil de 150ms en todas. */
+type VarianteBoton = 'primario' | 'secundario' | 'terciario' | 'fantasma' | 'peligro';
 
 const BOTON_CLASE: Record<VarianteBoton, string> = {
-  primario: 'bg-primario text-primario-contraste hover:brightness-110 border border-transparent',
+  primario: 'bg-primario text-primario-contraste hover:brightness-110 border border-transparent shadow-[var(--shadow-tarjeta)]',
   secundario:
     'bg-superficie-elevada text-primario border border-primario hover:bg-primario/5 dark:text-primario-tinta-oscura dark:border-primario-tinta-oscura',
+  terciario:
+    'bg-transparent text-primario border border-transparent hover:bg-primario/5 dark:text-primario-tinta-oscura',
   fantasma: 'bg-superficie-elevada text-texto border border-borde hover:bg-superficie',
   peligro: 'bg-superficie-elevada text-error-tinta border border-borde hover:bg-error/5',
 };
 
 const CLASE_BOTON_BASE =
-  'inline-flex items-center justify-center gap-2 rounded-md px-3.5 py-2 text-[13px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-50';
+  'inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-cuerpo font-semibold transition-[background-color,border-color,box-shadow,color,filter] duration-150 disabled:cursor-not-allowed disabled:opacity-50';
 
 export function Boton({
   variante = 'primario',
@@ -151,12 +164,14 @@ export function Panel({
   className?: string;
 }) {
   return (
-    <section className={`overflow-hidden rounded-lg border border-borde bg-superficie-elevada ${className}`}>
+    <section
+      className={`overflow-hidden rounded-[var(--radius-tarjeta)] border border-borde bg-superficie-elevada shadow-[var(--shadow-tarjeta)] ${className}`}
+    >
       {(titulo || acciones) && (
-        <header className="flex items-center justify-between gap-3 border-b border-borde bg-superficie px-4 py-2.5">
+        <header className="flex items-center justify-between gap-3 border-b border-borde bg-superficie px-5 py-3">
           <div>
-            {titulo && <h2 className="text-[13px] font-semibold text-texto">{titulo}</h2>}
-            {descripcion && <p className="mt-[2px] text-[11px] text-texto-suave">{descripcion}</p>}
+            {titulo && <h2 className="text-seccion font-semibold tracking-tight text-texto">{titulo}</h2>}
+            {descripcion && <p className="mt-[2px] text-metadata text-texto-suave">{descripcion}</p>}
           </div>
           {acciones && <div className="flex shrink-0 items-center gap-2">{acciones}</div>}
         </header>
@@ -176,10 +191,10 @@ export function Encabezado({
   acciones?: ReactNode;
 }) {
   return (
-    <div className="flex items-end justify-between gap-4 pb-4">
+    <div className="flex items-end justify-between gap-4 pb-5">
       <div>
-        <h1 className="text-lg font-bold tracking-tight text-texto">{titulo}</h1>
-        {descripcion && <p className="mt-1 text-[13px] text-texto-suave">{descripcion}</p>}
+        <h1 className="text-titulo font-semibold text-texto">{titulo}</h1>
+        {descripcion && <p className="mt-1 text-menor text-texto-suave">{descripcion}</p>}
       </div>
       {acciones && <div className="flex shrink-0 items-center gap-2">{acciones}</div>}
     </div>
@@ -345,6 +360,38 @@ export function MensajeEstado({
           </Link>
         )}
       </div>
+    </div>
+  );
+}
+
+/* ----------------------------------------------------------- estado vacío
+ *
+ * D-082 · tarea 4. Un «no hay nada aquí» DISEÑADO, no un ícono de info con
+ * texto plano: ícono grande y tenue, un texto principal directo y humano
+ * («Todo al día — no hay facturas pendientes»), y un texto secundario
+ * opcional. Para el caso neutro «no hay datos» / «el filtro no devolvió
+ * nada»; los casos `configuracion` (falta un dato, accionable) y `error`
+ * (fallo técnico) siguen en `MensajeEstado`, que sí necesita marco y color.
+ */
+export function EstadoVacio({
+  titulo,
+  detalle,
+  icono,
+  accion,
+}: {
+  titulo: ReactNode;
+  detalle?: ReactNode;
+  icono?: ReactNode;
+  accion?: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 px-6 py-12 text-center" role="status">
+      <span className="text-texto-suave/25" aria-hidden>
+        {icono ?? <IconoBandeja width={44} height={44} strokeWidth={1.5} />}
+      </span>
+      <p className="text-seccion font-semibold text-texto">{titulo}</p>
+      {detalle && <p className="max-w-sm text-menor text-texto-suave">{detalle}</p>}
+      {accion && <div className="mt-1">{accion}</div>}
     </div>
   );
 }

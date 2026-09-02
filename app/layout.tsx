@@ -21,6 +21,10 @@
  *  · `globals.css` trae los tokens de color y tipografía aprobados (D-074).
  *  · Inter se sirve desde el propio dominio con `next/font/google` (no un `<link>`
  *    a Google Fonts): quita una petición a un tercero y el salto de texto.
+ *  · D-082: el tema por defecto es claro SIEMPRE. El modo oscuro solo se activa
+ *    si el usuario lo eligió con el toggle (persistido en `localStorage`). El
+ *    script en línea de más abajo aplica esa elección sobre `<html>` ANTES del
+ *    primer pintado, para que no haya un parpadeo claro→oscuro al cargar.
  */
 import type { ReactNode } from 'react';
 import { Inter } from 'next/font/google';
@@ -67,6 +71,16 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
 
   return (
     <html lang="es" className={inter.variable}>
+      <head>
+        <script
+          // Antes del primer pintado: si el usuario eligió un tema explícito, se
+          // aplica; si no, se queda claro (no se mira `prefers-color-scheme`).
+          dangerouslySetInnerHTML={{
+            __html:
+              "try{var t=localStorage.getItem('contable-co:tema');if(t==='oscuro'||t==='claro'){document.documentElement.dataset.tema=t}}catch(e){}",
+          }}
+        />
+      </head>
       <body>
         <Chrome empresas={empresas} activaId={activaId} usuario={usuario}>
           {children}

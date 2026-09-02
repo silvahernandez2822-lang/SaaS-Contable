@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import '../db/dns-fix';
 /**
  * CLI de datos de EJEMPLO — `npm run datos-ejemplo`
  *

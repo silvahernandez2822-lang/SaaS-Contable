@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import './dns-fix';
 /**
  * CLI de migraciones — `npm run migrate`
  *

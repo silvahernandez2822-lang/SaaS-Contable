@@ -24,7 +24,7 @@ import {
   rechazarSeleccionAction,
   reprocesarRechazadaAction,
 } from './acciones';
-import { Badge, Boton, EnlaceBoton, Encabezado, MensajeEstado, Panel } from '../_ui/componentes';
+import { Badge, Boton, EnlaceBoton, Encabezado, EstadoVacio, MensajeEstado, Panel } from '../_ui/componentes';
 import {
   LineasConAiu,
   MensajeError,
@@ -205,14 +205,17 @@ export default async function PaginaBandeja({ searchParams }: { searchParams: Pr
           )}
 
           {pendientesAprobacion.length === 0 ? (
-            <MensajeEstado
-              tipo="sin-datos"
-              titulo={
-                hayFiltrosActivos
-                  ? 'Ningún documento pendiente coincide con los filtros.'
-                  : 'No hay facturas listas para aprobar en ninguna de sus empresas.'
-              }
-            />
+            hayFiltrosActivos ? (
+              <EstadoVacio
+                titulo="Ningún documento coincide con los filtros"
+                detalle="Ajuste el rango de fechas, el proveedor o los montos para ver más resultados."
+              />
+            ) : (
+              <EstadoVacio
+                titulo="Todo al día — no hay facturas pendientes de aprobación"
+                detalle="Cuando lleguen nuevas facturas electrónicas y el motor las cause, aparecerán aquí listas para revisar y aprobar."
+              />
+            )
           ) : (
             <form action={aprobarSeleccionAction} className="flex flex-col gap-3">
               <div className="flex flex-wrap items-center gap-3">
@@ -306,10 +309,7 @@ export default async function PaginaBandeja({ searchParams }: { searchParams: Pr
             Pendientes de revisión (V-7 / V-8 y clasificación)
           </h2>
           {pendientesRevision.length === 0 ? (
-            <MensajeEstado
-              tipo="sin-datos"
-              titulo="No hay documentos en revisión manual en ninguna de sus empresas."
-            />
+            <EstadoVacio titulo="Nada en revisión manual" detalle="Ningún documento requiere corrección de AIU o de municipio ahora mismo." />
           ) : (
             <div className="flex flex-col gap-3">
               {pendientesRevision.map((doc) => (
@@ -395,10 +395,11 @@ export default async function PaginaBandeja({ searchParams }: { searchParams: Pr
           <h2 className="mb-2 text-[13px] font-semibold text-texto">Facturas rechazadas</h2>
           <p className="mb-3 text-[12px] text-texto-suave">
             Una factura rechazada sale de la bandeja de aprobación pero no se borra. Desde aquí se puede
-            devolver a la cola de causación (solo si no dejó un asiento en conflicto) o archivarla.
+            devolver a la cola de causación (el asiento anulado por el rechazo no lo impide: el motor lo
+            recausa con una clave nueva y deja el reproceso en la bitácora) o archivarla.
           </p>
           {rechazadas.length === 0 ? (
-            <MensajeEstado tipo="sin-datos" titulo="No hay facturas rechazadas en ninguna de sus empresas." />
+            <EstadoVacio titulo="No hay facturas rechazadas" detalle="Las facturas que rechace saldrán de la bandeja de aprobación y quedarán aquí, recuperables." />
           ) : (
             <div className="flex flex-col gap-3">
               {rechazadas.map((doc) => (
@@ -426,9 +427,15 @@ export default async function PaginaBandeja({ searchParams }: { searchParams: Pr
 
                     <div className="flex flex-wrap items-start gap-3">
                       {doc.puedeReprocesar ? (
-                        <form action={reprocesarRechazadaAction}>
+                        <form action={reprocesarRechazadaAction} className="flex flex-col gap-2">
                           <input type="hidden" name="companyId" value={doc.companyId} />
                           <input type="hidden" name="sourceDocumentId" value={doc.sourceDocumentId} />
+                          <input
+                            type="text"
+                            name="motivo"
+                            placeholder="Motivo del reproceso (opcional, queda en la bitácora)"
+                            className="w-80 max-w-full rounded-md border border-borde bg-superficie-elevada px-3 py-2 text-[12px] text-texto"
+                          />
                           <Boton tipo="submit" variante="secundario">
                             Devolver a la cola de causación
                           </Boton>

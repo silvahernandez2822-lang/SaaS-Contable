@@ -28,7 +28,7 @@ import { estadoDeMiCredencial } from '../src/services/administracion';
 import { detectarAlertasParametrizacion } from '../src/services/parametrizacion';
 import { SesionInvalidaError } from '../src/db/tenant-context';
 import { cambiarEmpresaActivaAction } from './_ui/acciones';
-import { EnlaceBoton, Encabezado, MensajeEstado, Panel } from './_ui/componentes';
+import { EnlaceBoton, Encabezado, EstadoVacio, MensajeEstado, Panel } from './_ui/componentes';
 import {
   IconoAdmin,
   IconoParametros,
@@ -163,9 +163,7 @@ export default async function InicioPage({ searchParams }: { searchParams: Promi
           }
         >
           {pendientesAprobacion.length === 0 ? (
-            <div className="p-4">
-              <MensajeEstado tipo="sin-datos" titulo="No hay facturas listas para aprobar en ninguna de sus empresas." />
-            </div>
+            <EstadoVacio titulo="Todo al día — no hay facturas pendientes" detalle="Cuando el motor cause nuevas facturas, las verá aquí y en la bandeja." />
           ) : (
             <ul className="divide-y divide-borde">
               {pendientesAprobacion.slice(0, 5).map((doc) => (
@@ -198,9 +196,11 @@ export default async function InicioPage({ searchParams }: { searchParams: Promi
           }
         >
           {alertas.length === 0 ? (
-            <div className="p-4">
-              <MensajeEstado tipo="sin-datos" titulo="Sin alertas: no hay ningún dato tributario pendiente de verificar." />
-            </div>
+            <EstadoVacio
+              icono={<IconoParametros width={44} height={44} strokeWidth={1.5} />}
+              titulo="Sin alertas de parámetros"
+              detalle="Ningún dato tributario está pendiente de verificación humana (sección 17.5)."
+            />
           ) : (
             <ul className="divide-y divide-borde">
               {alertas.slice(0, 5).map((a, i) => (
@@ -223,7 +223,7 @@ export default async function InicioPage({ searchParams }: { searchParams: Promi
         </Panel>
       </div>
 
-      <h2 className="mb-2 text-[13px] font-semibold text-texto">Módulos</h2>
+      <h2 className="mb-2.5 text-seccion font-semibold tracking-tight text-texto">Módulos</h2>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {ACCESOS_RAPIDOS.map((m) => {
           const Icono = m.icono;
@@ -231,14 +231,14 @@ export default async function InicioPage({ searchParams }: { searchParams: Promi
             <Link
               key={m.href}
               href={m.href}
-              className="flex items-start gap-3 rounded-lg border border-borde bg-superficie-elevada p-4 transition hover:border-primario hover:shadow-sm dark:hover:border-primario-tinta-oscura"
+              className="flex items-start gap-3 rounded-[var(--radius-tarjeta)] border border-borde bg-superficie-elevada p-4 shadow-[var(--shadow-tarjeta)] transition-[border-color,box-shadow] duration-150 hover:border-primario hover:shadow-md dark:hover:border-primario-tinta-oscura"
             >
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primario/10 text-primario dark:bg-primario-tinta-oscura/15 dark:text-primario-tinta-oscura">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primario/10 text-primario dark:bg-primario-tinta-oscura/15 dark:text-primario-tinta-oscura">
                 <Icono width={18} height={18} />
               </span>
               <span>
-                <span className="block text-[13px] font-semibold text-texto">{m.texto}</span>
-                <span className="mt-[2px] block text-[12px] text-texto-suave">{m.descripcion}</span>
+                <span className="block text-cuerpo font-semibold text-texto">{m.texto}</span>
+                <span className="mt-[2px] block text-menor text-texto-suave">{m.descripcion}</span>
               </span>
             </Link>
           );

@@ -21,7 +21,7 @@
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { AppShell } from './AppShell';
-import { EmpresaProvider, DensidadProvider, type EmpresaAccesible } from './contextos';
+import { EmpresaProvider, DensidadProvider, TemaProvider, type EmpresaAccesible } from './contextos';
 
 const RUTAS_SIN_SHELL = new Set(['/entrar', '/cambiar-password']);
 
@@ -42,9 +42,11 @@ export function Chrome({
 
   return (
     <EmpresaProvider empresas={empresas} activaId={activaId}>
-      <DensidadProvider>
-        <AppShell usuario={usuario}>{children}</AppShell>
-      </DensidadProvider>
+      <TemaProvider>
+        <DensidadProvider>
+          <AppShell usuario={usuario}>{children}</AppShell>
+        </DensidadProvider>
+      </TemaProvider>
     </EmpresaProvider>
   );
 }

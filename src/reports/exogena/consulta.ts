@@ -59,6 +59,21 @@ export interface FilaRetencionPorTipo {
   n: number;
 }
 
+/**
+ * V-30 (A14, compuerta ampliada de V-23) — una retención solo se informa a la
+ * DIAN si el asiento que la respalda está PUBLICADO.
+ *
+ * `retention_applied` es la traza del motor, no el ledger. Desde V-23 un
+ * documento rechazado por error y reprocesado deja dos juegos de filas
+ * `aplicada = true` para el mismo hecho económico (el del asiento anulado y el
+ * del vivo); sin este filtro la exógena informaba el doble. Ver la nota
+ * completa en `src/reports/consulta.ts`.
+ */
+const SOLO_RESPALDADA_POR_ASIENTO_PUBLICADO = `
+  NOT EXISTS (SELECT 1 FROM journal_entry je
+               WHERE je.id = retention_applied.journal_entry_id AND je.estado <> 'posted')
+`;
+
 /** Retenciones APLICADAS (retefuente/reteiva/reteica) agrupadas por tercero y tipo. */
 export async function retencionesPorTerceroYTipo(
   tx: SqlClient,
@@ -71,6 +86,7 @@ export async function retencionesPorTerceroYTipo(
         AND third_party_id IS NOT NULL
         AND tipo IN ('retefuente','reteiva','reteica')
         AND fecha_hecho_economico BETWEEN $1 AND $2
+        AND ${SOLO_RESPALDADA_POR_ASIENTO_PUBLICADO}
       GROUP BY third_party_id, tipo`,
     [rango.desde, rango.hasta],
   );
@@ -108,6 +124,7 @@ export async function autorretencionPorTercero1003(
         AND third_party_id IS NOT NULL
         AND tipo = 'autorretencion'
         AND fecha_hecho_economico BETWEEN $1 AND $2
+        AND ${SOLO_RESPALDADA_POR_ASIENTO_PUBLICADO}
       GROUP BY third_party_id`,
     [rango.desde, rango.hasta],
   );

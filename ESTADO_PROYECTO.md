@@ -78,6 +78,49 @@
 > D-079, sí bloquea la operación real con un cliente. Suite: **1017 en verde** (50 archivos),
 > typecheck limpio, `next build` exit 0 (40 rutas). Sin comitear.
 >
+> 2026-09-02, después de eso — **D-080: fix de resolución DNS IPv4-primero en cada proceso Node.**
+> Módulo compartido de efecto secundario `src/db/dns-fix.ts` (`dns.setDefaultResultOrder('ipv4first')`,
+> vía `import('node:dns')` dinámico y con `catch` para el edge runtime), importado como primera línea
+> de los cinco puntos de entrada Node independientes: `instrumentation.ts`, `src/db/migrate-cli.ts`,
+> `src/db/seed-cli.ts`, `src/bootstrap/arranque-cli.ts`, `src/bootstrap/datos-ejemplo-cli.ts`. Motivo:
+> en Windows Node puede resolver el host de Neon por IPv6 antes que IPv4 y fallar con `ENOTFOUND`
+> aunque el SO y el navegador resuelvan bien. `tsc` limpio, `next build` exit 0 (40 rutas), `npm test`
+> **1017 en verde** (50 archivos). Sin comitear. Ver «D-080».
+>
+> 2026-09-02, después de eso — **D-081: V-23 CERRADA — una factura rechazada por error se recupera
+> (A3 + A2).** El asiento anulado tras el rechazo conservaba `idempotency_key = 'causacion:<doc>'` y
+> `app.reintegrar_documento_rechazado` cortaba SIEMPRE con `REPROCESO_BLOQUEADO`. Fix: el motor
+> **versiona la clave** en el reintento (`idempotencyKeyCausacion` cuenta asientos `causacion:%`
+> ANULADOS del documento → `causacion:<doc>#2`, `#3`; cuenta solo anulados para que una carrera real
+> siga chocando contra la clave base y se resuelva como `ya_procesado`), y la transición
+> `rechazado → parseado` procede cuando el único asiento en conflicto quedó anulado, con rastro
+> ampliado en `audit_log` (quién, cuándo, `desde_estado`, `reproceso_numero`, `asiento_anulado_previo`,
+> motivo). `REPROCESO_BLOQUEADO` **se mantiene** para cualquier asiento en conflicto no anulado.
+> Migración `172_a3a2_v23_reproceso_rechazadas.sql`. **Compuerta ampliada de A14: PASA, con SEIS
+> defectos hallados en el propio fix y su vecindario (V-27…V-32), todos corregidos por A14 en la
+> misma pasada** (migración `173`, `retention_applied` atada al ledger publicado en A9/A11, nota
+> crédito recuperable, resguardo extendido a notas). `tsc` limpio, `next build` exit 0, `npm test`
+> **1052 en verde** (51 archivos). Sin comitear. Ver «D-081» y «Compuerta AMPLIADA de V-23».
+>
+> 2026-09-02, después de eso — **D-082: refinamiento visual de toda la interfaz + tema claro por
+> defecto (fusiona el encargo D-081).** Cambio de USO y de detalle, cero cambios a la paleta
+> aprobada (D-074/075/076). (1) Chrome (barra superior + lateral) de bloque azul sólido a neutro
+> (`bg-superficie-elevada` + borde sutil); el azul queda como acento del módulo activo (fondo
+> `bg-primario/8` + barra vertical de 2px + ícono azul). Logo «Contable CO» en texto oscuro sobre
+> claro. (2) Escala tipográfica por ROL en un solo sitio (`@theme` de `globals.css`):
+> `text-metadata|menor|cuerpo|seccion|titulo`, ya consumida por el kit. (3) Tarjetas con
+> `--shadow-tarjeta` (0 1px 2px rgba(0,0,0,.04)), `--radius-tarjeta` (12px) y más padding. (4)
+> `EstadoVacio` nuevo — ícono grande y tenue + texto humano — reemplaza el `MensajeEstado`
+> genérico en los vacíos de `/bandeja` y `/`. (5) Íconos: un solo set (`app/_ui/iconos.tsx`, SVG
+> hand-inlined estilo lucide, sin dependencia — decisión de presupuesto A15), tamaños unificados.
+> (6) Botones: variante `terciario` nueva (solo texto), transición `duration-150` explícita. (7)
+> **Tema claro SIEMPRE por defecto**: `dark:` ya no mira `prefers-color-scheme`; el modo oscuro
+> solo se activa con el toggle sol/luna nuevo de la barra superior (`TemaProvider`, persistido en
+> `localStorage`, aplicado antes del primer pintado por script en línea de `layout.tsx`). El modo
+> oscuro sigue disponible, solo deja de auto-detectarse por SO. `tsc` limpio, `next build` exit 0
+> (40 rutas), `npm test` **1052 en verde** (51 archivos, sin cambio de conteo). Sin comitear. Ver
+> «D-082».
+>
 > Registro histórico: 2026-08-31 — **A14, compuerta del LOTE POSTERIOR A LA OLA 3 (V-17/A8, V-18/A11,
 > arranque y repaso 14.1/A12, datos de ejemplo/A1, entorno y despliegue/A15). Veredicto: LOTE APROBADO,
 > con tres vulnerabilidades encontradas por A14 y CORREGIDAS por A14 en la misma pasada (V-20, V-21,
@@ -1991,6 +2034,182 @@ cambia y lo posterior sí usa la nueva; segunda factura del mismo proveedor con 
 
 ---
 
+### D-080 — Resolución DNS IPv4-primero en cada proceso Node (fix de `ENOTFOUND` en Windows contra Neon)
+
+**Problema.** En Windows, Node puede resolver el host de Neon por IPv6 antes que por IPv4 y fallar con
+`ENOTFOUND` cuando el IPv6 local no está bien enrutado, aunque el sistema operativo y el navegador
+resuelvan bien el mismo dominio. Es el comportamiento de `dns.setDefaultResultOrder` cuyo valor por
+defecto cambió entre versiones de Node (`verbatim` vs `ipv4first`).
+
+**Solución.** Módulo compartido de **efecto secundario** [`src/db/dns-fix.ts`](src/db/dns-fix.ts): llama
+`dns.setDefaultResultOrder('ipv4first')`. Se importa vía `import('node:dns')` **dinámico** con `.catch()`
+porque `instrumentation.ts` también se evalúa en el **edge runtime** de Next.js, donde `node:dns` no
+existe: ahí no hace nada. Lleva `export {}` para ser un módulo ESM sin necesitar top-level `await`.
+
+Importado como **primera línea** (tras el shebang) de los **cinco puntos de entrada Node
+independientes** — cada uno es un proceso Node distinto y necesita el ajuste por separado:
+
+| Punto de entrada | Comando | Import |
+| --- | --- | --- |
+| `instrumentation.ts` | `npm run dev` / `next start` | `import './src/db/dns-fix';` |
+| `src/db/migrate-cli.ts` | `npm run migrate` | `import './dns-fix';` |
+| `src/db/seed-cli.ts` | `npm run seed` | `import './dns-fix';` |
+| `src/bootstrap/arranque-cli.ts` | `npm run arranque` | `import '../db/dns-fix';` |
+| `src/bootstrap/datos-ejemplo-cli.ts` | `npm run datos-ejemplo` | `import '../db/dns-fix';` |
+
+**Nota (matiz conocido).** Como el `import('node:dns')` es asíncrono, el ajuste se aplica en el primer
+microtask, no de forma estrictamente síncrona a la evaluación del módulo. En la práctica se completa
+mucho antes de que `createDb()` → `import('postgres')` → primera consulta abra una conexión real (hay
+varios `await` de por medio). No se usó `import` estático para no arrastrar `node:dns` al bundle del
+edge runtime con un solo módulo compartido.
+
+**Verificación.** `npx tsc --noEmit` limpio · `npx next build` exit 0, 40 rutas · `npm test` **1017 en
+verde** (50 archivos). Sin comitear.
+
+---
+
+### D-081 — V-23: recuperación de una factura rechazada por error (A3 + A2)
+
+**Problema (V-23, abierto por A14 en la compuerta ampliada de D-079).** Rechazar una causación
+(`aprobarAsiento` con `decision <> 'aprobado'`) anula el asiento borrador y deja el documento en
+`rechazado`. El asiento anulado **conserva** su `idempotency_key = 'causacion:<doc>'`.
+`app.reintegrar_documento_rechazado` cortaba SIEMPRE que existiera ese asiento
+(`REPROCESO_BLOQUEADO`), volver a cargar el XML no hacía nada (dedupe por CUFE/hash → `ya_procesado`)
+y archivar no es reversible. Rechazar por error dejaba el documento irrecuperable.
+
+**Solución.**
+
+- **Motor (A3), `src/services/causacion.ts`.** `idempotencyKeyCausacion(tx, company, doc)` cuenta los
+  asientos con `idempotency_key LIKE 'causacion:%'` **en estado `anulado`** del documento: 0 → clave
+  base `causacion:<doc>` (retrocompatible); N → `causacion:<doc>#<N+1>`. Se cuentan **solo los
+  anulados** a propósito — si existe un asiento VIVO con la clave base (otro worker ganó la carrera),
+  este intento vuelve a elegir la clave base, choca contra `journal_entry_idem_uq` y el `catch` lo
+  resuelve como `ya_procesado`: nunca dos asientos vivos (preserva D-043). Se usa en `causarFactura` y
+  `causarNotaCredito`. El `catch` de `UNIQUE_VIOLATION` ahora resuelve el asiento vivo por
+  `source_document_id … AND estado <> 'anulado'`. `procesarJobCausacion` sigue **sin** aceptar
+  `rechazado` como estado de entrada: el único camino de vuelta es el gate auditado.
+- **Transición (A2), `172_a3a2_v23_reproceso_rechazadas.sql`.**
+  `app.reintegrar_documento_rechazado(uuid, text DEFAULT NULL)` (se dropó la firma vieja de 1 arg):
+  `FOR UPDATE` sobre `source_document`; reintegra `rechazado → parseado` cuando el único asiento de
+  causación en conflicto está `anulado`; **mantiene `REPROCESO_BLOQUEADO`** si hay uno vivo. Rastro
+  ampliado en `audit_log`: `desde_estado`, `reproceso_numero`, `asiento_anulado_previo`, `motivo`.
+- **Bandeja, `src/services/bandeja.ts` + `app/bandeja/`.** `listarRechazadas` ya no cuenta los
+  anulados como "asiento en conflicto" (una rechazada con asiento anulado muestra "puede reprocesar");
+  `reintegrarDocumentoRechazado(tx, id, motivo?)`; campo de motivo opcional en la sub-bandeja.
+
+**Reglas de Oro.** RO-1: el asiento anulado no se toca — el reproceso crea uno nuevo. RO-2: `#n` es
+identificador técnico, ni una tarifa. El resguardo `REPROCESO_BLOQUEADO` no se relajó como
+comportamiento por defecto: se habilitó un camino explícito y auditado.
+
+**Compuerta ampliada de A14: PASA, con SEIS defectos hallados y corregidos por A14 en la misma
+pasada — V-27 a V-32** (ver el registro de vulnerabilidades y «Compuerta AMPLIADA de V-23»). Los dos
+graves: **V-30** (certificado de retenciones y exógena reportaban el doble tras un reproceso — A9/A11
+leían `retention_applied` sin atarlo al ledger publicado) y **V-28** (una nota crédito rechazada
+quedaba irrecuperable y rompía el worker con un `23505` no manejado). Migración `173` (índice
+`journal_entry_causacion_viva_uq` real, `journal_entry_reversa_viva_uq` parcial, predicado del gate
+por clave y no por tipo), suite propia `tests/adversarial/a14-v23-ampliada.test.ts` (30 pruebas).
+
+**Verificación.** `npx tsc --noEmit` limpio · `npx next build` exit 0 · `npm test` **1052 en verde**
+(51 archivos; +5 del bloque `describe('V-23 …')` en `tests/services/causacion.test.ts`, +30 de la
+suite de A14). Sin comitear.
+
+---
+
+### D-082 — Refinamiento visual: pulido de toda la interfaz + tema claro por defecto (fusiona D-081)
+
+**Encargo.** Elevar el nivel de pulido de la interfaz al estándar Stripe/Linear/Notion —
+minimalista, mucho blanco, tipografía cuidada, sin pinta de «plantilla de admin genérica»— sin
+tocar los valores de color aprobados (D-074/075/076): el cambio es de USO y de detalle, no de
+paleta. Siete tareas. La 7 absorbe el encargo D-081 (tema claro real como default).
+
+**Qué cambió, tarea por tarea (esto es perceptual — se describe el cambio, no solo «hecho»):**
+
+1. **Chrome (barra superior + menú lateral): de bloque azul sólido a neutro con acento.**
+   `app/_ui/AppShell.tsx`. Antes: barra superior y lateral en `bg-primario` (azul `#1E3A5F`
+   sólido), texto y controles en blanco/`white/N`. Ahora: ambas en `bg-superficie-elevada` con
+   `border-borde` de 1px. El azul es SOLO acento: el ítem de módulo activo lleva fondo
+   `bg-primario/8` (azul muy claro), barra vertical de acento de 2px a la izquierda
+   (`border-l-2 border-primario`) e ícono en `text-primario`; los inactivos van en
+   `text-texto-suave` sin fondo, con `hover:bg-superficie`. Ítems con esquinas redondeadas y
+   margen lateral (ya no franjas a sangre). El logo «Contable CO» pasó a texto oscuro
+   (`text-texto`) con el ícono de marca en azul, sobre fondo claro — ya no blanco sobre azul.
+   `SelectorEmpresa`, `ToggleDensidad` y `MenuUsuario` reestilados a superficie clara con borde
+   sutil; el avatar del usuario pasó de círculo azul sólido a `bg-primario/10 + text-primario`.
+   Ancho del lateral 56→60, alto de la barra 52→56.
+2. **Tipografía: jerarquía en un solo sitio.** `app/globals.css`, bloque `@theme static`. Nueva
+   escala por ROL como tokens de Tailwind v4 con su interlínea emparejada: `text-metadata`
+   (11px), `text-menor` (12px), `text-cuerpo` (13px), `text-seccion` (14px), `text-titulo`
+   (22px, `letter-spacing -0.02em`). El kit de `app/_ui/` (`Encabezado`, `Panel`, `AppShell`,
+   `EstadoVacio`, tarjetas de `/` ) ya consume estos nombres en vez de `text-[13px]` sueltos.
+   Título de página ahora `text-titulo font-semibold` (antes `text-lg font-bold`): un punto más
+   grande, `semibold` en vez de `bold`, tracking negativo. Metadata bajo el título y
+   descripción de panel bajadas a `text-metadata`/`text-menor` y `text-texto-suave`. Las
+   pantallas con «cuerpo viejo» (PREFIJOS_SIN_MIGRAR) todavía llevan valores sueltos; se limpian
+   al migrarse — la escala ya está lista para ellas.
+3. **Tarjetas: borde sutil + sombra mínima + radio consistente.** Tokens nuevos
+   `--shadow-tarjeta: 0 1px 2px rgba(0,0,0,.04)` y `--radius-tarjeta: 12px`. `Panel` ahora
+   `rounded-[var(--radius-tarjeta)] border-borde shadow-[var(--shadow-tarjeta)]`, con la
+   cabecera a `px-5 py-3` (antes `px-4 py-2.5`). Las tarjetas de módulo de `/` con la misma
+   sombra y radio, y `hover:shadow-md` en vez de `hover:shadow-sm`. Los botones primarios
+   heredan la sombra de tarjeta.
+4. **Estados vacíos: de genérico a diseñado.** Componente nuevo `EstadoVacio` en
+   `app/_ui/componentes.tsx`: ícono grande y tenue (`text-texto-suave/25`, trazo 1.5), texto
+   principal directo y humano, detalle opcional, acción opcional. Reemplaza el
+   `MensajeEstado tipo="sin-datos"` (ícono de info + texto plano en una caja con borde) en los
+   casos neutros de `/bandeja` (aprobación / revisión / rechazadas, con y sin filtros) y `/`
+   (facturas pendientes, alertas de parámetros). `MensajeEstado` se queda para
+   `configuracion` (falta un dato, accionable) y `error` (fallo técnico), que sí necesitan
+   marco y color. Textos de ejemplo: «Todo al día — no hay facturas pendientes de aprobación».
+5. **Iconografía: un solo set, auditado.** `app/_ui/iconos.tsx` es el único juego: SVG de trazo
+   hand-inlined derivado de lucide (rejilla 24, `stroke-width` 2, `currentColor`, caps
+   redondeados), sin dependencia en runtime — deliberado por el presupuesto USD 20–50/mes (A15):
+   añadir `lucide-react` (el encargo lo nombra como ejemplo del estándar, no como requisito de
+   dependencia) no aporta sobre lo que ya hay y sí pesa. Todos los íconos pasan por `Base`, así
+   que el grosor y el estilo son consistentes por construcción; los del menú se unificaron a
+   18px (antes 17). Dos íconos nuevos: `IconoSol` / `IconoLuna` para el toggle de tema.
+6. **Botones: jerarquía y transición.** `app/_ui/componentes.tsx`. Variante nueva `terciario`
+   (solo texto, sin borde ni relleno) para completar la escala relleno→borde→texto; `primario`
+   (relleno), `secundario` (borde azul), `terciario` (texto), más `fantasma` (borde neutro) y
+   `peligro`. Transición explícita `duration-150` sobre color/borde/sombra (antes `transition` a
+   secas). Radio de botón `rounded-md`→`rounded-lg` para casar con las tarjetas.
+7. **Tema claro real como default (era D-081, fusionado aquí).** Antes: el modo oscuro se
+   activaba heredando `prefers-color-scheme` del SO (`@custom-variant dark` con `@media` y un
+   bloque `:root:not([data-tema='claro']) @media (prefers-color-scheme: dark)` en
+   `globals.css`). Ahora: **el tema por defecto es claro SIEMPRE, sin importar el SO**. `dark:`
+   y los tokens oscuros responden EXCLUSIVAMENTE a `<html data-tema="oscuro">`. El modo oscuro
+   **no se eliminó**: sigue disponible por elección explícita — toggle sol/luna en la barra
+   superior (`ToggleTema` en `AppShell`), estado en `TemaProvider` nuevo (`app/_ui/contextos.tsx`,
+   mismo patrón que `DensidadProvider`), persistido en `localStorage` bajo `contable-co:tema`
+   (preferencia de usuario, no derivada del SO). Un script en línea en `<head>` de
+   `app/layout.tsx` aplica la elección sobre `<html data-tema>` antes del primer pintado, para
+   que no haya parpadeo claro→oscuro. La escotilla `[data-tema='claro']` por subárbol (D-078,
+   para las pantallas sin migrar) se conserva intacta y sigue funcionando.
+
+**Confirmación explícita del comportamiento de tema (perceptual):** con el SO de macOS/Windows
+en modo oscuro y sin elección previa del usuario, la aplicación abre en CLARO — fondo
+`#F8F9FA`, superficies `#FFFFFF`, texto `#1A1A1A`. Solo tras pulsar el toggle a «oscuro» la
+interfaz cambia a la paleta oscura, y esa elección sobrevive a la recarga (via `localStorage` +
+script de pre-pintado). Verificado leyendo el CSS compilado: ya no existe ninguna regla
+`@media (prefers-color-scheme: dark)` que redefina tokens de color.
+
+**Alcance que absorbe de D-081:** D-081 (el número) ya se había usado para el cierre de V-23;
+el encargo lo reasignaba al tema. Todo el trabajo de tema queda documentado aquí bajo D-082,
+tarea 7. No hay una ficha «D-081 tema» separada.
+
+**Archivos tocados:** `app/globals.css`, `app/layout.tsx`, `app/_ui/AppShell.tsx`,
+`app/_ui/contextos.tsx`, `app/_ui/Chrome.tsx`, `app/_ui/componentes.tsx`, `app/_ui/iconos.tsx`,
+`app/page.tsx`, `app/bandeja/page.tsx`. Sin migrar ningún módulo nuevo, sin tocar una acción de
+servidor, un permiso ni un servicio.
+
+**Verificación.** `npx tsc --noEmit` limpio · `npx next build` **exit 0, 18 páginas estáticas
+generadas / 40 rutas** (la advertencia de `node:dns` en Edge Runtime es la de D-080, no de esta
+ola) · `npm test` **1052 en verde** (51 archivos, sin cambio de conteo). Un hallazgo propio,
+corregido en la misma pasada: el detector de la Regla de Oro 2 (`fraccion`, `/0\.\d+/`) marcó
+tres clases de Tailwind con decimal (`mt-0.5`, `gap-0.5`, `p-0.5`) como «fracción con pinta de
+tarifa»; se cambiaron a la forma `[2px]` que ya usaba el resto del kit. Sin comitear.
+
+---
+
 ## Vulnerabilidades — registro de A14
 
 | Id | Qué es | Gravedad | Estado | De quién |
@@ -1998,7 +2217,13 @@ cambia y lo posterior sí usa la nueva; segunda factura del mismo proveedor con 
 | V-24 | **Carrera edición ↔ publicación: se podía mutar un asiento YA PUBLICADO.** `editarAsientoBorrador` leía el estado sin bloquear la fila; con la aprobación en paralelo, el `UPDATE journal_line` caía sobre un asiento ya `posted` y ningún trigger se enteraba (el de inmutabilidad vio `draft`; el de balance calla porque la edición cuadra) | **Alta** (rompe la Regla de Oro 1) | **CORREGIDA por A14** en la compuerta de D-079 (`SELECT ... FOR UPDATE`), con prueba | era de **A7** |
 | V-25 | **Un humano podía reescribir el monto/cuenta de una retención calculada por el motor.** El ledger y `retention_applied` —fuente de la exógena (1001/1003) y de los certificados— divergían para siempre, sin rastro de que alguien se apartó del motor | **Alta** (rompe las Reglas de Oro 4 y 6) | **CORREGIDA por A14** en la compuerta de D-079 (partida con `retention_applied_id` no editable, en servicio y en UI), con prueba | era de **A7** |
 | V-26 | **El filtro de monto de la bandeja escondía facturas que sí había que aprobar** (formulario en pesos, comparación contra centavos). Además `?desde=` con basura tumbaba la bandeja de las 30-60 empresas, y una cuenta desactivada seguía siendo imputable desde la edición | Media (una factura que no se ve no se causa) | **CORREGIDA por A14** en la compuerta de D-079, con pruebas | era de **A7** |
-| **V-23** | **Una factura rechazada por error no se recupera por ningún camino de la interfaz.** `reintegrar` bloquea (clave `causacion:<doc>` ocupada + falta la transición `rechazado → parseado`), volver a cargar el XML no hace nada (dedupe por CUFE/hash → `ya_procesado`) y archivar tampoco es reversible | **Alta como producto** (rechazar es cotidiano y aquí es definitivo). No bloquea D-079; **sí bloquea la operación real con un cliente** | **ABIERTA, declarada y probada** por A14 (`a14-d079-ampliada.test.ts`) | **A3** (transición de estado en el motor) + **A2** (decisión de ledger sobre la clave de idempotencia) |
+| **V-23** | **Una factura rechazada por error no se recupera por ningún camino de la interfaz.** `reintegrar` bloquea (clave `causacion:<doc>` ocupada + falta la transición `rechazado → parseado`), volver a cargar el XML no hace nada (dedupe por CUFE/hash → `ya_procesado`) y archivar tampoco es reversible | **Alta como producto** (rechazar es cotidiano y aquí es definitivo). No bloquea D-079; **sí bloquea la operación real con un cliente** | **CERRADA** por A3+A2 (migración 172 + `idempotencyKeyCausacion`) y **reverificada por A14 con suite propia** (`tests/adversarial/a14-v23-ampliada.test.ts`, 30 pruebas). La verificación encontró **seis defectos** en el propio fix y en su vecindario: V-27…V-32, todos corregidos por A14 en la misma pasada | era de **A3** + **A2** |
+| **V-27** | La migración 172 y `src/services/bandeja.ts` afirmaban que «el índice `journal_entry_causacion_viva_uq` impide el duplicado real». **Ese índice no existía en ninguna migración.** El invariante «a lo sumo un asiento de causación vivo por documento» lo sostenía solo la aritmética de la aplicación, y la afirmación falsa quedaba en documentación durable que otro agente leería como cierta | Media (no había fuga medible, pero contradice el principio «la garantía la pone el motor» y envenena la documentación) | **CORREGIDA por A14** (migración 173: índice único parcial real), con prueba que ataca la tabla directamente saltándose todo el servicio | era de **A3/A2** |
+| **V-28** | **Una NOTA CRÉDITO rechazada por error seguía siendo irrecuperable y además rompía el worker.** `causarNotaCredito` cuelga su asiento de `reverses_entry_id`, y `journal_entry_reversa_uq` era TOTAL: no distinguía la reversa anulada de la viva. Tras reintegrar, el segundo intento moría con `23505` **no manejado**, abortando la transacción entera; el documento quedaba en `parseado` con un trabajo que falla en cada intento. V-23 **empeoró** este caso en vez de arreglarlo (antes se bloqueaba limpio) | **Alta** (un documento fiscal queda irrecuperable y la cola entra en fallo permanente) | **CORREGIDA por A14**: índice parcial `journal_entry_reversa_viva_uq` (migración 173) + `SAVEPOINT`/`catch` de `UNIQUE_VIOLATION` en `causarNotaCredito`, que nunca lo tuvo pese a que `causarFactura` lo recibió en D-043. Con prueba de punta a punta y con prueba de que dos reversas VIVAS siguen prohibidas | era de **A3** |
+| **V-30** | **El certificado de retenciones y la exógena reportaban el DOBLE tras un reproceso.** `retencionesPorTercero` (A9), `retencionesPorTerceroYTipo` y `autorretencionPorTercero1003` (A11) leen `retention_applied` **sin atarlo al ledger publicado**. Tras un reproceso quedan dos juegos de filas `aplicada = true` (el del asiento anulado y el del vivo). A14 lo midió: **$44.000 certificados sobre una retención real de $22.000** | **Alta** (el certificado es un documento legal que se entrega al proveedor; la exógena se presenta a la DIAN) | **CORREGIDA por A14**: las tres consultas descartan toda fila atada a un asiento que no está `posted`; `retencionesPorPeriodo` descarta las de asientos anulados y conserva los borradores por su función diagnóstica. Con tres pruebas que miden la cifra | era de **A9** + **A11** (la causa raíz la destapó V-23) |
+| **V-29** | Un documento que acaba en **revisión manual** por falta de período fiscal abierto o por cuenta sin configurar dejaba escritas sus filas de `retention_applied` con `journal_entry_id = NULL`: traza huérfana que ningún asiento respalda y que la reportería tributaria no distinguía de una retención real | Media (mismo canal de daño que V-30) | **CORREGIDA por A14**: las dos salidas de `causarFactura` posteriores al `SAVEPOINT` hacen `ROLLBACK TO SAVEPOINT`, y en `causarNotaCredito` el período se comprueba **antes** de escribir nada. Con prueba | era de **A6** |
+| **V-31** | `reintegrarDocumentoRechazado` reventaba con `JOB_INEXISTENTE` si el documento nunca tuvo trabajo de causación — justo el caso `reproceso_numero = 0` que la función de base **contempla explícitamente**. El gate de la base aceptaba y la capa de servicio moría un renglón después | Baja (hoy solo alcanzable con datos anómalos) | **CORREGIDA por A14** (`encolarCausacion` idempotente antes de `reencolarJob`), con prueba | era de **A7** |
+| **V-32** | **El resguardo `REPROCESO_BLOQUEADO` no cubría las NOTAS CRÉDITO.** El gate identificaba el asiento en conflicto con `tipo <> 'reversa'`, y el asiento de una nota es **por definición** de tipo `reversa`: una nota rechazada con su asiento todavía VIVO se reintegraba sin encontrar resistencia. A14 lo verificó empíricamente quitando el parche y viendo pasar la reintegración | Media-alta (el resguardo que V-23 declaraba «no relajado» estaba abierto de par en par para medio catálogo de documentos) | **CORREGIDA por A14** (migración 173: el predicado es `idempotency_key LIKE 'causacion:%'`, no el tipo; `listarRechazadas` espeja el mismo filtro), con prueba | era de **A3** + **A7** |
 | D-030 | Revocación de sesiones cross-tenant + oráculo de actividad ajena | Alta (rompe la Regla 7 en escritura) | **CORREGIDA** por A14 (migración 017) | era de A12 |
 | D-031 | `app_auth` forjaba audit_log en cualquier firma, de forma permanente | Media-alta (rompe la Regla 6) | **CORREGIDA** por A14 (migración 017) | era de A12 |
 | D-034 | El harness concedía privilegios que las migraciones revocan | Media (invalida pruebas de privilegio) | **CORREGIDA** por A14 | infraestructura de pruebas |
@@ -3342,3 +3567,73 @@ A0** (A14 no hace commits). Después de eso, despachar la **Ola 2** (A5, A7, A8,
 - El harness `tests/helpers/` y las cinco suites adversariales de A14.
 
 </details>
+
+---
+
+## Compuerta AMPLIADA de V-23 — veredicto de A14 (2026-09-02): **PASA, con el fix corregido en la misma pasada**
+
+A14 no verificó por reporte. Escribió su propia suite adversarial
+(`tests/adversarial/a14-v23-ampliada.test.ts`, **30 pruebas**, sin reusar ni una aserción de las que A3/A2/A7
+entregaron con el fix) y la corrió. **El fix de V-23 funciona para el caso que se propuso arreglar, pero
+llegó con seis defectos**, dos de ellos de gravedad alta y uno con consecuencia legal directa. Los seis
+están corregidos, con prueba de regresión que falla sin el parche.
+
+### Lo que se atacó y qué salió
+
+| Vector | Resultado |
+|---|---|
+| **RO-1 byte a byte** — foto completa (asiento + líneas + `retention_applied`) del asiento anulado antes y después del reproceso | **PASA.** Idéntica. El anulado no se toca, sigue `anulado`, y la BD sigue negando resucitarlo a `draft` |
+| **Carrera / doble procesamiento** — dos causaciones sobre el documento reintegrado, saltándose la cola; documento forzado a `parseado` con su asiento vivo | **PASA.** Un solo asiento vivo. El perdedor devuelve `ya_procesado` con el id del asiento VIVO, no `null`. `reclamarSiguienteJob` no entrega dos veces el mismo trabajo. `compuerta-ola1` «carrera detectada» sigue verde |
+| **`REPROCESO_BLOQUEADO` no relajado** — `draft` vivo, `posted` vivo | **PASA** para facturas. **FALLA para notas crédito → V-32**, corregido |
+| **Reintegrar dos veces seguidas**, sin causar en medio | **PASA** (`ESTADO_INVALIDO`) |
+| **Reintegrar un documento sin trabajo de causación previo** | **FALLA → V-31**, corregido |
+| **`archivado` terminal** | **PASA.** No se reintegra y desaparece de la sub-bandeja |
+| **Aislamiento RO-7** — reintegrar el documento de otra firma, con la firma nueva de dos argumentos | **PASA** (`DOCUMENTO_INEXISTENTE`; el documento no se mueve) |
+| **Permisos** — `solo_lectura` reintegrando | **PASA** |
+| **Caso dorado 18** — reprocesar 10 veces un documento ya causado sin rechazo | **PASA.** Un asiento, foto idéntica, y **ninguna clave `#n` espuria**: el primer intento sigue usando la clave base |
+| **Nota crédito rechazada y reintegrada** | **FALLA → V-28** (rompía el worker con `23505` no manejado), corregido |
+| **Divergencia ledger ↔ traza** — `retention_applied` del anulado vs. el nuevo en reportería | **FALLA → V-30.** Certificado de retenciones y exógena reportaban **el doble**. Corregido. El ledger publicado (`v_journal_line_reporte`) nunca estuvo mal: trae la retención una sola vez |
+| **`v_reproceso_n` / audit** con 0, 1 y 2 anulados | **PASA.** Número correcto, `asiento_anulado_previo` apunta siempre al último anulado, `desde_estado` fiel, motivo en blanco se guarda como `null` |
+| **RO-2** sobre los cuatro archivos que tocó el fix | **PASA.** `#n` es identificador técnico; ni una tarifa, base, UVT ni calendario |
+| **El índice que 172 documentaba** | **NO EXISTÍA → V-27**, creado |
+
+### Defectos encontrados y corregidos por A14 (detalle en el registro de vulnerabilidades)
+
+- **V-27** — el índice `journal_entry_causacion_viva_uq` que la migración 172 declaraba en su `COMMENT` no
+  existía. Creado en la migración **173**, con alcance estrecho (`idempotency_key LIKE 'causacion:%'`) para
+  no limitar los asientos manuales que un contador registre contra el mismo documento.
+- **V-28** — nota crédito rechazada: irrecuperable **y** con la cola en fallo permanente. Índice parcial
+  `journal_entry_reversa_viva_uq` + el `SAVEPOINT`/`catch` que `causarNotaCredito` nunca recibió (D-043 solo
+  se aplicó a `causarFactura`).
+- **V-29** — traza huérfana de retenciones cuando la causación acaba en revisión manual después del
+  `SAVEPOINT`.
+- **V-30** — **doble conteo en el certificado de retenciones y en la exógena.** El de mayor consecuencia:
+  un certificado es un documento legal que se entrega al proveedor.
+- **V-31** — `JOB_INEXISTENTE` en el camino que la propia función de base contempla.
+- **V-32** — el resguardo `REPROCESO_BLOQUEADO` no cubría las notas crédito. Verificado **quitando el
+  parche** y viendo pasar la reintegración: no es teoría.
+
+### Estado de las restricciones que el fix no podía violar
+
+1. **RO-1** — respetada, probada byte a byte.
+2. **RO-2** — respetada, probada sobre los archivos tocados.
+3. **`REPROCESO_BLOQUEADO` por defecto** — lo estaba para facturas; **no lo estaba para notas**. Ahora sí.
+4. **Reproceso trazado** — quién, cuándo, desde qué estado, con qué motivo y qué asiento quedó atrás.
+
+### Verificación final
+
+`npx tsc --noEmit` limpio · `npx next build` compila y emite todas las rutas · `npm test`: **51 archivos,
+1052 pruebas, todas en verde** (la línea base antes de esta compuerta era 50 archivos / 1022 pruebas).
+Ningún commit: A14 no comitea.
+
+### Deuda declarada que queda abierta (no bloquea)
+
+- **V-30, residual acotado.** El filtro de las consultas de retenciones deja pasar las filas con
+  `journal_entry_id IS NULL` para no romper los fixtures de A9/A11, que insertan `retention_applied` sin
+  asiento. Con **V-29** corregido, el motor ya no produce esas filas, así que el residuo es solo de
+  pruebas. **Lo correcto a futuro (A9/A11): exigir `EXISTS(... posted)` a secas y realistar esos fixtures.**
+- **`retencionesPorPeriodo`** conserva las filas de asientos en **borrador** a propósito (su función es
+  diagnóstica: mostrar por qué NO se retuvo). Quien lo lea como «lo practicado en el período» se equivoca
+  por un asiento pendiente de aprobar. **Decisión de A9** si debe marcarse el estado en la columna.
+- **Aviso de build preexistente**, ajeno a esta compuerta: `src/db/dns-fix.ts` (sin versionar) importa
+  `node:dns` y el Edge Runtime lo rechaza. El build termina bien. **Es de quien lo introdujo (A15/infra).**

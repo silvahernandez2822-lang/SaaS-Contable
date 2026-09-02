@@ -4,8 +4,10 @@
  * D-077 · Ola 5 (front) — Shell de la aplicación real. Migrado desde
  * `app/diseno/_ui/AppShell.tsx` (Dirección A «Consola de operación»).
  *
- * Barra superior y lateral en el azul de marca, densidad compacta disponible, y
- * —en TODA pantalla interna—:
+ * D-082: barra superior y lateral neutras (superficie elevada, borde sutil); el
+ * azul de marca queda como ACENTO — el módulo activo lleva fondo azul muy claro,
+ * barra vertical de acento e ícono en azul. Toggle de tema claro/oscuro y de
+ * densidad en la barra superior. En TODA pantalla interna:
  *
  *  · Selector de empresa activa, siempre visible. Sus opciones son las empresas
  *    accesibles reales de la sesión; elegir una envía el `FormData` de
@@ -23,15 +25,17 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState, type ReactNode, type SVGProps } from 'react';
 import { salirAction } from '../entrar/acciones';
 import { cambiarEmpresaActivaAction } from './acciones';
-import { useDensidad, useEmpresa } from './contextos';
+import { useDensidad, useEmpresa, useTema } from './contextos';
 import {
   IconoAdmin,
   IconoBandeja,
   IconoChevronAbajo,
+  IconoLuna,
   IconoMarca,
   IconoParametros,
   IconoPuc,
   IconoReportes,
+  IconoSol,
   IconoSubir,
   IconoTerceros,
 } from './iconos';
@@ -148,19 +152,19 @@ function SelectorEmpresa({ destino }: { destino: string }) {
         onClick={() => setAbierto((v) => !v)}
         aria-haspopup="listbox"
         aria-expanded={abierto}
-        className="flex items-center gap-2.5 rounded-md border border-white/20 bg-white/10 px-3 py-1.5 text-left text-[13px] text-white hover:bg-white/15"
+        className="flex items-center gap-2.5 rounded-lg border border-borde bg-superficie-elevada px-3 py-1.5 text-left text-cuerpo text-texto transition-colors duration-150 hover:bg-superficie"
       >
         <span
-          className={`h-1.5 w-1.5 shrink-0 rounded-full ${activa ? 'bg-exito' : 'bg-white/40'}`}
+          className={`h-1.5 w-1.5 shrink-0 rounded-full ${activa ? 'bg-exito' : 'bg-texto-suave/40'}`}
           aria-hidden
         />
         <span className="flex flex-col leading-tight">
           <span className="font-semibold">{activa ? activa.razonSocial : 'Sin empresa (parámetros de la firma)'}</span>
-          <span className="text-[11px] text-white/60 tabular-nums">
+          <span className="text-metadata text-texto-suave tabular-nums">
             {activa ? `NIT ${activa.nit} · rol ${activa.rolCodigo}` : `${empresas.length} empresa(s) accesible(s)`}
           </span>
         </span>
-        <IconoChevronAbajo width={14} height={14} className="text-white/60" />
+        <IconoChevronAbajo width={14} height={14} className="text-texto-suave" />
       </button>
 
       {abierto && (
@@ -222,7 +226,7 @@ function ToggleDensidad() {
     <div
       role="group"
       aria-label="Densidad de la interfaz"
-      className="flex overflow-hidden rounded-md border border-white/20 text-[12px]"
+      className="flex gap-[2px] rounded-lg border border-borde bg-superficie p-[2px] text-menor"
     >
       {(['comodo', 'compacto'] as const).map((d) => (
         <button
@@ -230,14 +234,39 @@ function ToggleDensidad() {
           type="button"
           onClick={() => fijar(d)}
           aria-pressed={densidad === d}
-          className={`px-2.5 py-1 ${
-            densidad === d ? 'bg-white font-semibold text-primario' : 'text-white/70 hover:text-white'
+          className={`rounded-md px-2.5 py-1 transition-colors duration-150 ${
+            densidad === d
+              ? 'bg-superficie-elevada font-semibold text-texto shadow-[var(--shadow-tarjeta)]'
+              : 'text-texto-suave hover:text-texto'
           }`}
         >
           {d === 'comodo' ? 'Cómodo' : 'Compacto'}
         </button>
       ))}
     </div>
+  );
+}
+
+/** D-082 · tarea 7. Alterna claro/oscuro por elección explícita. El ícono
+ *  muestra el destino del clic: luna en tema claro (ir a oscuro), sol en
+ *  oscuro (volver a claro). */
+function ToggleTema() {
+  const { tema, alternar } = useTema();
+  const irA = tema === 'claro' ? 'oscuro' : 'claro';
+  return (
+    <button
+      type="button"
+      onClick={alternar}
+      aria-label={`Cambiar a tema ${irA}`}
+      title={`Cambiar a tema ${irA}`}
+      className="flex h-8 w-8 items-center justify-center rounded-lg border border-borde bg-superficie-elevada text-texto-suave transition-colors duration-150 hover:bg-superficie hover:text-texto"
+    >
+      {tema === 'claro' ? (
+        <IconoLuna width={15} height={15} />
+      ) : (
+        <IconoSol width={15} height={15} />
+      )}
+    </button>
   );
 }
 
@@ -260,13 +289,13 @@ function MenuUsuario({ usuario }: { usuario: { nombre: string; email: string } }
         onClick={() => setAbierto((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={abierto}
-        className="flex items-center gap-2 text-[13px]"
+        className="flex items-center gap-2 text-cuerpo"
       >
-        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primario-tinta-oscura text-[11px] font-semibold text-white">
+        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primario/10 text-metadata font-semibold text-primario dark:bg-primario-tinta-oscura/15 dark:text-primario-tinta-oscura">
           {iniciales(usuario.nombre)}
         </span>
-        <span className="text-white/85">{usuario.nombre}</span>
-        <IconoChevronAbajo width={13} height={13} className="text-white/60" />
+        <span className="text-texto">{usuario.nombre}</span>
+        <IconoChevronAbajo width={13} height={13} className="text-texto-suave" />
       </button>
       {abierto && (
         <div className="absolute right-0 top-full z-30 mt-1 w-64 overflow-hidden rounded-md border border-borde bg-superficie-elevada py-1 text-[13px] shadow-lg">
@@ -302,14 +331,18 @@ export function AppShell({
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-superficie text-texto">
-      <header className="flex h-13 shrink-0 items-center gap-5 bg-primario px-4 text-white">
-        <Link href="/" className="flex items-center gap-2 text-[15px] font-bold tracking-tight text-white">
-          <IconoMarca width={20} height={20} />
+      <header className="flex h-14 shrink-0 items-center gap-5 border-b border-borde bg-superficie-elevada px-4 text-texto">
+        <Link
+          href="/"
+          className="flex items-center gap-2 text-[15px] font-semibold tracking-tight text-texto"
+        >
+          <IconoMarca width={20} height={20} className="text-primario dark:text-primario-tinta-oscura" />
           Contable CO
         </Link>
         <SelectorEmpresa destino={pathname} />
-        <div className="ml-auto flex items-center gap-4">
+        <div className="ml-auto flex items-center gap-3">
           <ToggleDensidad />
+          <ToggleTema />
           {usuario && <MenuUsuario usuario={usuario} />}
         </div>
       </header>
@@ -317,9 +350,11 @@ export function AppShell({
       <div className="flex min-h-0 flex-1">
         <nav
           aria-label="Módulos"
-          className="flex w-56 shrink-0 flex-col gap-[2px] border-r border-white/10 bg-primario py-2.5 text-white/80"
+          className="flex w-60 shrink-0 flex-col gap-[2px] border-r border-borde bg-superficie-elevada py-3 text-texto-suave"
         >
-          <p className="px-4 pb-1.5 pt-2 text-[10px] font-semibold uppercase tracking-wider text-white/45">Módulos</p>
+          <p className="px-4 pb-1.5 pt-2 text-[10px] font-semibold uppercase tracking-wider text-texto-suave/70">
+            Módulos
+          </p>
           {MODULOS.map((m) => {
             const activo = moduloActivo(pathname, m.href);
             const Icono = m.icono;
@@ -328,21 +363,25 @@ export function AppShell({
                 key={m.href}
                 href={m.href}
                 aria-current={activo ? 'page' : undefined}
-                className={`flex items-center gap-3 border-l-[3px] px-4 py-2.5 text-[13px] ${
+                className={`mx-2 flex items-center gap-3 rounded-lg border-l-2 px-3 py-2 text-cuerpo transition-colors duration-150 ${
                   activo
-                    ? 'border-primario-tinta-oscura bg-primario font-semibold text-white'
-                    : 'border-transparent hover:bg-white/5 hover:text-white'
+                    ? 'border-primario bg-primario/8 font-semibold text-primario dark:border-primario-tinta-oscura dark:bg-primario-tinta-oscura/12 dark:text-primario-tinta-oscura'
+                    : 'border-transparent text-texto-suave hover:bg-superficie hover:text-texto'
                 }`}
               >
-                <Icono width={17} height={17} />
+                <Icono
+                  width={18}
+                  height={18}
+                  className={activo ? '' : 'text-texto-suave'}
+                />
                 {m.texto}
               </Link>
             );
           })}
-          <div className="mt-auto border-t border-white/10 px-4 py-3 text-[11px] text-white/45">
+          <div className="mt-auto border-t border-borde px-4 py-3 text-metadata text-texto-suave">
             {activa ? (
               <>
-                Empresa: <span className="text-white/70">{activa.razonSocial}</span>
+                Empresa: <span className="text-texto">{activa.razonSocial}</span>
               </>
             ) : (
               'Sin empresa en contexto'
@@ -351,7 +390,7 @@ export function AppShell({
         </nav>
 
         <main className="flex min-w-0 flex-1 flex-col">
-          <div className="flex shrink-0 items-center gap-2 border-b border-borde bg-superficie-elevada px-5 py-2.5 text-[12px] text-texto-suave">
+          <div className="flex shrink-0 items-center gap-2 border-b border-borde bg-superficie-elevada px-5 py-2.5 text-menor text-texto-suave">
             <ol className="flex flex-wrap items-center gap-1.5">
               <li className="flex items-center gap-1.5">
                 <Link href="/" className="hover:text-primario dark:hover:text-primario-tinta-oscura">

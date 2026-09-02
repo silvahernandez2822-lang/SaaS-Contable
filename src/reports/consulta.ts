@@ -347,6 +347,28 @@ const SELECT_RETENCION = `
   LEFT JOIN concepto_causacion cc ON cc.id = ra.concepto_causacion_id
 `;
 
+/**
+ * V-30 (A14, compuerta ampliada de V-23) — una retención SOLO cuenta como
+ * practicada si el asiento que la respalda está publicado.
+ *
+ * `retention_applied` es la TRAZA del motor de reglas, no el ledger: guarda
+ * también lo que se evaluó en un intento que después se anuló. Desde V-23 un
+ * documento rechazado por error y reprocesado deja DOS juegos de filas
+ * `aplicada = true` (el del asiento anulado y el del asiento vivo). A14 lo
+ * midió: el certificado de retenciones certificaba $44.000 sobre una retención
+ * real de $22.000, y la exógena reportaba lo mismo duplicado.
+ *
+ * El filtro descarta toda fila atada a un asiento que NO está `posted`
+ * (anulado por un rechazo, o todavía en borrador esperando aprobación: una
+ * retención pendiente de aprobar no se ha practicado). Las filas sin asiento
+ * pasan: son el estado transitorio dentro de la propia transacción de
+ * causación, y la única fuente de filas huérfanas quedó cerrada en V-29.
+ */
+const SOLO_RESPALDADA_POR_ASIENTO_PUBLICADO = `
+  NOT EXISTS (SELECT 1 FROM journal_entry je
+               WHERE je.id = ra.journal_entry_id AND je.estado <> 'posted')
+`;
+
 /** Certificado de retenciones: todas las retenciones APLICADAS a un tercero en el rango. */
 export async function retencionesPorTercero(
   tx: SqlClient,
@@ -357,13 +379,24 @@ export async function retencionesPorTercero(
      WHERE ra.third_party_id = $1
        AND ra.fecha_hecho_economico BETWEEN $2 AND $3
        AND ra.aplicada = true
+       AND ${SOLO_RESPALDADA_POR_ASIENTO_PUBLICADO}
      ORDER BY ra.tipo, ra.fecha_hecho_economico`,
     [opciones.terceroId, opciones.desde, opciones.hasta],
   );
   return rows;
 }
 
-/** Relación de retenciones practicadas por período y tipo: TODO tercero, aplicada o no (para ver el motivo). */
+/**
+ * Relación de retenciones practicadas por período y tipo: TODO tercero,
+ * aplicada o no (para ver el motivo).
+ *
+ * A diferencia del certificado, este reporte SÍ conserva las filas de asientos
+ * en borrador: su propósito es diagnóstico (por qué no se retuvo), y una
+ * causación pendiente de aprobar es información legítima para el contador. Lo
+ * que se descarta son las filas de un asiento ANULADO (V-30): un intento que
+ * se rechazó no es una retención evaluada del período, es basura de un
+ * reproceso, y sin el filtro aparecía duplicada junto a la del asiento bueno.
+ */
 export async function retencionesPorPeriodo(
   tx: SqlClient,
   rango: RangoFechas,
@@ -371,6 +404,8 @@ export async function retencionesPorPeriodo(
   const { rows } = await tx.query<FilaRetencionAplicada>(
     `${SELECT_RETENCION}
      WHERE ra.fecha_hecho_economico BETWEEN $1 AND $2
+       AND NOT EXISTS (SELECT 1 FROM journal_entry je
+                        WHERE je.id = ra.journal_entry_id AND je.estado = 'anulado')
      ORDER BY ra.tipo, tp.razon_social, ra.fecha_hecho_economico`,
     [rango.desde, rango.hasta],
   );

@@ -1,3 +1,5 @@
+import './src/db/dns-fix';
+
 /**
  * A15 — quién ejecuta la cola de causación en producción.
  *

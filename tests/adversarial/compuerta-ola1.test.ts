@@ -300,7 +300,13 @@ describe('A14 · COMPUERTA 1 — caso 15: la nota crédito no muta el asiento or
     expect(suma).toBe('0');
   });
 
-  it('no se puede reversar dos veces el mismo asiento: lo impide `journal_entry_reversa_uq`', async () => {
+  // El nombre de la restricción cambió en la migración 173 (A14, V-28):
+  // `journal_entry_reversa_uq` era TOTAL y confundía "ya se reversó" con "hubo
+  // un intento de reversa que se anuló", dejando irrecuperable una nota
+  // crédito rechazada por error. Ahora es el índice parcial
+  // `journal_entry_reversa_viva_uq`. El invariante que esta prueba defiende —
+  // no hay dos reversas VIVAS del mismo asiento — es exactamente el mismo.
+  it('no se puede reversar dos veces el mismo asiento: lo impide `journal_entry_reversa_viva_uq`', async () => {
     const { e, jobId } = await montarCausable('Factura con doble reversa');
     const causado = await db.asAdmin((tx) => procesarJobCausacion(tx, { id: jobId, sourceDocumentId: e.sourceDocumentId }));
     if (causado.estado !== 'causado' || !causado.journalEntryId) throw new Error('no causó');

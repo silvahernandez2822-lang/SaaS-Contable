@@ -18,9 +18,11 @@
  * `border-borde`) para las que se escriban a partir de ahora. Un solo sitio,
  * dos formas de consumirlo, sin migrar nada de lo ya construido.
  *
- * MODO OSCURO. Los tokens semánticos se REDEFINEN más abajo; las utilidades y
- * las variables no cambian de nombre. Una pantalla escrita contra
- * `--color-superficie` funciona en los dos modos sin una sola condición.
+ * MODO OSCURO. Tema claro por defecto SIEMPRE; el oscuro solo con
+ * `<html data-tema="oscuro">` (elección explícita del usuario, D-082 tarea 7).
+ * Los tokens semánticos se REDEFINEN más abajo; las utilidades y las variables
+ * no cambian de nombre. Una pantalla escrita contra `--color-superficie`
+ * funciona en los dos modos sin una sola condición.
  *
  * LO QUE NO ESTÁ APROBADO Y ESTÁ MARCADO COMO TAL. La paleta aprobada fija tres
  * valores para el modo oscuro (base, elevada y texto). Están DERIVADOS por
@@ -39,18 +41,17 @@
 @import 'tailwindcss' source('../app');
 
 /* -----------------------------------------------------------------------------
- * `dark:` responde a dos cosas, en este orden de mando:
- *   1. `<html data-tema="oscuro">` o `data-tema="claro"` — decisión explícita.
- *   2. `prefers-color-scheme` del sistema — cuando no hay decisión explícita.
- * Sin esto, `dark:` en Tailwind v4 solo miraría al sistema y un futuro selector
- * de tema en la interfaz no tendría cómo imponerse.
+ * TEMA CLARO POR DEFECTO, SIEMPRE (D-082, tarea 7 — fusiona D-081).
+ *
+ * `dark:` responde a UNA sola cosa: `<html data-tema="oscuro">`, una decisión
+ * EXPLÍCITA del usuario dentro de la aplicación (toggle en la barra superior,
+ * persistido en `localStorage` bajo `contable-co:tema`, aplicado antes del
+ * primer pintado por el script en línea de `app/layout.tsx`). El tema por
+ * defecto es claro sin importar la preferencia del sistema operativo: ya NO se
+ * mira `prefers-color-scheme`. El soporte de modo oscuro no se elimina —
+ * cualquiera puede activarlo con el toggle— solo deja de auto-detectarse por SO.
  * -------------------------------------------------------------------------- */
 @custom-variant dark {
-  @media (prefers-color-scheme: dark) {
-    &:where(:not([data-tema='claro'] *):not([data-tema='claro'])) {
-      @slot;
-    }
-  }
   &:where([data-tema='oscuro'], [data-tema='oscuro'] *) {
     @slot;
   }
@@ -70,6 +71,36 @@
     var(--fuente-inter), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Arial,
     sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+
+  /* --- Escala tipográfica (D-082, tarea 2) -------------------------------
+   * ÚNICA fuente de la jerarquía de texto. Nombres por ROL, no por tamaño:
+   * una pantalla escribe `text-titulo`, `text-cuerpo`, `text-metadata`, no un
+   * `text-[13px]` suelto. Cada token es una utilidad de Tailwind v4 con su
+   * interlínea emparejada. Migración: el kit de `app/_ui/` ya las usa; las
+   * pantallas con cuerpo viejo (ver PREFIJOS_SIN_MIGRAR) todavía llevan
+   * valores sueltos y se limpian al migrarse.
+   *   metadata → NIT, fechas, «hace 3 días», leyendas bajo un campo
+   *   menor    → texto auxiliar, celdas densas de tabla
+   *   cuerpo   → texto de interfaz por defecto
+   *   seccion  → subtítulo / encabezado de panel
+   *   titulo   → título de página (uno por pantalla) */
+  --text-metadata: 0.6875rem; /* 11px */
+  --text-metadata--line-height: 1rem;
+  --text-menor: 0.75rem; /* 12px */
+  --text-menor--line-height: 1.125rem;
+  --text-cuerpo: 0.8125rem; /* 13px */
+  --text-cuerpo--line-height: 1.25rem;
+  --text-seccion: 0.875rem; /* 14px */
+  --text-seccion--line-height: 1.375rem;
+  --text-titulo: 1.375rem; /* 22px */
+  --text-titulo--line-height: 1.75rem;
+  --text-titulo--letter-spacing: -0.02em;
+
+  /* --- Sombra de elevación (D-082, tarea 3) ----------------------------- *
+   * Una tarjeta = borde de 1px + esta sombra mínima. No hay una segunda
+   * sombra más marcada: la elevación en esta interfaz es sutil por norma. */
+  --shadow-tarjeta: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --radius-tarjeta: 0.75rem; /* 12px — radio único de tarjetas y paneles */
 
   /* --- Color de marca ----------------------------------------------------- */
   --color-primario: #1e3a5f;
@@ -120,31 +151,14 @@
 }
 
 /* -----------------------------------------------------------------------------
- * MODO OSCURO. Se redefinen SOLO los tokens que cambian. `--color-primario` NO
- * cambia: sigue siendo el azul de la marca y sigue sirviendo como FONDO con
- * `--color-primario-contraste` encima. Como TINTA sobre fondo oscuro no tiene
- * contraste suficiente: para eso se redefine `--color-primario-tinta-oscura`
- * (azul primario aclarado, valor derivado no aprobado — ver su comentario
- * arriba).
+ * MODO OSCURO. Se activa SOLO con `<html data-tema="oscuro">` — elección
+ * explícita del usuario (D-082, tarea 7). Se redefinen SOLO los tokens que
+ * cambian. `--color-primario` NO cambia: sigue siendo el azul de la marca y
+ * sigue sirviendo como FONDO con `--color-primario-contraste` encima. Como
+ * TINTA sobre fondo oscuro no tiene contraste suficiente: para eso se redefine
+ * `--color-primario-tinta-oscura` (azul primario aclarado, valor derivado no
+ * aprobado — ver su comentario arriba).
  * -------------------------------------------------------------------------- */
-:root:not([data-tema='claro']) {
-  @media (prefers-color-scheme: dark) {
-    --color-superficie: #09090b;
-    --color-superficie-elevada: #18181b;
-    --color-texto: #fafafa;
-    --color-texto-suave: #a1a1aa; /* derivado — no aprobado */
-    --color-borde: #27272a; /* derivado — no aprobado */
-    --color-primario-tinta-oscura: #5b8dbe; /* derivado — no aprobado */
-    /* Tintas de estado ACLARADAS para texto plano sobre superficie oscura
-     * (#09090b): los tonos base quedarían justos —`#ef4444` da 5,3:1— así que
-     * se sube un paso. Derivados, no aprobados. */
-    --color-exito-tinta: #34d399; /* sobre #09090b = 10:1 */
-    --color-error-tinta: #f87171; /* sobre #09090b = 7:1 */
-    --color-pendiente-tinta: #fbbf24; /* sobre #09090b = 12:1 */
-    color-scheme: dark;
-  }
-}
-
 :root[data-tema='oscuro'] {
   --color-superficie: #09090b;
   --color-superficie-elevada: #18181b;
@@ -162,7 +176,7 @@
  * ESCOTILLA DE TEMA POR SUBÁRBOL (D-078). Las dos reglas de arriba solo miran
  * `<html data-tema="...">`: fijan el tema de TODA la aplicación. `body` lee
  * `var(--color-texto)` una sola vez y ese `color` computado es lo que heredan
- * las pantallas sin `color` propio — así que en modo oscuro del sistema, el
+ * las pantallas sin `color` propio — así que con el tema oscuro activo, el
  * texto que `body` reparte se aclara.
  *
  * CAUSA RAÍZ DEL BUG DE CONTRASTE (D-078, tarea 1): las rutas aún sin migrar

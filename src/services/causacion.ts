@@ -138,6 +138,38 @@ function jsonComoObjeto<T>(valor: unknown): T {
   return (typeof valor === 'string' ? JSON.parse(valor) : valor) as T;
 }
 
+/**
+ * Clave de idempotencia de un asiento de causación (V-23).
+ *
+ * El primer intento usa `causacion:<doc>` — retrocompatible con todo lo ya
+ * escrito. Solo se versiona (`causacion:<doc>#2`, `#3`, …) por cada asiento de
+ * causación ANULADO que el documento dejó atrás — el rastro de una rechazada
+ * que se reintegró (`app.reintegrar_documento_rechazado`).
+ *
+ * Se cuentan SOLO los anulados a propósito: si existe un asiento de causación
+ * VIVO con la clave base (otro worker ganó la carrera antes de este INSERT),
+ * este intento vuelve a elegir la clave base, choca contra `journal_entry_idem_uq`
+ * y el `catch` lo reconoce como `ya_procesado` — nunca crea un segundo asiento
+ * vivo (D-043). `#n` es un identificador técnico, no un valor tributario
+ * (Regla de Oro 2).
+ */
+async function idempotencyKeyCausacion(
+  tx: SqlClient,
+  companyId: string,
+  sourceDocumentId: string,
+): Promise<string> {
+  const base = `causacion:${sourceDocumentId}`;
+  const { rows } = await tx.query<{ n: string }>(
+    `SELECT count(*)::text AS n FROM journal_entry
+      WHERE company_id = $1 AND source_document_id = $2
+        AND idempotency_key LIKE 'causacion:%'
+        AND estado = 'anulado'`,
+    [companyId, sourceDocumentId],
+  );
+  const anulados = Number(rows[0]?.n ?? '0');
+  return anulados === 0 ? base : `${base}#${anulados + 1}`;
+}
+
 // =============================================================================
 // CONSTRUCCIÓN DE PARTIDAS (mecánica contable, no tributaria)
 // =============================================================================
@@ -396,6 +428,13 @@ export async function procesarJobCausacion(
   // Idempotencia (caso dorado 18): un documento que ya avanzó más allá de
   // "parseado" no se vuelve a resolver. Reprocesar 10 veces produce el mismo
   // asiento porque, a partir de la segunda vez, ni siquiera se intenta.
+  //
+  // 'rechazado' NO está en la lista a propósito (V-23): el motor nunca recausa
+  // una rechazada por su cuenta. El único camino de vuelta es el gate auditado
+  // `app.reintegrar_documento_rechazado`, que exige `documento.reprocesar`,
+  // comprueba que el asiento en conflicto quedó anulado y deja rastro en
+  // `audit_log` (quién, cuándo, desde qué estado) ANTES de devolver el
+  // documento a 'parseado'.
   if (!['recibido', 'parseado'].includes(doc.estado)) {
     const { rows: entryRows } = await tx.query<{ id: string }>(
       `SELECT id FROM journal_entry WHERE source_document_id = $1 AND tipo <> 'reversa' LIMIT 1`,
@@ -576,13 +615,23 @@ async function causarFactura(
     doc.third_party_id,
   );
 
+  // Las dos salidas a revisión manual que quedan DESPUÉS del SAVEPOINT tienen
+  // que deshacer lo ya escrito (A14, V-29). Sin el ROLLBACK, un documento que
+  // acaba en revisión manual por falta de período abierto o por una cuenta sin
+  // configurar dejaba sus filas de `retention_applied` (con `aplicada = true`)
+  // escritas y con `journal_entry_id = NULL`: traza huérfana que NINGÚN asiento
+  // respalda, y que la reportería tributaria —certificado de retenciones y
+  // exógena leen `retention_applied`, no el ledger— no puede distinguir de una
+  // retención realmente practicada.
   if (motivosPartidas.length > 0) {
+    await tx.exec('ROLLBACK TO SAVEPOINT causacion_asiento');
     await completarJob(tx, jobId, { requiereRevisionManual: true, motivos: motivosPartidas });
     return { estado: 'revision_manual', motivos: motivosPartidas };
   }
 
   const fiscalPeriodId = await abrirPeriodoFiscal(tx, doc.company_id, doc.fecha_hecho_economico);
   if (!fiscalPeriodId) {
+    await tx.exec('ROLLBACK TO SAVEPOINT causacion_asiento');
     const m = [
       {
         codigo: 'sin_periodo_fiscal_abierto',
@@ -599,6 +648,11 @@ async function causarFactura(
     sourceDocumentId: doc.id,
   });
 
+  // V-23: clave versionada si el documento ya dejó asientos de causación atrás
+  // (una rechazada que se reintegró). El primer intento sigue siendo
+  // `causacion:<doc>`.
+  const idempotencyKey = await idempotencyKeyCausacion(tx, doc.company_id, doc.id);
+
   let journalEntryId: string;
   try {
     journalEntryId = await insertarAsientoBorrador(
@@ -610,7 +664,7 @@ async function causarFactura(
         sourceDocumentId: doc.id,
         approvalId,
         descripcion: `Causación automática — documento ${doc.cufe ?? doc.id}`,
-        idempotencyKey: `causacion:${doc.id}`,
+        idempotencyKey,
       },
       partidas,
     );
@@ -618,11 +672,15 @@ async function causarFactura(
   } catch (error) {
     await tx.exec('ROLLBACK TO SAVEPOINT causacion_asiento');
     // Carrera: otro worker ya causó este documento entre el chequeo de estado
-    // de arriba y este INSERT. `journal_entry_idem_uq` es la que lo atrapa.
+    // de arriba y este INSERT. La atrapa `journal_entry_idem_uq` (misma clave).
+    // Se devuelve el asiento de causación VIVO del documento.
     if (isPostgresError(error) && error.code === SQLSTATE.UNIQUE_VIOLATION) {
       const { rows: existente } = await tx.query<{ id: string }>(
-        `SELECT id FROM journal_entry WHERE company_id = $1 AND idempotency_key = $2`,
-        [doc.company_id, `causacion:${doc.id}`],
+        `SELECT id FROM journal_entry
+          WHERE company_id = $1 AND source_document_id = $2
+            AND tipo <> 'reversa' AND estado <> 'anulado'
+          ORDER BY created_at DESC LIMIT 1`,
+        [doc.company_id, doc.id],
       );
       await completarJob(tx, jobId, { yaProcesado: true, carreraDetectada: true });
       return { estado: 'ya_procesado', journalEntryId: existente[0]?.id ?? null };
@@ -706,6 +764,33 @@ async function causarNotaCredito(
     return { estado: 'revision_manual', motivos: m };
   }
 
+  // El período fiscal se comprueba ANTES de escribir nada (A14, V-28): con
+  // el orden anterior, una nota fuera de todo período abierto ya había dejado
+  // escritas sus filas de `retention_applied` con `journal_entry_id = NULL` —
+  // traza huérfana que ningún asiento respalda y que la reportería tributaria
+  // no puede distinguir de una retención real.
+  const fiscalPeriodId = await abrirPeriodoFiscal(tx, nota.company_id, nota.fecha_hecho_economico);
+  if (!fiscalPeriodId) {
+    const m = [
+      {
+        codigo: 'sin_periodo_fiscal_abierto',
+        detalle: `No hay un período fiscal abierto que cubra ${nota.fecha_hecho_economico}.`,
+      },
+    ];
+    await completarJob(tx, jobId, { requiereRevisionManual: true, motivos: m });
+    return { estado: 'revision_manual', motivos: m };
+  }
+
+  // SAVEPOINT antes de escribir NADA (misma corrección que `causarFactura`
+  // recibió en D-043, y que a la nota crédito NUNCA se le aplicó — A14 lo
+  // encontró en la compuerta ampliada de V-23, V-28). Sin él, cualquier
+  // violación de unicidad al insertar el asiento (`journal_entry_idem_uq` en
+  // una carrera, `journal_entry_reversa_viva_uq` si otro intento vivo ya
+  // reversa el mismo original) abortaba la transacción ENTERA del worker: ni
+  // se completaba el trabajo, ni se limpiaban las filas de
+  // `retention_applied` ya escritas, y el job volvía a fallar en cada intento.
+  await tx.exec('SAVEPOINT causacion_nota');
+
   const idsReversa = await persistirLista(
     tx,
     { tenantId: nota.tenant_id, companyId: nota.company_id, sourceDocumentId: nota.id, journalEntryId: null },
@@ -767,39 +852,49 @@ async function causarNotaCredito(
     });
   }
 
-  const fiscalPeriodId = await abrirPeriodoFiscal(tx, nota.company_id, nota.fecha_hecho_economico);
-  if (!fiscalPeriodId) {
-    const m = [
-      {
-        codigo: 'sin_periodo_fiscal_abierto',
-        detalle: `No hay un período fiscal abierto que cubra ${nota.fecha_hecho_economico}.`,
-      },
-    ];
-    await completarJob(tx, jobId, { requiereRevisionManual: true, motivos: m });
-    return { estado: 'revision_manual', motivos: m };
-  }
-
   const approvalId = await crearApprovalPlaceholder(tx, {
     tenantId: nota.tenant_id,
     companyId: nota.company_id,
     sourceDocumentId: nota.id,
   });
 
-  const journalEntryId = await insertarAsientoBorrador(
-    tx,
-    {
-      tenantId: nota.tenant_id,
-      companyId: nota.company_id,
-      fiscalPeriodId,
-      sourceDocumentId: nota.id,
-      approvalId,
-      descripcion: `Reversa ${total ? 'total' : 'proporcional'} por nota — documento ${nota.cufe ?? nota.id}`,
-      idempotencyKey: `causacion:${nota.id}`,
-      tipo: 'reversa',
-      reversesEntryId: entryOriginal.id,
-    },
-    partidas,
-  );
+  let journalEntryId: string;
+  try {
+    journalEntryId = await insertarAsientoBorrador(
+      tx,
+      {
+        tenantId: nota.tenant_id,
+        companyId: nota.company_id,
+        fiscalPeriodId,
+        sourceDocumentId: nota.id,
+        approvalId,
+        descripcion: `Reversa ${total ? 'total' : 'proporcional'} por nota — documento ${nota.cufe ?? nota.id}`,
+        // V-23: versionada si la nota ya se causó, se rechazó y se reintegró.
+        idempotencyKey: await idempotencyKeyCausacion(tx, nota.company_id, nota.id),
+        tipo: 'reversa',
+        reversesEntryId: entryOriginal.id,
+      },
+      partidas,
+    );
+    await tx.exec('RELEASE SAVEPOINT causacion_nota');
+  } catch (error) {
+    await tx.exec('ROLLBACK TO SAVEPOINT causacion_nota');
+    // Misma semántica que en `causarFactura`: si otro intento ya dejó un
+    // asiento VIVO para esta nota (misma clave de idempotencia) o una reversa
+    // viva sobre el mismo asiento original, esto es una carrera, no un error
+    // del documento. Se devuelve el asiento vivo y el trabajo se cierra.
+    if (isPostgresError(error) && error.code === SQLSTATE.UNIQUE_VIOLATION) {
+      const { rows: existente } = await tx.query<{ id: string }>(
+        `SELECT id FROM journal_entry
+          WHERE company_id = $1 AND source_document_id = $2 AND estado <> 'anulado'
+          ORDER BY created_at DESC LIMIT 1`,
+        [nota.company_id, nota.id],
+      );
+      await completarJob(tx, jobId, { yaProcesado: true, carreraDetectada: true });
+      return { estado: 'ya_procesado', journalEntryId: existente[0]?.id ?? null };
+    }
+    throw error;
+  }
 
   await tx.query(`UPDATE retention_applied SET journal_entry_id = $1 WHERE id = ANY($2::uuid[])`, [
     journalEntryId,

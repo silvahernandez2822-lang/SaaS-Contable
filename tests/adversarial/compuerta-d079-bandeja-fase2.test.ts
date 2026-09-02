@@ -208,10 +208,11 @@ describe('A14 · D-079 — edición de línea del asiento borrador', () => {
 });
 
 describe('A14 · D-079 — sub-bandeja de rechazadas', () => {
-  it('reintegrar una rechazada que dejó un asiento en conflicto se BLOQUEA con mensaje claro', async () => {
+  it('reintegrar una rechazada cuyo asiento en conflicto NO está anulado se BLOQUEA (V-23: el resguardo se mantiene)', async () => {
     const e = await crearEscenario(db);
-    // Simula el rastro real: la causación creó un borrador con la clave
-    // `causacion:<doc>` y el rechazo lo anuló; el documento quedó 'rechazado'.
+    // Estado ANÓMALO a propósito: un asiento de causación VIVO (draft, sin
+    // anular) mientras el documento figura 'rechazado'. El resguardo
+    // REPROCESO_BLOQUEADO de V-23 no se relaja para este caso.
     await db.asAdmin(async (tx) => {
       await crearAsientoBorrador(tx, e, partidasEquilibradas(e), {
         idempotencyKey: `causacion:${e.sourceDocumentId}`,
@@ -224,7 +225,7 @@ describe('A14 · D-079 — sub-bandeja de rechazadas', () => {
     });
     const fila = rechazadas.find((d) => d.sourceDocumentId === e.sourceDocumentId)!;
     expect(fila.puedeReprocesar).toBe(false);
-    expect(fila.motivoBloqueoReproceso).toMatch(/idempotencia|asiento contable/i);
+    expect(fila.motivoBloqueoReproceso).toMatch(/no está anulado|anómalo/i);
 
     await expect(
       db.asTenant(e.tenantId, e.companyId, (tx) => reintegrarDocumentoRechazado(tx, e.sourceDocumentId), {

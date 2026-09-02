@@ -240,9 +240,11 @@ export async function editarLineaAction(formData: FormData): Promise<void> {
 export async function reprocesarRechazadaAction(formData: FormData): Promise<void> {
   const companyId = leer(formData, 'companyId');
   const sourceDocumentId = leer(formData, 'sourceDocumentId');
+  const motivoRaw = formData.get('motivo');
+  const motivo = typeof motivoRaw === 'string' ? motivoRaw : null;
 
   try {
-    await conSesionEmpresa(companyId, (tx) => reintegrarDocumentoRechazado(tx, sourceDocumentId));
+    await conSesionEmpresa(companyId, (tx) => reintegrarDocumentoRechazado(tx, sourceDocumentId, motivo));
   } catch (error) {
     const mensaje = error instanceof Error ? error.message : String(error);
     redirect(`/bandeja?vista=rechazadas&error=${encodeURIComponent(mensaje)}`);
