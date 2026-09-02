@@ -47,6 +47,37 @@
 > (terceros) desde D-077 — esta fase no migra ningún módulo, solo corrige el fondo y prepara el terreno.
 > Ver «D-078» para el detalle completo.
 >
+> 2026-09-02, después de eso — **Fase 2 de la ola de refinamiento de interfaz: funcionalidad real de
+> `/bandeja` (D-079).** Auditoría previa primero: la **aprobación en lote ya existía y funciona** (solo se
+> pulió la UX); se construyó lo que faltaba — **filtros** (fecha → a la consulta; proveedor/monto/score →
+> sobre el consolidado), **edición de cuenta y monto de línea del asiento borrador** con descuadre en vivo
+> y justificación obligatoria en `audit_log` (`editarAsientoBorrador` + `app.registrar_edicion_asiento_borrador`),
+> **sub-bandeja de rechazadas** con archivar (`estado='archivado'`, la fila permanece) y reprocesar
+> acotado, y **visor del XML original** formateado. Migración `171_a7_d079_bandeja_fase2.sql` (tres
+> funciones, ninguna `SECURITY DEFINER`). **Diferido a una ola futura con A3:** la reintegración de una
+> rechazada que ya tuvo asiento causado y anulado (conflicto de `idempotency_key` + falta la transición
+> `rechazado → parseado` en `causarFactura`); hoy se bloquea con `REPROCESO_BLOQUEADO`. `tsc` limpio,
+> `next build` **exit 0, 40 rutas** (el fallo de PGlite de D-078 era del entorno de nube, no se reproduce
+> en local), `npm test` **1003 en verde** (49 archivos). Sin comitear: pendiente de `npm run dev`.
+> ~~Pendiente: compuerta ampliada de A14.~~ Ver «D-079» para el detalle y la auditoría completa.
+>
+> 2026-09-02, después de eso — **COMPUERTA AMPLIADA DE D-079 (QA adversarial + arquitecto + product
+> owner). Veredicto de A14: PASA, con SIETE defectos encontrados y CORREGIDOS por A14 en la misma
+> pasada, y V-23 declarada abierta.** A14 no le creyó al reporte: escribió su propia suite
+> (`tests/adversarial/a14-d079-ampliada.test.ts`, 14 pruebas) contra lo que la compuerta de A7 no
+> intentó. Lo grave que apareció: **se podía mutar un asiento YA PUBLICADO** por una carrera entre la
+> edición y la aprobación (faltaba `FOR UPDATE`, Regla de Oro 1); **un humano podía reescribir el monto
+> de una retención calculada por el motor**, haciendo divergir para siempre el ledger de
+> `retention_applied` —que es la fuente de la exógena y de los certificados— sin que nada lo dijera
+> (Reglas de Oro 4 y 6); y el **filtro de monto escondía facturas que sí había que aprobar** porque el
+> formulario pide pesos y comparaba contra centavos. También: una fecha inválida en la URL tumbaba la
+> bandeja entera, una cuenta desactivada seguía siendo imputable, la interfaz prometía un
+> «desarchivar» que no existe y el bloqueo de reproceso aconsejaba una salida —«vuelva a cargar el
+> XML»— que A14 probó y **no funciona**. Todo corregido con prueba de regresión. **V-23, ABIERTA (A3 +
+> A2): una factura rechazada por error no se recupera por ningún camino de la interfaz** — no bloquea
+> D-079, sí bloquea la operación real con un cliente. Suite: **1017 en verde** (50 archivos),
+> typecheck limpio, `next build` exit 0 (40 rutas). Sin comitear.
+>
 > Registro histórico: 2026-08-31 — **A14, compuerta del LOTE POSTERIOR A LA OLA 3 (V-17/A8, V-18/A11,
 > arranque y repaso 14.1/A12, datos de ejemplo/A1, entorno y despliegue/A15). Veredicto: LOTE APROBADO,
 > con tres vulnerabilidades encontradas por A14 y CORREGIDAS por A14 en la misma pasada (V-20, V-21,
@@ -1798,10 +1829,176 @@ heredan el shell nuevo alrededor de su cuerpo viejo: la navegación funciona en 
 
 ---
 
+### D-079 — Fase 2 de la ola de refinamiento de interfaz: funcionalidad real de `/bandeja`
+
+**Encargo:** completar la FUNCIONALIDAD de la bandeja de causación que D-077 dejó solo restyleada,
+auditando primero qué existe. Migración `171_a7_d079_bandeja_fase2.sql`.
+
+**Resultado de la auditoría previa (qué existía vs. qué se construyó):**
+
+| # | Punto | Estado encontrado | Acción |
+|---|-------|-------------------|--------|
+| 1 | Aprobación en lote (selección múltiple) | **YA EXISTÍA y funcional**: checkboxes `name="sel"` = `companyId::journalEntryId`, `aprobarSeleccionAction` → `aprobarAsientosEnLote` real, agrupando por empresa, con `SAVEPOINT` por ítem (D-050). | Solo UX: «seleccionar todas/ninguna» (`SelectorTodas`), enlace al XML, lista con detalle plegable. El mecanismo **no se tocó**. |
+| 2 | Filtros (fecha, proveedor, monto, score) | **NO EXISTÍAN**: `page.tsx` solo leía `?error`. | Construidos. El rango de fecha del hecho económico **baja a la consulta** (`listarPendientesDeAprobacion({ desde, hasta })`) — filtrar tras el `LIMIT` dejaría fuera documentos válidos. Proveedor/monto/score se aplican sobre el consolidado en `app/lib/bandeja.ts` (no son monótonos con el orden; volumen acotado por `LIMITE_POR_EMPRESA`). Score = `extraction.score_confianza` (0–100), expuesto en `EstadoDocumento`. Autocompletar de proveedor contra `listarTerceros` real. |
+| 3 | Edición de cuenta + monto de línea con justificación | **NO EXISTÍA**: `PartidasAsiento` era solo lectura; no había servicio para editar un borrador. | `editarAsientoBorrador` (nuevo, `src/services/causacion.ts`). Cambian cuenta (código PUC del plan efectivo, exige `permite_movimiento`) y/o monto. **Cualquier cambio exige justificación no vacía** (Regla de Oro 6). El asiento resultante **tiene que cuadrar**: se impone en el servicio, no solo en la UI (`EditorLineasAsiento` muestra el descuadre en vivo). Rastro en `audit_log` vía `app.registrar_edicion_asiento_borrador` (antes/después de todas las líneas + justificación). Editar un asiento `posted` se rechaza (Regla de Oro 1). |
+| 4 | Facturas rechazadas | **Desaparecían sin rastro visible**: `estado='rechazado'`, fuera de `listarPendientesDeAprobacion`. Sin vista, sin reproceso. | Pestaña «Rechazadas» (`?vista=rechazadas`) con `listarRechazadas`. **Archivar**: `estado='archivado'` (nuevo en el CHECK) — la fila, el `xml_crudo` y el `audit_log` permanecen; sale de todas las vistas; reversible por admin. Confirmación fuerte (teclear `ARCHIVAR` + motivo). **Reprocesar**: solo si el documento no dejó un asiento con la clave `causacion:<doc>`; si la dejó, se **bloquea** con `REPROCESO_BLOQUEADO` y un mensaje accionable (ver «Pendiente» abajo). |
+| 5 | Ver documento original (XML/PDF) | **NO EXISTÍA botón.** El XML sí estaba en `source_document.xml_crudo`. No hay PDF almacenado. | Ruta `/bandeja/documento/[sourceDocumentId]?empresa=<companyId>` con `obtenerDocumentoOriginal` + `formatearXml` (indentado, sin dependencias). Si el XML se archivó en frío (`xml_almacenamiento='archivo_frio'`), lo dice. «PDF si existe» hoy nunca existe: se documenta en la propia pantalla. |
+
+**Migración `171`:** (a) `source_document_estado_check` + `'archivado'`; (b) `app.registrar_edicion_asiento_borrador(uuid, jsonb, jsonb, text)`; (c) `app.archivar_documento_rechazado(uuid, text)` y `app.reintegrar_documento_rechazado(uuid)`. Las tres funciones **NO son `SECURITY DEFINER`** (mismo patrón que `app.registrar_exportacion`, D-062): `app_user` ya tiene INSERT sobre `audit_log` y UPDATE sobre `source_document`; solo encapsulan y exigen el permiso (`causacion.editar_borrador` / `documento.reprocesar`). No entran en el inventario de funciones DEFINER de `evasion.test.ts` / `compuerta-ola1`.
+
+**Descuadre — defensa en profundidad (verificado por A14).** El constraint trigger `trg_journal_line_validar_balance` solo valida cuando el asiento está `posted`; un borrador puede quedar descuadrado en la BD. Por eso el bloqueo vive en TRES capas: `EditorLineasAsiento` (UI, no deja enviar), `editarAsientoBorrador` (servicio, rechaza con mensaje) y el trigger de publicación (respaldo final, `LG002`). `tests/adversarial/compuerta-d079-bandeja-fase2.test.ts` prueba explícitamente el caso de saltarse la UI y llamar al servicio con montos descuadrados: el servicio lo rechaza y el asiento original queda intacto.
+
+**PENDIENTE EXPLÍCITO — para una ola futura con A3 sobre el motor de causación:**
+la **reintegración completa de una rechazada que YA tuvo un asiento causado y anulado**. Hoy se bloquea
+a propósito (`REPROCESO_BLOQUEADO`). Los dos obstáculos, ya identificados:
+
+1. **Conflicto de `idempotency_key`.** Todo documento que llegó a `pendiente_aprobacion` generó un
+   `journal_entry` con `idempotency_key = 'causacion:<doc>'`; el rechazo lo dejó `anulado` pero la clave
+   sigue ocupada (`journal_entry_idem_uq UNIQUE (company_id, idempotency_key)`). `causarFactura` volvería
+   a fallar con un `23505` crudo al reinsertar el borrador. Reintegrar exige liberar o renombrar esa
+   clave — decisión de ledger de A2/A3.
+2. **Falta la transición de estado.** `causarFactura` solo acepta `source_document.estado ∈ {recibido,
+   parseado}` (`src/services/causacion.ts` ~L399). No existe hoy un camino `rechazado → parseado` en el
+   motor; `app.reintegrar_documento_rechazado` lo hace SOLO para el caso sin asiento en conflicto.
+
+Mientras tanto, el camino soportado para ese caso es volver a cargar el documento original desde la
+carga masiva (el mensaje de `REPROCESO_BLOQUEADO` lo dice).
+
+**Verificación:** `npx tsc --noEmit` limpio · `npx next build` **exit 0, 40 rutas** (el problema de PGlite
+que apareció en el entorno de nube en D-078 **no se reproduce en local** — era del entorno) · `npm test`
+**1003 en verde** (49 archivos), incluida la compuerta nueva `compuerta-d079-bandeja-fase2.test.ts` (10
+pruebas). **Sin comitear:** pendiente de `npm run dev`. ~~Pendiente: compuerta ampliada de A14~~ →
+**ejecutada, ver «Compuerta ampliada de D-079 — veredicto de A14» aquí abajo.**
+
+---
+
+### Compuerta ampliada de D-079 (QA adversarial + arquitecto + product owner) — veredicto de A14
+
+**Veredicto: PASA, con SIETE defectos encontrados por A14 y CORREGIDOS por A14 en la misma pasada, y
+un hueco de producto DECLARADO Y ABIERTO (V-23) que no bloquea esta entrega pero sí bloquea la
+operación real de una firma.** A14 no verificó por reporte: escribió su propia suite,
+`tests/adversarial/a14-d079-ampliada.test.ts` (14 pruebas), que ataca lo que la compuerta entregada
+por A7 **no intentó**. Suite total: **1017 en verde** (50 archivos), `npx tsc --noEmit` limpio,
+`npx next build` exit 0 (40 rutas). Sin comitear.
+
+**Lo que A14 verificó él mismo y PASA sin tocar nada:**
+
+| Comprobación | Resultado |
+|---|---|
+| Guardar un borrador **descuadrado** llamando directo a `editarAsientoBorrador` (saltándose la UI) | Rechazado. El asiento original queda intacto |
+| Editar **sin justificación** | Rechazado (Regla de Oro 6) |
+| Editar un asiento **`posted`** | Rechazado (Regla de Oro 1) |
+| Editar el asiento de **otra firma** | «no existe en el contexto actual» — lo corta RLS, no un filtro de aplicación (Regla de Oro 7) |
+| **Archivar/reintegrar** el documento de otra firma | `DOCUMENTO_INEXISTENTE`; el documento ajeno no se mueve |
+| Rol **`solo_lectura`** editando un borrador | Rechazado por `causacion.editar_borrador` (probado con un usuario distinto: los permisos son la UNIÓN de los roles del usuario en la empresa, así que reusar el contador del escenario probaba de menos) |
+| Archivar algo **que no está rechazado**, y archivar **sin motivo** | `ESTADO_INVALIDO` / `MOTIVO_OBLIGATORIO` |
+| `archivado` como estado **terminal** | Ni se reintegra ni se re-archiva; sale de `listarRechazadas` **y** de `listarPendientesDeAprobacion` |
+| **Fidelidad del `audit_log`** | La fila lleva `user_id`, `tenant_id`, `company_id`, `ip`, `request_id`, el **antes** completo, el **después** completo y la justificación. Fiel |
+| Confirmación fuerte de archivar | La exige la **acción de servidor**, no solo el componente cliente |
+
+**Defectos encontrados por A14 y corregidos por A14 (todos con prueba de regresión):**
+
+1. **Carrera edición ↔ publicación: se podía mutar un asiento YA PUBLICADO** (Regla de Oro 1).
+   `editarAsientoBorrador` leía `estado` sin bloquear la fila. Ventana real: la edición lee `draft`,
+   otra transacción aprueba y publica, y el `UPDATE journal_line` de la primera cae sobre un asiento
+   ya `posted` — el trigger `journal_line_inmutable` había visto `draft` al dispararse y el de balance
+   no protesta porque la edición cuadra. **Corregido:** `SELECT estado FROM journal_entry WHERE id=$1
+   FOR UPDATE`. `aprobarAsiento` toma esa misma fila con su `UPDATE`, así que ahora una de las dos
+   espera y relee.
+2. **Un humano podía reescribir el monto de una RETENCIÓN calculada por el motor** (Reglas de Oro 4 y
+   6). `journal_line.retention_applied_id` amarra la partida a la base, tarifa, regla y vigencia con
+   que se calculó; la exógena lee `retention_applied.valor` (Formatos 1001/1003) y el pago/abono lo lee
+   del ledger. Editar esa partida hacía **divergir para siempre las dos fuentes**, sin que ninguna
+   dijera que un humano se apartó del motor. **Corregido:** una partida con `retention_applied_id` no
+   se edita — ni monto ni cuenta —, con mensaje accionable (corrija el concepto/parámetro y reprocese,
+   o rechace y vuelva a causar). La UI la pinta de solo lectura y la manda en `hidden` para no romper
+   el contrato de «todas las líneas». Las partidas no retenidas del mismo asiento se siguen editando.
+3. **El filtro de monto ESCONDÍA facturas que sí había que aprobar.** El formulario pide **pesos**
+   («Monto mín. (pesos)») y el valor entraba crudo como **centavos**: filtrar «hasta $1.000.000»
+   mostraba solo lo que no pasara de $10.000. **Corregido** en `normalizarFiltros` (pesos → centavos).
+4. **Una fecha inválida en la URL reventaba la bandeja entera.** `?desde=no-es-fecha` bajaba a un
+   `::date` y tumbaba la pantalla de las 30-60 empresas con un `22007` sin manejar. **Corregido:** lo
+   que no es una fecha ISO **real** (`2026-13-45` cumple el patrón y no es fecha) no filtra.
+5. **Una cuenta DESACTIVADA seguía siendo imputable desde la edición.** `listarCuentasImputables`
+   filtra `activo`; `editarAsientoBorrador` no. Desactivar una cuenta es justo el mecanismo con el que
+   una empresa la retira de su plan (D-064). **Corregido** en el servicio, que es donde importa.
+6. **La interfaz prometía algo que el sistema no hace:** «un administrador puede devolverla» al
+   archivar. No existe función ni pantalla de desarchivar; `archivado` es terminal. **Corregido el
+   texto** (y el `COMMENT` de la migración) para que diga la verdad; la capacidad queda como faltante
+   asignada a A7.
+7. **La salida que el bloqueo de reproceso le ofrecía al contador no existe.** El mensaje de
+   `REPROCESO_BLOQUEADO` decía «vuelva a cargar el documento original desde la carga masiva». A14 lo
+   probó: la ingesta deduplica por (empresa, CUFE) y por (empresa, hash), converge en **la misma fila**,
+   y el motor la da por `ya_procesado` porque su estado ya pasó de `parseado`. **La factura se queda
+   rechazada en silencio.** **Corregido el mensaje** en el servicio y en la migración; el hueco real es
+   V-23.
+
+**Mejora de producto añadida por A14 (riesgo contable, no cosmética):** la bandeja trae **20
+documentos por empresa** y no había ni paginación ni aviso. Con 40 pendientes en la empresa 37, veinte
+eran invisibles y nadie lo sabía. Ahora la pantalla avisa qué empresas llegaron al tope
+(`empresasTruncadas`) y el texto de los filtros dice «las 20 más **antiguas**», que es lo que la
+consulta trae (`ORDER BY fecha_hecho_economico` ascendente), no «las más recientes» como decía.
+
+**Lectura de ARQUITECTO.** La solución encaja: `editarAsientoBorrador` no toca nada `posted`, el
+balance se impone en tres capas (UI, servicio, trigger de publicación), las tres funciones nuevas
+**no** son `SECURITY DEFINER` y no entran en el inventario de DEFINER de `evasion.test.ts`, el
+aislamiento lo sigue poniendo RLS (`source_document` y `journal_entry` son tenant+company) y ninguna
+función nueva filtra por empresa a mano. El estado `'archivado'` no deja huérfano ningún índice
+(`source_document_estado_idx` es `(company_id, estado)`) ni ninguna vista de reportes (las vistas de
+`110` parten de asientos `posted`, no del estado del documento). **Deuda que sí introduce:** `archivado`
+es un estado sin transición de vuelta, y la edición manual de `journal_line` abre por primera vez la
+puerta a que el ledger diverja de sus fuentes de traza — el punto 2 la cierra para retenciones, pero
+el patrón exige que cualquier futuro editor de partidas se pregunte a qué registro de traza está
+amarrada la partida antes de dejar cambiarla.
+
+**Lectura de PRODUCT OWNER.** Con esto un contador ya puede operar la bandeja de verdad: ve el XML,
+filtra, corrige cuenta y monto con justificación auditada, aprueba en lote y no pierde de vista las
+rechazadas. Lo que **falta** para una firma de 30-60 empresas, en orden de dolor:
+1. **V-23 — recuperar una factura rechazada por error** (ver abajo). Es el hueco grave.
+2. **Desarchivar.** Hoy archivar es de una sola dirección.
+3. **Paginación real** de la bandeja (el aviso de truncamiento es un parche honesto, no la solución).
+4. **Corregir el tercero / la fecha / el concepto** desde la bandeja: hoy solo se corrige AIU y
+   municipio (V-7/V-8) y la cuenta/monto del asiento.
+5. **Filtro por empresa** en la bandeja consolidada, y un «solo lo mío» — con 60 empresas, filtrar por
+   proveedor y monto no reemplaza filtrar por empresa.
+
+**V-23 (NUEVA, ABIERTA, de A3 + A2) — una factura rechazada por error no se puede recuperar por
+ningún camino de la interfaz.** Rechazar es una operación cotidiana y reversible en la cabeza de un
+contador; aquí es definitiva. `reintegrar` bloquea (clave de idempotencia `causacion:<doc>` ocupada +
+falta la transición `rechazado → parseado`), volver a cargar el XML no hace nada (dedupe + `ya_procesado`)
+y archivar tampoco es reversible. **No bloquea D-079** —antes de esta fase la rechazada desaparecía sin
+rastro y ahora al menos se ve y el bloqueo es explícito y honesto— pero **sí bloquea la operación real
+con un cliente**. Prueba que lo demuestra: `tests/adversarial/a14-d079-ampliada.test.ts` →
+«volver a cargar el documento NO recausa una rechazada».
+
+**Archivos que A14 tocó en esta compuerta:** `src/services/causacion.ts` (bloqueo de fila, cuenta
+inactiva, partida de retención), `src/services/bandeja.ts` (mensaje de bloqueo veraz),
+`app/lib/bandeja.ts` (unidades del monto, fecha válida, `empresasTruncadas`), `app/bandeja/page.tsx`
+(aviso de truncamiento, textos), `app/bandeja/_interactivos.tsx` (partidas de retención de solo
+lectura, texto de archivar), `db/migrations/171_a7_d079_bandeja_fase2.sql` (dos `COMMENT`/mensaje) y la
+suite nueva `tests/adversarial/a14-d079-ampliada.test.ts`.
+
+**Los 20 casos dorados de la sección 12, ejecutados COMPLETOS en esta compuerta** (no una muestra):
+`tests/golden/casos-dorados.test.ts` los cubre uno a uno (1, 1b, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10b, 11,
+12, 12b, 13, 14, 14b, 15, 15b, 16, 17, 18, 19, 20) y `tests/adversarial/casos-dorados.test.ts` los
+vuelve a correr con instrumentos propios de A14 más los canarios anti-falso-PASS. **26 + 26 pruebas,
+todas en verde.** Además, en esta misma pasada: grep de literales tributarios sobre `src`, `app`,
+`db/migrations` y la raíz ejecutable → **cero**; `UPDATE`/`DELETE` sobre asiento publicado → falla en
+BD (`LG001`); asiento desbalanceado → falla en BD (`LG002`); consulta cruzada entre firmas → **cero
+filas**; reproceso 10 veces → asiento idéntico; cambio de tarifa con vigencia nueva → lo publicado no
+cambia y lo posterior sí usa la nueva; segunda factura del mismo proveedor con la misma descripción →
+**cero llamadas al LLM** (`tests/golden/caso19-memoria.test.ts`, con espía sobre `fetch`).
+
+---
+
 ## Vulnerabilidades — registro de A14
 
 | Id | Qué es | Gravedad | Estado | De quién |
 |---|---|---|---|---|
+| V-24 | **Carrera edición ↔ publicación: se podía mutar un asiento YA PUBLICADO.** `editarAsientoBorrador` leía el estado sin bloquear la fila; con la aprobación en paralelo, el `UPDATE journal_line` caía sobre un asiento ya `posted` y ningún trigger se enteraba (el de inmutabilidad vio `draft`; el de balance calla porque la edición cuadra) | **Alta** (rompe la Regla de Oro 1) | **CORREGIDA por A14** en la compuerta de D-079 (`SELECT ... FOR UPDATE`), con prueba | era de **A7** |
+| V-25 | **Un humano podía reescribir el monto/cuenta de una retención calculada por el motor.** El ledger y `retention_applied` —fuente de la exógena (1001/1003) y de los certificados— divergían para siempre, sin rastro de que alguien se apartó del motor | **Alta** (rompe las Reglas de Oro 4 y 6) | **CORREGIDA por A14** en la compuerta de D-079 (partida con `retention_applied_id` no editable, en servicio y en UI), con prueba | era de **A7** |
+| V-26 | **El filtro de monto de la bandeja escondía facturas que sí había que aprobar** (formulario en pesos, comparación contra centavos). Además `?desde=` con basura tumbaba la bandeja de las 30-60 empresas, y una cuenta desactivada seguía siendo imputable desde la edición | Media (una factura que no se ve no se causa) | **CORREGIDA por A14** en la compuerta de D-079, con pruebas | era de **A7** |
+| **V-23** | **Una factura rechazada por error no se recupera por ningún camino de la interfaz.** `reintegrar` bloquea (clave `causacion:<doc>` ocupada + falta la transición `rechazado → parseado`), volver a cargar el XML no hace nada (dedupe por CUFE/hash → `ya_procesado`) y archivar tampoco es reversible | **Alta como producto** (rechazar es cotidiano y aquí es definitivo). No bloquea D-079; **sí bloquea la operación real con un cliente** | **ABIERTA, declarada y probada** por A14 (`a14-d079-ampliada.test.ts`) | **A3** (transición de estado en el motor) + **A2** (decisión de ledger sobre la clave de idempotencia) |
 | D-030 | Revocación de sesiones cross-tenant + oráculo de actividad ajena | Alta (rompe la Regla 7 en escritura) | **CORREGIDA** por A14 (migración 017) | era de A12 |
 | D-031 | `app_auth` forjaba audit_log en cualquier firma, de forma permanente | Media-alta (rompe la Regla 6) | **CORREGIDA** por A14 (migración 017) | era de A12 |
 | D-034 | El harness concedía privilegios que las migraciones revocan | Media (invalida pruebas de privilegio) | **CORREGIDA** por A14 | infraestructura de pruebas |

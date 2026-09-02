@@ -1086,3 +1086,239 @@ export async function reversarAsientoPublicado(
 
   return { journalEntryId };
 }
+
+// =============================================================================
+// EDICIÓN MANUAL DE UN ASIENTO BORRADOR (A7 · D-079).
+//
+// El motor entrega el asiento cuadrado. Un humano puede, ANTES de aprobarlo,
+// reasignar la cuenta contable y/o el monto de una línea — pero:
+//   · solo si el asiento sigue en 'draft' (uno publicado se corrige por
+//     reversa, Regla de Oro 1);
+//   · el asiento resultante tiene que cuadrar (débitos = créditos). La BD solo
+//     valida el balance al publicar (trigger sobre 'posted'); aquí se impone
+//     TAMBIÉN, para que un borrador descuadrado no se guarde ni saltándose la
+//     interfaz;
+//   · apartarse de lo que propuso el motor exige una justificación no vacía,
+//     que queda en `audit_log` vía `app.registrar_edicion_asiento_borrador`
+//     (Regla de Oro 6).
+// =============================================================================
+
+export interface EdicionLineaBorrador {
+  journalLineId: string;
+  /** Cuenta contable destino (código PUC del plan efectivo de la empresa). */
+  cuentaCodigo: string;
+  /** Monto en centavos, entero como texto (Regla de Oro 5: nunca float). */
+  montoCentavos: string;
+}
+
+export interface EditarAsientoBorradorInput {
+  journalEntryId: string;
+  /** TODAS las líneas del asiento (una edición parcial no se acepta). */
+  lineas: readonly EdicionLineaBorrador[];
+  /** Obligatoria en cuanto haya al menos un cambio respecto del borrador. */
+  justificacion: string;
+}
+
+export interface ResultadoEdicionBorrador {
+  journalEntryId: string;
+  lineasCambiadas: number;
+}
+
+export async function editarAsientoBorrador(
+  tx: SqlClient,
+  input: EditarAsientoBorradorInput,
+): Promise<ResultadoEdicionBorrador> {
+  await exigirPermiso(tx, PERMISOS.CAUSACION_EDITAR_BORRADOR);
+
+  // `FOR UPDATE` (A14, compuerta de D-079): la edición y `aprobarAsiento`
+  // compiten por la MISMA fila de `journal_entry`. Sin el bloqueo, la ventana
+  // es real: esta transacción lee 'draft', otra publica y hace COMMIT, y el
+  // `UPDATE journal_line` de aquí acaba mutando las partidas de un asiento YA
+  // publicado — el trigger `journal_line_inmutable` leyó 'draft' al disparar y
+  // el de balance no protesta porque la edición cuadra. Con el bloqueo, o bien
+  // la aprobación espera a esta transacción, o bien esta relee 'posted' y
+  // corta (Regla de Oro 1).
+  const { rows: entryRows } = await tx.query<{ estado: string }>(
+    `SELECT estado FROM journal_entry WHERE id = $1
+      FOR UPDATE`,
+    [input.journalEntryId],
+  );
+  const entry = entryRows[0];
+  if (!entry) throw new Error(`El asiento ${input.journalEntryId} no existe en el contexto actual.`);
+  if (entry.estado !== 'draft') {
+    throw new Error(
+      `El asiento ${input.journalEntryId} está en estado '${entry.estado}'; solo se edita un borrador. ` +
+        'Un asiento publicado solo se corrige con una reversa (Regla de Oro 1).',
+    );
+  }
+
+  const { rows: actuales } = await tx.query<{
+    id: string;
+    linea: number;
+    account_id: string;
+    cuenta_codigo: string;
+    side: 'debito' | 'credito';
+    monto: string;
+    retention_applied_id: string | null;
+  }>(
+    `SELECT jl.id, jl.linea, jl.account_id, acc.codigo AS cuenta_codigo, jl.side, jl.monto::text,
+            jl.retention_applied_id
+       FROM journal_line jl JOIN account acc ON acc.id = jl.account_id
+      WHERE jl.journal_entry_id = $1 ORDER BY jl.linea`,
+    [input.journalEntryId],
+  );
+  if (actuales.length === 0) {
+    throw new Error(`El asiento ${input.journalEntryId} no tiene partidas para editar.`);
+  }
+  const actualPorId = new Map(actuales.map((l) => [l.id, l]));
+
+  if (input.lineas.length !== actuales.length) {
+    throw new Error(
+      `La edición trae ${input.lineas.length} línea(s) y el asiento tiene ${actuales.length}. ` +
+        'Envíe todas las líneas del asiento.',
+    );
+  }
+
+  const entrantePorId = new Map<string, EdicionLineaBorrador>();
+  for (const l of input.lineas) {
+    if (!actualPorId.has(l.journalLineId)) {
+      throw new Error(`La línea ${l.journalLineId} no pertenece al asiento ${input.journalEntryId}.`);
+    }
+    if (entrantePorId.has(l.journalLineId)) {
+      throw new Error(`La línea ${l.journalLineId} llega dos veces en la edición.`);
+    }
+    if (!/^\d+$/.test(l.montoCentavos) || BigInt(l.montoCentavos) <= 0n) {
+      throw new Error(
+        `El monto de la línea ${l.journalLineId} debe ser un entero de centavos mayor que cero (Regla de Oro 5).`,
+      );
+    }
+    entrantePorId.set(l.journalLineId, l);
+  }
+
+  // Resolver los códigos de cuenta contra el PUC efectivo de la empresa, y
+  // exigir que sean imputables (el ledger lo re-valida con LG004 al publicar).
+  const codigos = [...new Set(input.lineas.map((l) => l.cuentaCodigo.trim()))];
+  const { rows: cuentas } = await tx.query<{
+    id: string;
+    codigo: string;
+    permite_movimiento: boolean;
+    activo: boolean;
+  }>(`SELECT id, codigo, permite_movimiento, activo FROM v_account_efectivo WHERE codigo = ANY($1)`, [codigos]);
+  const cuentaPorCodigo = new Map(cuentas.map((c) => [c.codigo, c]));
+  for (const codigo of codigos) {
+    const c = cuentaPorCodigo.get(codigo);
+    if (!c) {
+      throw new Error(`No existe la cuenta PUC "${codigo}" en el plan de cuentas de esta empresa.`);
+    }
+    if (!c.permite_movimiento) {
+      throw new Error(`La cuenta PUC "${codigo}" no es imputable: no acepta partidas (LG004).`);
+    }
+    // A14, compuerta de D-079: desactivar una cuenta (`activo = false`) es
+    // justamente el mecanismo con el que una empresa la retira de su plan
+    // (D-064). El selector de la interfaz ya no la ofrece; el servicio tampoco
+    // puede aceptarla cuando el formulario llega a mano.
+    if (!c.activo) {
+      throw new Error(
+        `La cuenta PUC "${codigo}" está desactivada en el plan de cuentas de esta empresa y no admite partidas.`,
+      );
+    }
+  }
+
+  // ¿Qué cambió?
+  const cambios = actuales.filter((actual) => {
+    const nueva = entrantePorId.get(actual.id)!;
+    const cambioCuenta = nueva.cuentaCodigo.trim() !== actual.cuenta_codigo;
+    const cambioMonto = BigInt(nueva.montoCentavos) !== BigInt(actual.monto);
+    return cambioCuenta || cambioMonto;
+  });
+
+  if (cambios.length === 0) {
+    return { journalEntryId: input.journalEntryId, lineasCambiadas: 0 };
+  }
+
+  // A14, compuerta de D-079: una partida que LLEVA una retención
+  // (`retention_applied_id`) no se edita a mano. `retention_applied` guarda la
+  // base, la tarifa, la regla y su vigencia con las que se produjo ese valor, y
+  // es la fuente de los formatos de exógena y de los certificados de retención,
+  // mientras el ledger es la fuente del pago o abono en cuenta. Cambiar el
+  // monto o la cuenta de esa partida hace divergir para siempre las dos
+  // fuentes, sin que ninguna de las dos diga que un humano se apartó del motor
+  // — que es exactamente lo que prohíben las Reglas de Oro 4 y 6. La
+  // retención se corrige donde se calcula: parámetro/concepto y reproceso, o
+  // rechazo y nueva causación.
+  const retencionTocada = cambios.find((c) => c.retention_applied_id !== null);
+  if (retencionTocada) {
+    throw new Error(
+      `La línea ${retencionTocada.linea} (cuenta ${retencionTocada.cuenta_codigo}) es una retención calculada por ` +
+        'el motor y no se edita a mano: su base, tarifa, regla y vigencia quedaron registradas y alimentan la ' +
+        'exógena y los certificados. Corrija el concepto o el parámetro y reprocese el documento, o rechace la ' +
+        'causación y vuelva a causarla.',
+    );
+  }
+
+  if (!input.justificacion || input.justificacion.trim() === '') {
+    throw new Error(
+      'Editar una línea del asiento propuesto exige una justificación (Regla de Oro 6): ' +
+        'qué se cambió respecto de lo que propuso el motor y por qué.',
+    );
+  }
+
+  // El asiento resultante tiene que cuadrar (el `side` de cada línea no cambia).
+  let saldo = 0n;
+  for (const actual of actuales) {
+    const monto = BigInt(entrantePorId.get(actual.id)!.montoCentavos);
+    saldo += actual.side === 'debito' ? monto : -monto;
+  }
+  if (saldo !== 0n) {
+    throw new Error(
+      `El asiento editado descuadra en ${saldo} centavos (débitos menos créditos). ` +
+        'Ajuste los montos hasta que débitos y créditos sean iguales antes de guardar.',
+    );
+  }
+
+  const instantanea = (
+    filas: { linea: number; cuenta_codigo: string; account_id: string; side: string; monto: string }[],
+  ) =>
+    filas.map((l) => ({
+      linea: l.linea,
+      cuenta: l.cuenta_codigo,
+      cuentaId: l.account_id,
+      side: l.side,
+      montoCentavos: l.monto,
+    }));
+  const antes = instantanea(actuales);
+
+  for (const c of cambios) {
+    const nueva = entrantePorId.get(c.id)!;
+    await tx.query(
+      `UPDATE journal_line SET account_id = $1, monto = $2
+        WHERE id = $3 AND journal_entry_id = $4`,
+      [cuentaPorCodigo.get(nueva.cuentaCodigo.trim())!.id, nueva.montoCentavos, c.id, input.journalEntryId],
+    );
+  }
+
+  const { rows: despuesRows } = await tx.query<{
+    linea: number;
+    cuenta_codigo: string;
+    account_id: string;
+    side: string;
+    monto: string;
+  }>(
+    `SELECT jl.linea, acc.codigo AS cuenta_codigo, jl.account_id, jl.side, jl.monto::text
+       FROM journal_line jl JOIN account acc ON acc.id = jl.account_id
+      WHERE jl.journal_entry_id = $1 ORDER BY jl.linea`,
+    [input.journalEntryId],
+  );
+
+  await tx.query(
+    `SELECT app.registrar_edicion_asiento_borrador($1, $2::jsonb, $3::jsonb, $4)`,
+    [
+      input.journalEntryId,
+      JSON.stringify(antes),
+      JSON.stringify(instantanea(despuesRows)),
+      input.justificacion.trim(),
+    ],
+  );
+
+  return { journalEntryId: input.journalEntryId, lineasCambiadas: cambios.length };
+}

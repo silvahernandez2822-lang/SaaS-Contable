@@ -330,3 +330,111 @@ export async function listarMunicipiosParaCorreccion(tx: SqlClient): Promise<Mun
   );
   return rows;
 }
+
+// =============================================================================
+// 5. SUB-BANDEJA DE RECHAZADAS (A7 · D-079)
+//
+// Una factura rechazada desde la bandeja de aprobación pasa a
+// `source_document.estado = 'rechazado'` y desaparece de las vistas de
+// trabajo. La sub-bandeja la vuelve a hacer visible, con dos salidas:
+//   · REPROCESAR — devolverla a la cola de causación. SOLO cuando el
+//     documento no dejó un asiento que colisione con la clave de idempotencia
+//     `causacion:<doc>` (hoy casi siempre la dejó: todo documento que llegó a
+//     'pendiente_aprobacion' generó un borrador que el rechazo anuló). Si la
+//     dejó, se BLOQUEA con un mensaje claro — la reintegración de ese caso
+//     toca el motor de A3 y queda pendiente (D-079).
+//   · ARCHIVAR — retirarla definitivamente de las vistas SIN borrarla: la
+//     fila, su XML y su `audit_log` permanecen (Regla de Oro 1).
+// =============================================================================
+
+// A14, compuerta de D-079: la versión anterior de este mensaje aconsejaba
+// «vuelva a cargar el documento original desde la carga masiva». A14 lo probó
+// y NO funciona: la ingesta deduplica por (empresa, CUFE) y por (empresa,
+// hash), converge en ESTA MISMA fila, y el motor la da por `ya_procesado`
+// porque su estado ya pasó de `parseado`. El documento se queda rechazado sin
+// decir nada. No se le puede dar al contador una salida que no existe.
+const BLOQUEO_REPROCESO_CON_ASIENTO =
+  'Este documento ya generó un asiento contable (anulado tras el rechazo). ' +
+  'Reintegrarlo a la cola exige liberar la clave de idempotencia de ese asiento y una ' +
+  'transición de estado en el motor de causación que aún no está implementada (pendiente, D-079). ' +
+  'HOY NO HAY CAMINO EN LA INTERFAZ para recausarlo: volver a cargar el mismo XML no sirve ' +
+  '(la ingesta lo reconoce como duplicado de este mismo documento y no lo vuelve a causar). ' +
+  'Regístrelo con soporte antes de archivarlo.';
+
+export interface DocumentoRechazado {
+  sourceDocumentId: string;
+  numeroDocumento: string;
+  emisorNit: string;
+  emisorNombre: string | null;
+  fechaHechoEconomico: string;
+  motivoRechazo: string | null;
+  rechazadoEn: string | null;
+  /** true si el documento se puede devolver a la cola de causación. */
+  puedeReprocesar: boolean;
+  /** Explicación cuando `puedeReprocesar` es false; null si se puede. */
+  motivoBloqueoReproceso: string | null;
+}
+
+export async function listarRechazadas(
+  tx: SqlClient,
+  opciones: { limite?: number } = {},
+): Promise<DocumentoRechazado[]> {
+  await exigirPermiso(tx, PERMISOS.DOCUMENTO_LEER);
+
+  const { rows } = await tx.query<{
+    id: string;
+    numero_documento: string;
+    emisor_nit: string;
+    emisor_nombre: string | null;
+    fecha_hecho_economico: string;
+    motivo_rechazo: string | null;
+    rechazado_en: string | null;
+    tiene_asiento: boolean;
+  }>(
+    `SELECT d.id, d.numero_documento, d.emisor_nit, d.emisor_nombre,
+            d.fecha_hecho_economico::text, d.motivo_rechazo,
+            (SELECT max(a.decidido_en)::text FROM approval a
+              WHERE a.source_document_id = d.id AND a.decision = 'rechazado') AS rechazado_en,
+            EXISTS (SELECT 1 FROM journal_entry je
+                     WHERE je.company_id = d.company_id
+                       AND je.idempotency_key = 'causacion:' || d.id::text) AS tiene_asiento
+       FROM source_document d
+      WHERE d.estado = 'rechazado'
+      ORDER BY d.fecha_hecho_economico DESC
+      LIMIT $1`,
+    [opciones.limite ?? 50],
+  );
+
+  return rows.map((r) => ({
+    sourceDocumentId: r.id,
+    numeroDocumento: r.numero_documento,
+    emisorNit: r.emisor_nit,
+    emisorNombre: r.emisor_nombre,
+    fechaHechoEconomico: r.fecha_hecho_economico,
+    motivoRechazo: r.motivo_rechazo,
+    rechazadoEn: r.rechazado_en,
+    puedeReprocesar: !r.tiene_asiento,
+    motivoBloqueoReproceso: r.tiene_asiento ? BLOQUEO_REPROCESO_CON_ASIENTO : null,
+  }));
+}
+
+/** Retira una factura rechazada de las vistas de trabajo sin borrarla
+ * (Regla de Oro 1). La guardia de estado y el rastro los impone
+ * `app.archivar_documento_rechazado`. */
+export async function archivarDocumentoRechazado(
+  tx: SqlClient,
+  sourceDocumentId: string,
+  motivo: string,
+): Promise<void> {
+  await tx.query(`SELECT app.archivar_documento_rechazado($1, $2)`, [sourceDocumentId, motivo]);
+}
+
+/** Devuelve una factura rechazada a la cola de causación. `app.reintegrar_documento_rechazado`
+ * corta con `REPROCESO_BLOQUEADO` si el documento dejó un asiento en conflicto (D-079). */
+export async function reintegrarDocumentoRechazado(
+  tx: SqlClient,
+  sourceDocumentId: string,
+): Promise<DocumentProcessingJob> {
+  await tx.query(`SELECT app.reintegrar_documento_rechazado($1)`, [sourceDocumentId]);
+  return reencolarJob(tx, sourceDocumentId);
+}

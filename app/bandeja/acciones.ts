@@ -30,8 +30,19 @@
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { conSesionEmpresa } from '../lib/sesion';
-import { aprobarAsientosEnLote, type ItemLoteAprobacion } from '../../src/services/causacion';
-import { guardarCorreccionAiu, guardarCorreccionMunicipio, reprocesarDocumento } from '../../src/services/bandeja';
+import {
+  aprobarAsientosEnLote,
+  editarAsientoBorrador,
+  type EdicionLineaBorrador,
+  type ItemLoteAprobacion,
+} from '../../src/services/causacion';
+import {
+  archivarDocumentoRechazado,
+  guardarCorreccionAiu,
+  guardarCorreccionMunicipio,
+  reintegrarDocumentoRechazado,
+  reprocesarDocumento,
+} from '../../src/services/bandeja';
 import type { SqlClient } from '../../src/db/types';
 import { resolverIpDeOrigen } from './ip';
 
@@ -170,4 +181,98 @@ export async function corregirYReprocesarAction(formData: FormData): Promise<voi
   }
 
   redirect('/bandeja');
+}
+
+// =============================================================================
+// A7 · D-079 — edición de línea de un asiento borrador
+//
+// La UI manda TODAS las líneas del asiento: por cada `journal_line` un
+// `cuenta__<id>` (código PUC) y un `monto__<id>` (en pesos). El descuadre se
+// bloquea en el servicio (`editarAsientoBorrador`), no solo en la interfaz —
+// el trigger de publicación es el respaldo final (D-079, verificado por A14).
+// =============================================================================
+
+/** Pesos con hasta dos decimales -> centavos enteros (Regla de Oro 5). */
+function pesosACentavos(valor: string): string {
+  const limpio = valor.replace(/[^\d.-]/g, '').trim();
+  if (limpio === '' || !/^-?\d+(\.\d{1,2})?$/.test(limpio)) return '';
+  return String(Math.round(Number(limpio) * 100));
+}
+
+export async function editarLineaAction(formData: FormData): Promise<void> {
+  const companyId = leer(formData, 'companyId');
+  const journalEntryId = leer(formData, 'journalEntryId');
+  const justificacion = leer(formData, 'justificacion');
+
+  const lineas: EdicionLineaBorrador[] = [];
+  for (const [campo, valor] of formData.entries()) {
+    const m = /^cuenta__(.+)$/.exec(campo);
+    if (!m || typeof valor !== 'string') continue;
+    const journalLineId = m[1]!;
+    const montoRaw = formData.get(`monto__${journalLineId}`);
+    const montoCentavos = pesosACentavos(typeof montoRaw === 'string' ? montoRaw : '');
+    if (montoCentavos === '') {
+      redirect(
+        `/bandeja?error=${encodeURIComponent(
+          `El monto de una de las líneas no es un número de pesos válido (máximo dos decimales).`,
+        )}`,
+      );
+    }
+    lineas.push({ journalLineId, cuentaCodigo: valor.trim(), montoCentavos });
+  }
+
+  try {
+    await conSesionEmpresa(companyId, async (tx) => {
+      await editarAsientoBorrador(tx, { journalEntryId, lineas, justificacion });
+    });
+  } catch (error) {
+    const mensaje = error instanceof Error ? error.message : String(error);
+    redirect(`/bandeja?error=${encodeURIComponent(mensaje)}`);
+  }
+
+  redirect('/bandeja?editado=1');
+}
+
+// =============================================================================
+// A7 · D-079 — sub-bandeja de rechazadas
+// =============================================================================
+
+export async function reprocesarRechazadaAction(formData: FormData): Promise<void> {
+  const companyId = leer(formData, 'companyId');
+  const sourceDocumentId = leer(formData, 'sourceDocumentId');
+
+  try {
+    await conSesionEmpresa(companyId, (tx) => reintegrarDocumentoRechazado(tx, sourceDocumentId));
+  } catch (error) {
+    const mensaje = error instanceof Error ? error.message : String(error);
+    redirect(`/bandeja?vista=rechazadas&error=${encodeURIComponent(mensaje)}`);
+  }
+
+  redirect('/bandeja?vista=rechazadas&reprocesado=1');
+}
+
+export async function archivarRechazadaAction(formData: FormData): Promise<void> {
+  const companyId = leer(formData, 'companyId');
+  const sourceDocumentId = leer(formData, 'sourceDocumentId');
+  const motivo = leer(formData, 'motivo');
+  const confirmacion = leer(formData, 'confirmacion');
+
+  if (confirmacion !== 'ARCHIVAR') {
+    redirect(
+      `/bandeja?vista=rechazadas&error=${encodeURIComponent(
+        'Para archivar hay que escribir ARCHIVAR en el campo de confirmación.',
+      )}`,
+    );
+  }
+
+  try {
+    await conSesionEmpresa(companyId, (tx) =>
+      archivarDocumentoRechazado(tx, sourceDocumentId, motivo),
+    );
+  } catch (error) {
+    const mensaje = error instanceof Error ? error.message : String(error);
+    redirect(`/bandeja?vista=rechazadas&error=${encodeURIComponent(mensaje)}`);
+  }
+
+  redirect('/bandeja?vista=rechazadas&archivado=1');
 }

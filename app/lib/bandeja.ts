@@ -27,13 +27,16 @@ import {
   listarEmpresasAccesibles,
   listarMunicipiosParaCorreccion,
   listarPendientesRevision,
+  listarRechazadas,
   type CorreccionesVigentes,
   type DocumentoEnRevision,
+  type DocumentoRechazado,
   type EmpresaAccesible,
   type MotivoRevision,
   type MunicipioOpcion,
 } from '../../src/services/bandeja';
 import { listarPendientesDeAprobacion, type EstadoDocumento } from '../../src/services/consulta';
+import { listarTerceros } from '../../src/services/terceros';
 import type { LineaExtraida } from '../../src/services/ingest';
 
 export interface FilaAprobacion extends EstadoDocumento {
@@ -46,13 +49,51 @@ export interface FilaRevision extends DocumentoEnRevision {
   companyNombre: string;
 }
 
+export interface FilaRechazada extends DocumentoRechazado {
+  companyId: string;
+  companyNombre: string;
+}
+
+/** Tercero real de alguna de las empresas accesibles, para el autocompletar
+ * del filtro por proveedor (deduplicado por documento). */
+export interface ProveedorOpcion {
+  numeroDocumento: string;
+  razonSocial: string;
+}
+
+/** Filtros de la bandeja de aprobación (D-079). Todos opcionales; una cadena
+ * vacía es "sin filtro". */
+export interface FiltrosBandeja {
+  desde?: string;
+  hasta?: string;
+  proveedor?: string;
+  montoMinCentavos?: number | null;
+  montoMaxCentavos?: number | null;
+  /** Score de confianza mínimo, en puntos porcentuales 0–100. */
+  scoreMin?: number | null;
+}
+
 export interface BandejaConsolidada {
   empresas: EmpresaAccesible[];
   pendientesAprobacion: FilaAprobacion[];
   pendientesRevision: FilaRevision[];
+  rechazadas: FilaRechazada[];
   /** Catálogo de municipios (global + de cada empresa visitada), para el
    * desplegable de corrección de V-8. Deduplicado por id. */
   municipios: MunicipioOpcion[];
+  /** Terceros reales, para el autocompletar del filtro por proveedor. */
+  proveedores: ProveedorOpcion[];
+  /** Filtros efectivamente aplicados (eco de la petición, ya normalizados). */
+  filtros: FiltrosBandeja;
+  /** Total de documentos pendientes de aprobación ANTES de aplicar los
+   * filtros de proveedor/monto/score, para poder decir "3 de 12". */
+  totalAprobacionSinFiltrar: number;
+  /** Empresas cuya lista de pendientes llegó AL TOPE (`LIMITE_POR_EMPRESA`):
+   * casi con seguridad tienen más documentos esperando aprobación de los que
+   * esta pantalla muestra. A14 (compuerta de D-079): sin este aviso, una
+   * factura de la empresa 37 podía quedarse indefinidamente sin aprobar sin
+   * que nadie viera que existía. */
+  empresasTruncadas: string[];
 }
 
 /** Tope por empresa, no total: con 60 empresas y 20 documentos cada una, el
@@ -62,39 +103,150 @@ export interface BandejaConsolidada {
 const LIMITE_POR_EMPRESA = 20;
 
 /** Reexportados para que las páginas de `app/bandeja/**` no importen de `src/services` directamente. */
-export type { CorreccionesVigentes, DocumentoEnRevision, EmpresaAccesible, LineaExtraida, MotivoRevision, MunicipioOpcion };
+export type {
+  CorreccionesVigentes,
+  DocumentoEnRevision,
+  DocumentoRechazado,
+  EmpresaAccesible,
+  LineaExtraida,
+  MotivoRevision,
+  MunicipioOpcion,
+};
 
-export async function obtenerBandejaConsolidada(): Promise<BandejaConsolidada> {
+function limpia(v: string | undefined): string {
+  return (v ?? '').trim();
+}
+
+/** Fecha ISO `AAAA-MM-DD` REAL (no basta el patrón: `2026-13-45` lo cumple).
+ * A14, compuerta de D-079: `desde`/`hasta` bajan a la consulta con un
+ * `::date`; una cadena arbitraria en la URL reventaba la bandeja entera de las
+ * 30-60 empresas con un `22007` sin manejar. Lo que no es una fecha, no
+ * filtra. */
+function fechaIsoOenUndefined(v: string | undefined): string | undefined {
+  const s = limpia(v);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return undefined;
+  const d = new Date(`${s}T00:00:00Z`);
+  return Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== s ? undefined : s;
+}
+
+/** Normaliza los filtros crudos de la URL a la forma que consume la bandeja. */
+export function normalizarFiltros(crudos: Record<string, string | undefined>): FiltrosBandeja {
+  const numeroOenNull = (v: string | undefined): number | null => {
+    const s = limpia(v);
+    if (s === '') return null;
+    const n = Number(s.replace(/[^\d.-]/g, ''));
+    return Number.isFinite(n) ? Math.round(n) : null;
+  };
+  /** El formulario pide PESOS ("Monto mín. (pesos)"); el documento guarda
+   * CENTAVOS (Regla de Oro 5). A14, compuerta de D-079: sin esta conversión un
+   * filtro «hasta $1.000.000» escondía todo lo que pasara de $10.000 — es
+   * decir, escondía facturas que sí había que aprobar. */
+  const pesosACentavosOenNull = (v: string | undefined): number | null => {
+    const s = limpia(v);
+    if (s === '') return null;
+    const n = Number(s.replace(/[^\d.-]/g, ''));
+    return Number.isFinite(n) ? Math.round(n * 100) : null;
+  };
+  return {
+    desde: fechaIsoOenUndefined(crudos.desde),
+    hasta: fechaIsoOenUndefined(crudos.hasta),
+    proveedor: limpia(crudos.proveedor) || undefined,
+    montoMinCentavos: pesosACentavosOenNull(crudos.montoMin),
+    montoMaxCentavos: pesosACentavosOenNull(crudos.montoMax),
+    scoreMin: numeroOenNull(crudos.scoreMin),
+  };
+}
+
+function pasaFiltrosCliente(fila: FilaAprobacion, f: FiltrosBandeja): boolean {
+  if (f.proveedor) {
+    const aguja = f.proveedor.toLowerCase();
+    const pajar = `${fila.emisorNit} ${fila.emisorNombre ?? ''}`.toLowerCase();
+    if (!pajar.includes(aguja)) return false;
+  }
+  const total = fila.totalBrutoCentavos != null ? Number(fila.totalBrutoCentavos) : null;
+  if (f.montoMinCentavos != null) {
+    if (total == null || total < f.montoMinCentavos) return false;
+  }
+  if (f.montoMaxCentavos != null) {
+    if (total == null || total > f.montoMaxCentavos) return false;
+  }
+  if (f.scoreMin != null) {
+    if (fila.scoreConfianza == null || fila.scoreConfianza < f.scoreMin) return false;
+  }
+  return true;
+}
+
+export async function obtenerBandejaConsolidada(
+  filtros: FiltrosBandeja = {},
+): Promise<BandejaConsolidada> {
   // Sesión "de firma" (sin empresa, D-015/D-022): es exactamente para lo que
   // sirve `app.empresas_accesibles()` — saber cuáles hay ANTES de elegir una.
   const empresas = await conSesionEmpresa('', (tx) => listarEmpresasAccesibles(tx));
 
-  const pendientesAprobacion: FilaAprobacion[] = [];
+  const todaAprobacion: FilaAprobacion[] = [];
   const pendientesRevision: FilaRevision[] = [];
+  const rechazadas: FilaRechazada[] = [];
   const municipiosPorId = new Map<string, MunicipioOpcion>();
+  const proveedoresPorDoc = new Map<string, ProveedorOpcion>();
+  const empresasTruncadas: string[] = [];
 
   for (const empresa of empresas) {
-    const [aprobacion, revision, municipios] = await conSesionEmpresa(empresa.companyId, (tx) =>
-      Promise.all([
-        listarPendientesDeAprobacion(tx, { limite: LIMITE_POR_EMPRESA }),
-        listarPendientesRevision(tx, { limite: LIMITE_POR_EMPRESA }),
-        listarMunicipiosParaCorreccion(tx),
-      ]),
+    const [aprobacion, revision, rechaz, municipios, terceros] = await conSesionEmpresa(
+      empresa.companyId,
+      (tx) =>
+        Promise.all([
+          listarPendientesDeAprobacion(tx, {
+            limite: LIMITE_POR_EMPRESA,
+            desde: filtros.desde ?? null,
+            hasta: filtros.hasta ?? null,
+          }),
+          listarPendientesRevision(tx, { limite: LIMITE_POR_EMPRESA }),
+          listarRechazadas(tx, { limite: LIMITE_POR_EMPRESA }),
+          listarMunicipiosParaCorreccion(tx),
+          listarTerceros(tx, { soloActivos: true }),
+        ]),
     );
+    if (aprobacion.length >= LIMITE_POR_EMPRESA) empresasTruncadas.push(empresa.razonSocial);
     for (const doc of aprobacion) {
-      pendientesAprobacion.push({ ...doc, companyId: empresa.companyId, companyNombre: empresa.razonSocial });
+      todaAprobacion.push({ ...doc, companyId: empresa.companyId, companyNombre: empresa.razonSocial });
     }
     for (const doc of revision) {
       pendientesRevision.push({ ...doc, companyId: empresa.companyId, companyNombre: empresa.razonSocial });
     }
+    for (const doc of rechaz) {
+      rechazadas.push({ ...doc, companyId: empresa.companyId, companyNombre: empresa.razonSocial });
+    }
     for (const m of municipios) municipiosPorId.set(m.id, m);
+    for (const t of terceros) {
+      proveedoresPorDoc.set(t.numeroDocumento, {
+        numeroDocumento: t.numeroDocumento,
+        razonSocial: t.razonSocial,
+      });
+    }
   }
 
-  pendientesAprobacion.sort((a, b) => a.fechaHechoEconomico.localeCompare(b.fechaHechoEconomico));
+  const pendientesAprobacion = todaAprobacion
+    .filter((fila) => pasaFiltrosCliente(fila, filtros))
+    .sort((a, b) => a.fechaHechoEconomico.localeCompare(b.fechaHechoEconomico));
   pendientesRevision.sort((a, b) => a.fechaHechoEconomico.localeCompare(b.fechaHechoEconomico));
+  rechazadas.sort((a, b) => b.fechaHechoEconomico.localeCompare(a.fechaHechoEconomico));
+
   const municipios = [...municipiosPorId.values()].sort(
     (a, b) => a.departamento.localeCompare(b.departamento) || a.nombre.localeCompare(b.nombre),
   );
+  const proveedores = [...proveedoresPorDoc.values()].sort((a, b) =>
+    a.razonSocial.localeCompare(b.razonSocial),
+  );
 
-  return { empresas, pendientesAprobacion, pendientesRevision, municipios };
+  return {
+    empresas,
+    pendientesAprobacion,
+    pendientesRevision,
+    rechazadas,
+    municipios,
+    proveedores,
+    filtros,
+    totalAprobacionSinFiltrar: todaAprobacion.length,
+    empresasTruncadas,
+  };
 }
