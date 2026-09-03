@@ -41,17 +41,30 @@
 @import 'tailwindcss' source('../app');
 
 /* -----------------------------------------------------------------------------
- * TEMA CLARO POR DEFECTO, SIEMPRE (D-082, tarea 7 — fusiona D-081).
+ * RESOLUCIÓN DEL TEMA (D-085 — revierte D-081/D-082).
  *
- * `dark:` responde a UNA sola cosa: `<html data-tema="oscuro">`, una decisión
- * EXPLÍCITA del usuario dentro de la aplicación (toggle en la barra superior,
- * persistido en `localStorage` bajo `contable-co:tema`, aplicado antes del
- * primer pintado por el script en línea de `app/layout.tsx`). El tema por
- * defecto es claro sin importar la preferencia del sistema operativo: ya NO se
- * mira `prefers-color-scheme`. El soporte de modo oscuro no se elimina —
- * cualquiera puede activarlo con el toggle— solo deja de auto-detectarse por SO.
+ * Dos entradas, sin una sola línea de JavaScript para el primer pintado:
+ *
+ *   1. `@media (prefers-color-scheme: dark)` — el modo del sistema operativo.
+ *      Es el valor por defecto cuando el usuario NO ha elegido nada.
+ *   2. `<html data-tema="claro|oscuro">` — la elección explícita del usuario
+ *      (toggle sol/luna). Gana SIEMPRE sobre el SO. La escribe `TemaProvider` en
+ *      una cookie (`contable-co-tema`) y el layout de servidor la lee y la pinta
+ *      en `<html>` ANTES de mandar el HTML — por eso no hay parpadeo ni hace
+ *      falta un `<script>` bloqueante (que además React 19 rechaza renderizar
+ *      en los re-render de cliente).
+ *
+ * `[data-tema='claro']` también sirve como ESCOTILLA POR SUBÁRBOL (D-078): un
+ * contenedor con ese atributo fija tema claro solo para su subárbol.
  * -------------------------------------------------------------------------- */
 @custom-variant dark {
+  /* SO en oscuro y sin override explícito a claro en la cadena de ancestros. */
+  @media (prefers-color-scheme: dark) {
+    &:where(:not([data-tema='claro'], [data-tema='claro'] *)) {
+      @slot;
+    }
+  }
+  /* Override explícito a oscuro: gana siempre, también si el SO está en claro. */
   &:where([data-tema='oscuro'], [data-tema='oscuro'] *) {
     @slot;
   }
@@ -151,15 +164,35 @@
 }
 
 /* -----------------------------------------------------------------------------
- * MODO OSCURO. Se activa SOLO con `<html data-tema="oscuro">` — elección
- * explícita del usuario (D-082, tarea 7). Se redefinen SOLO los tokens que
- * cambian. `--color-primario` NO cambia: sigue siendo el azul de la marca y
- * sigue sirviendo como FONDO con `--color-primario-contraste` encima. Como
- * TINTA sobre fondo oscuro no tiene contraste suficiente: para eso se redefine
- * `--color-primario-tinta-oscura` (azul primario aclarado, valor derivado no
- * aprobado — ver su comentario arriba).
+ * MODO OSCURO. Se activa por DOS caminos (ver «RESOLUCIÓN DEL TEMA» arriba):
+ *   · SO en oscuro y sin override a claro   → `@media` + `:root:not([data-tema='claro'])`
+ *   · elección explícita del usuario        → `[data-tema='oscuro']`
+ * Se redefinen SOLO los tokens que cambian. `--color-primario` NO cambia: sigue
+ * siendo el azul de la marca y sirve como FONDO con `--color-primario-contraste`
+ * encima. Como TINTA sobre fondo oscuro no contrasta: para eso se redefine
+ * `--color-primario-tinta-oscura` (azul primario aclarado, derivado no aprobado).
+ *
+ * La paleta oscura se repite en los dos selectores a propósito: CSS plano no
+ * tiene forma de compartir un bloque de declaraciones entre un `@media` y un
+ * selector de atributo. Los valores de los dos bloques DEBEN cambiarse juntos.
+ * (El tema claro ya se repetía igual: bloque `:root` de arriba + `[data-tema='claro']`.)
  * -------------------------------------------------------------------------- */
-:root[data-tema='oscuro'] {
+@media (prefers-color-scheme: dark) {
+  :root:not([data-tema='claro']) {
+    --color-superficie: #09090b;
+    --color-superficie-elevada: #18181b;
+    --color-texto: #fafafa;
+    --color-texto-suave: #a1a1aa; /* derivado — no aprobado */
+    --color-borde: #27272a; /* derivado — no aprobado */
+    --color-primario-tinta-oscura: #5b8dbe; /* derivado — no aprobado */
+    --color-exito-tinta: #34d399; /* derivado — no aprobado; sobre #09090b = 10:1 */
+    --color-error-tinta: #f87171; /* derivado — no aprobado; sobre #09090b = 7:1 */
+    --color-pendiente-tinta: #fbbf24; /* derivado — no aprobado; sobre #09090b = 12:1 */
+    color-scheme: dark;
+  }
+}
+
+[data-tema='oscuro'] {
   --color-superficie: #09090b;
   --color-superficie-elevada: #18181b;
   --color-texto: #fafafa;

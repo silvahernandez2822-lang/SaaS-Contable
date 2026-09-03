@@ -29,11 +29,16 @@ export function Chrome({
   empresas,
   activaId,
   usuario,
+  temaInicial,
   children,
 }: {
   empresas: readonly EmpresaAccesible[];
   activaId: string | null;
   usuario: { nombre: string; email: string } | null;
+  /** Tema de la cookie, leído en servidor (`app/layout.tsx`). `null` = sin
+   *  elección; manda el SO. Se pasa como prop para que servidor y cliente
+   *  arranquen con el MISMO valor y no haya mismatch de hidratación. */
+  temaInicial: 'claro' | 'oscuro' | null;
   children: ReactNode;
 }) {
   const pathname = usePathname() ?? '/';
@@ -42,7 +47,7 @@ export function Chrome({
 
   return (
     <EmpresaProvider empresas={empresas} activaId={activaId}>
-      <TemaProvider>
+      <TemaProvider inicial={temaInicial}>
         <DensidadProvider>
           <AppShell usuario={usuario}>{children}</AppShell>
         </DensidadProvider>

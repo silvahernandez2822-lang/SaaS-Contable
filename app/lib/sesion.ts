@@ -25,6 +25,12 @@ export const COOKIE_SESSION_TOKEN = 'session_token';
  * omitida = sesión "de firma", sin empresa (edición de parámetros
  * compartidos entre empresas — ver sección 6.2 y D-015). */
 export const COOKIE_COMPANY_ID = 'company_id';
+/** Tema elegido explícitamente por el usuario con el toggle sol/luna (`claro` u
+ * `oscuro`). Ausente = el usuario no ha elegido y manda `prefers-color-scheme`
+ * del sistema. La escribe `TemaProvider` en cliente; la lee `app/layout.tsx`
+ * para pintar `<html data-tema>` en servidor y evitar el parpadeo (D-085). No
+ * es `httpOnly`: el cliente necesita leerla. No autoriza nada. */
+export const COOKIE_TEMA = 'contable-co-tema';
 
 export class SesionNoPresenteError extends Error {
   constructor() {

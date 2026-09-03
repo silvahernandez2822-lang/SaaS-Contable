@@ -2,11 +2,19 @@
 
 /**
  * A8 — Editar los datos generales (NO versionados) de un tercero ya creado.
+ *
+ * D-084 · TAREA 1 — acciones de ELIMINAR / INACTIVAR / REACTIVAR. Eliminar solo
+ * procede si el tercero nunca tuvo movimientos; el motor lo impone con el
+ * trigger `third_party_restrict_delete` (SQLSTATE `TP001`) y el servicio lo
+ * comprueba antes. Si tiene movimientos, el único camino es inactivarlo.
  */
 import { redirect } from 'next/navigation';
 import { conSesion } from '../../lib/sesion';
 import {
   editarTercero,
+  eliminarTercero,
+  fijarActivoTercero,
+  TerceroConMovimientosError,
   TerceroInvalidoError,
   TerceroNoEncontradoError,
   type TipoDocumentoTercero,
@@ -19,11 +27,23 @@ function leer(fd: FormData, campo: string): string {
 }
 
 function mensajeDeError(e: unknown): string {
-  if (e instanceof TerceroInvalidoError || e instanceof TerceroNoEncontradoError) return e.message;
+  if (
+    e instanceof TerceroInvalidoError ||
+    e instanceof TerceroNoEncontradoError ||
+    e instanceof TerceroConMovimientosError
+  ) {
+    return e.message;
+  }
+  if (isPostgresError(e) && e.code === SQLSTATE.TERCERO_CON_MOVIMIENTOS) {
+    return 'El tercero ya tiene movimientos asociados: no se puede borrar, solo inactivar.';
+  }
   if (isPostgresError(e) && e.code === SQLSTATE.PERMISO_INSUFICIENTE) {
     return 'Su sesión no tiene permiso para editar terceros (se requiere el permiso "tercero.editar").';
   }
-  return e instanceof Error ? e.message : 'Ocurrió un error inesperado guardando el tercero.';
+  if (isPostgresError(e) && e.code === SQLSTATE.FOREIGN_KEY_VIOLATION) {
+    return 'El tercero tiene datos dependientes y no se puede borrar. Inactívelo en su lugar.';
+  }
+  return e instanceof Error ? e.message : 'Ocurrió un error inesperado con el tercero.';
 }
 
 export async function editarDatosAction(formData: FormData): Promise<void> {
@@ -47,6 +67,42 @@ export async function editarDatosAction(formData: FormData): Promise<void> {
         telefono: leer(formData, 'telefono') || null,
       }),
     );
+    destino = `/terceros/${terceroId}?ok=1`;
+  } catch (e) {
+    destino = `/terceros/${terceroId}?error=${encodeURIComponent(mensajeDeError(e))}`;
+  }
+  redirect(destino);
+}
+
+export async function eliminarTerceroAction(formData: FormData): Promise<void> {
+  const terceroId = leer(formData, 'terceroId');
+  let destino: string;
+  try {
+    await conSesion((tx) => eliminarTercero(tx, terceroId));
+    destino = `/terceros?eliminado=1`;
+  } catch (e) {
+    destino = `/terceros/${terceroId}?error=${encodeURIComponent(mensajeDeError(e))}`;
+  }
+  redirect(destino);
+}
+
+export async function inactivarTerceroAction(formData: FormData): Promise<void> {
+  const terceroId = leer(formData, 'terceroId');
+  let destino: string;
+  try {
+    await conSesion((tx) => fijarActivoTercero(tx, terceroId, false));
+    destino = `/terceros?inactivado=1`;
+  } catch (e) {
+    destino = `/terceros/${terceroId}?error=${encodeURIComponent(mensajeDeError(e))}`;
+  }
+  redirect(destino);
+}
+
+export async function reactivarTerceroAction(formData: FormData): Promise<void> {
+  const terceroId = leer(formData, 'terceroId');
+  let destino: string;
+  try {
+    await conSesion((tx) => fijarActivoTercero(tx, terceroId, true));
     destino = `/terceros/${terceroId}?ok=1`;
   } catch (e) {
     destino = `/terceros/${terceroId}?error=${encodeURIComponent(mensajeDeError(e))}`;

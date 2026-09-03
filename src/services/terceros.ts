@@ -65,6 +65,7 @@
  * económica) vive en tablas de vigencia.
  */
 import type { SqlClient } from '../db/types';
+import { PERMISOS, tienePermiso } from '../auth/permisos';
 import {
   EdicionRetroactivaError,
   NormaDeRespaldoRequeridaError,
@@ -110,6 +111,25 @@ export class ContextoSinEmpresaError extends Error {
   constructor() {
     super('No hay una empresa seleccionada en la sesión: el maestro de terceros es siempre de una empresa concreta.');
     this.name = 'ContextoSinEmpresaError';
+  }
+}
+
+/**
+ * D-084 · TAREA 1. Se intentó BORRAR un tercero que ya tiene movimientos
+ * asociados. El único camino para un tercero así es inactivarlo. El motor lo
+ * impone igual con el trigger `third_party_restrict_delete` (SQLSTATE `TP001`,
+ * migración 174); esta clase es solo para dar el mensaje claro y para que la
+ * interfaz pueda deshabilitar el botón ANTES de intentarlo.
+ */
+export class TerceroConMovimientosError extends Error {
+  constructor(id: string) {
+    super(
+      `El tercero ${id} ya tiene movimientos asociados (aparece en el ledger, en un documento soporte, ` +
+        'en una retención, o tiene una vigencia fiscal en firme). No se puede borrar: se inactiva. Un ' +
+        'tercero inactivo sigue en la base para que la trazabilidad, la exógena y los certificados de ' +
+        'retención lo resuelvan por su id (Reglas de Oro 1 y 6).',
+    );
+    this.name = 'TerceroConMovimientosError';
   }
 }
 
@@ -425,7 +445,7 @@ const SELECT_TERCERO = `
 
 export async function listarTerceros(
   tx: SqlClient,
-  filtro: { busqueda?: string; soloActivos?: boolean } = {},
+  filtro: { busqueda?: string; soloActivos?: boolean; estado?: 'todos' | 'activos' | 'inactivos'; limite?: number } = {},
 ): Promise<FilaTercero[]> {
   const condiciones: string[] = [];
   const params: unknown[] = [];
@@ -433,10 +453,14 @@ export async function listarTerceros(
     params.push(`%${filtro.busqueda.trim()}%`);
     condiciones.push(`(tp.razon_social ILIKE $${params.length} OR tp.numero_documento ILIKE $${params.length})`);
   }
-  if (filtro.soloActivos) condiciones.push('tp.activo = true');
+  // `soloActivos` se conserva por compatibilidad; `estado` es la forma nueva (D-084).
+  const estado = filtro.estado ?? (filtro.soloActivos ? 'activos' : 'todos');
+  if (estado === 'activos') condiciones.push('tp.activo = true');
+  if (estado === 'inactivos') condiciones.push('tp.activo = false');
   const where = condiciones.length ? `WHERE ${condiciones.join(' AND ')}` : '';
+  const limite = Number.isFinite(filtro.limite) ? Math.max(1, Math.trunc(filtro.limite!)) : 200;
   const { rows } = await tx.query<FilaTerceroCruda>(
-    `${SELECT_TERCERO} ${where} ORDER BY tp.razon_social LIMIT 200`,
+    `${SELECT_TERCERO} ${where} ORDER BY tp.razon_social LIMIT ${limite}`,
     params,
   );
   return rows.map(filaTerceroDe);
@@ -448,9 +472,32 @@ export async function obtenerTercero(tx: SqlClient, terceroId: string): Promise<
   return fila ? filaTerceroDe(fila) : null;
 }
 
+/**
+ * D-084 · TAREA 4 — VERIFICACIÓN DE PERMISOS POR UN SOLO SERVICIO CENTRAL.
+ *
+ * Todas las comprobaciones de permiso de este módulo pasan por
+ * `src/auth/permisos.ts` (`tienePermiso` → `app.tiene_permiso`), con los
+ * códigos tomados del registro `PERMISOS`, nunca como cadenas sueltas ni con
+ * un `SELECT app.tiene_permiso('...')` reescrito endpoint por endpoint.
+ *
+ * PUNTO DE EXTENSIÓN PARA LA FASE 8 (Administración con roles a la medida).
+ * Hoy los permisos de terceros (`tercero.leer`, `tercero.editar`,
+ * `tercero.atributos_fiscales`) los otorgan los cinco roles de sistema de la
+ * migración 014/140. Cuando exista la Fase 8, una firma podrá crear roles
+ * propios y asignarles estos mismos códigos: como la resolución ya es
+ * `role_permission` (datos) y no un `if (rol === 'contador')` en el código,
+ * conectar un rol configurable será AGREGAR FILAS a `role_permission`, sin
+ * tocar una línea de esta capa ni de la interfaz. Si la Fase 8 introduce
+ * permisos MÁS finos (p. ej. `tercero.eliminar` separado de `tercero.editar`),
+ * el único cambio aquí será apuntar la constante correspondiente al código
+ * nuevo.
+ */
+export async function puedeVerTerceros(tx: SqlClient): Promise<boolean> {
+  return tienePermiso(tx, PERMISOS.TERCERO_LEER);
+}
+
 export async function puedeEditarTerceros(tx: SqlClient): Promise<boolean> {
-  const { rows } = await tx.query<{ tiene: boolean }>("SELECT app.tiene_permiso('tercero.editar') AS tiene");
-  return rows[0]?.tiene === true;
+  return tienePermiso(tx, PERMISOS.TERCERO_EDITAR);
 }
 
 /**
@@ -461,10 +508,74 @@ export async function puedeEditarTerceros(tx: SqlClient): Promise<boolean> {
  * contador; el auxiliar de causación no.
  */
 export async function puedeEditarAtributosFiscales(tx: SqlClient): Promise<boolean> {
+  return tienePermiso(tx, PERMISOS.TERCERO_ATRIBUTOS_FISCALES);
+}
+
+// =============================================================================
+// D-084 · TAREA 1 — ELIMINAR vs INACTIVAR
+//
+// `crearTercero` deja el tercero `activo = true`. A partir de aquí:
+//   · Si NUNCA tuvo movimientos  -> se puede BORRAR (con limpieza de las
+//     vigencias FUTURAS que aún no rigen y de la memoria de clasificación).
+//   · Si ya tuvo movimientos     -> solo se INACTIVA. El trigger
+//     `third_party_restrict_delete` (migración 174) lo impone en la base:
+//     ningún camino —ni la API directa— borra un tercero con historia.
+// =============================================================================
+
+export async function terceroTieneMovimientos(tx: SqlClient, terceroId: string): Promise<boolean> {
   const { rows } = await tx.query<{ tiene: boolean }>(
-    "SELECT app.tiene_permiso('tercero.atributos_fiscales') AS tiene",
+    'SELECT app.tercero_tiene_movimientos($1) AS tiene',
+    [terceroId],
   );
   return rows[0]?.tiene === true;
+}
+
+/**
+ * Borra un tercero que nunca tuvo movimientos. Antes del DELETE limpia lo que
+ * sí es borrable y colgaría del tercero por clave foránea: las vigencias
+ * FUTURAS de atributos fiscales y de actividad (cancelables, trigger PR003 solo
+ * protege las que ya rigieron), la memoria de clasificación y la cola de
+ * clasificación pendiente. Si aun así el tercero tiene algún movimiento, el
+ * trigger de la base rechaza con `TP001` y esta función traduce ese caso —y el
+ * chequeo previo— a `TerceroConMovimientosError`.
+ */
+export async function eliminarTercero(tx: SqlClient, terceroId: string): Promise<void> {
+  const tercero = await obtenerTercero(tx, terceroId);
+  if (!tercero) throw new TerceroNoEncontradoError(terceroId);
+
+  if (await terceroTieneMovimientos(tx, terceroId)) {
+    throw new TerceroConMovimientosError(terceroId);
+  }
+
+  // Solo se pueden tocar filas que aún no rigen (PR003). `terceroTieneMovimientos`
+  // ya garantizó que no hay ninguna con vigente_desde <= hoy.
+  await tx.query(
+    'DELETE FROM third_party_activity WHERE third_party_id = $1 AND vigente_desde > CURRENT_DATE',
+    [terceroId],
+  );
+  await tx.query(
+    'DELETE FROM third_party_fiscal_attribute WHERE third_party_id = $1 AND vigente_desde > CURRENT_DATE',
+    [terceroId],
+  );
+  await tx.query('DELETE FROM memoria_clasificacion WHERE third_party_id = $1', [terceroId]);
+  await tx.query('DELETE FROM clasificacion_pendiente WHERE third_party_id = $1', [terceroId]);
+
+  const { rows } = await tx.query<{ id: string }>('DELETE FROM third_party WHERE id = $1 RETURNING id', [
+    terceroId,
+  ]);
+  if (!rows[0]) throw new TerceroNoEncontradoError(terceroId);
+}
+
+/** Cambia `third_party.activo`. Nunca borra. Un tercero inactivo no se ofrece
+ * en los selectores de la interfaz (los servicios pasan `soloActivos: true`),
+ * pero sigue resolviéndose por su id en el ledger, la exógena y los
+ * certificados. */
+export async function fijarActivoTercero(tx: SqlClient, terceroId: string, activo: boolean): Promise<void> {
+  const { rows } = await tx.query<{ id: string }>(
+    'UPDATE third_party SET activo = $2 WHERE id = $1 RETURNING id',
+    [terceroId, activo],
+  );
+  if (!rows[0]) throw new TerceroNoEncontradoError(terceroId);
 }
 
 export interface OpcionCatalogo {
@@ -1087,6 +1198,31 @@ export async function listarActividadesVigentes(
       WHERE ta.third_party_id = $1 AND app.esta_vigente(ta.vigente_desde, ta.vigente_hasta, $2::date)
       ORDER BY ta.es_principal DESC, m.nombre, ci.codigo`,
     [terceroId, fecha],
+  );
+  return rows.map(filaActividadDe);
+}
+
+/**
+ * D-084 · TAREA 2/3 — historial COMPLETO de actividad de un tercero: todas las
+ * ternas municipio×CIIU y todas sus vigencias (cerradas y abiertas). Es lo que
+ * alimenta la pestaña "Historial" y la exportación a Excel — no solo lo
+ * vigente hoy.
+ */
+export async function listarHistorialActividadesTercero(
+  tx: SqlClient,
+  terceroId: string,
+): Promise<FilaActividad[]> {
+  const { rows } = await tx.query<FilaActividadCruda>(
+    `SELECT ta.id, ta.municipality_id, m.nombre AS municipality_nombre,
+            ta.ciiu_activity_id, ci.codigo AS ciiu_codigo, ci.nombre AS ciiu_nombre,
+            ta.es_principal, ta.tarifa_ica_override::text,
+            ta.vigente_desde::text, ta.vigente_hasta::text, ta.norma_respaldo, ta.notas
+       FROM third_party_activity ta
+       JOIN municipality m ON m.id = ta.municipality_id
+       JOIN ciiu_activity ci ON ci.id = ta.ciiu_activity_id
+      WHERE ta.third_party_id = $1
+      ORDER BY m.nombre, ci.codigo, ta.vigente_desde DESC`,
+    [terceroId],
   );
   return rows.map(filaActividadDe);
 }

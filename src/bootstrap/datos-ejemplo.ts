@@ -42,11 +42,14 @@
  * ya dedupe por CUFE/hash — ver `src/services/ingest.ts`).
  */
 import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import type { DbHandle, SqlClient } from '../db/types';
 import { withAdminContext, withSessionContext } from '../db/tenant-context';
 import { abrirSesion } from '../auth/sesion';
+import { aprobarAsiento } from '../services/causacion';
+import { archivarDocumentoRechazado, reintegrarDocumentoRechazado } from '../services/bandeja';
 import {
   calcularDigitoVerificacionNit,
   crearTercero,
@@ -318,6 +321,25 @@ export interface ResultadoDatosEjemplo {
   periodoFiscalCreado: boolean;
   terceros: ResultadoTercero[];
   facturas: ResultadoFactura[];
+  /** Escenarios de bandeja (D-082): null si no se pudieron montar. */
+  escenariosBandeja: ResultadoEscenariosBandeja | null;
+}
+
+export interface EscenarioBandeja {
+  /** Etiqueta legible del escenario. */
+  nombre: string;
+  numeroDocumento: string;
+  sourceDocumentId: string;
+  /** Estado final del `source_document`. */
+  estado: string;
+  /** Pestaña de la bandeja donde debería aparecer (o dónde NO, si es terminal). */
+  dondeSeVe: string;
+  /** Detalle extra (score, clave de idempotencia del asiento, etc.). */
+  detalle: string;
+}
+
+export interface ResultadoEscenariosBandeja {
+  escenarios: EscenarioBandeja[];
 }
 
 const VIGENCIA_DEMO = '2026-01-01';
@@ -363,8 +385,46 @@ async function montarTerceros(
   const nitConsultores = '900123456';
   const nitPacifico = '830111222';
   const nitAutorretenedora = '901555444';
+  const nitProveedorPrueba = '901888777';
 
   const definiciones: TerceroEjemplo[] = [
+    {
+      // D-082 (datos de prueba de bandeja): proveedor OBVIAMENTE de prueba,
+      // registrado y responsable de IVA, sobre el que montamos los escenarios
+      // de V-23, notas crédito rechazadas y las tres pestañas de la bandeja.
+      // Mismos atributos que "Consultores Andinos SAS" — lo que cambia entre
+      // escenarios es el estado del documento, no el perfil del tercero.
+      clave: 'proveedor_prueba',
+      datos: {
+        tipoDocumento: 'NIT',
+        numeroDocumento: nitProveedorPrueba,
+        digitoVerificacion: calcularDigitoVerificacionNit(nitProveedorPrueba),
+        tipoPersona: 'juridica',
+        razonSocial: 'Proveedor Prueba SAS',
+        direccion: 'Calle 123 # 45-67, oficina 890',
+        municipalityId: municipios.bogota,
+        email: 'facturacion@proveedorprueba.ejemplo.co',
+      },
+      atributos: {
+        esDeclaranteRenta: true,
+        esAutorretenedorRenta: false,
+        esGranContribuyente: false,
+        esRegimenSimple: false,
+        esResponsableIva: true,
+        esAgenteRetencionRenta: false,
+        esAgenteRetencionIva: false,
+        esAgenteRetencionIca: false,
+        esAutorretenedorIca: false,
+        regimenTributario: 'ordinario',
+        fuente: 'rut',
+        normaRespaldo: NORMA_DEMO_ATRIBUTOS,
+      },
+      actividad: {
+        municipalityId: municipios.bogota,
+        ciiuActivityId: ciiu.desarrolloSoftware,
+        normaRespaldo: NORMA_DEMO_ACTIVIDAD,
+      },
+    },
     {
       clave: 'consultores_andinos',
       datos: {
@@ -736,7 +796,7 @@ export async function cargarDatosEjemplo(
 
   const sesion = await abrirSesion(db, { userId, userAgent: 'datos-ejemplo-cli' });
 
-  const { terceros, facturas } = await withSessionContext(
+  const { terceros, facturas, conceptos } = await withSessionContext(
     db,
     { sessionToken: sesion.token, companyId: objetivo.companyId },
     async (tx) => {
@@ -815,7 +875,7 @@ export async function cargarDatosEjemplo(
         }
       }
 
-      return { terceros, facturas };
+      return { terceros, facturas, conceptos };
     },
   );
 
@@ -850,6 +910,26 @@ export async function cargarDatosEjemplo(
     }
   });
 
+  const proveedorPrueba = terceros.get('proveedor_prueba');
+  const conceptoServGenerales = conceptos.get('DEMO-SERV-GENERALES');
+  let escenariosBandeja: ResultadoEscenariosBandeja | null = null;
+  if (proveedorPrueba && conceptoServGenerales) {
+    log('');
+    log('Escenarios de bandeja (V-23, notas crédito rechazadas, las tres pestañas)...');
+    escenariosBandeja = await montarEscenariosBandeja(db, {
+      tenantId: objetivo.tenantId,
+      companyId: objetivo.companyId,
+      sessionToken: sesion.token,
+      userId,
+      proveedorPruebaId: proveedorPrueba.id,
+      proveedorPruebaNit: proveedorPrueba.numeroDocumento,
+      conceptoServGeneralesId: conceptoServGenerales,
+      log,
+    });
+  } else {
+    log('  (se omiten los escenarios de bandeja: falta el tercero o el concepto de prueba)');
+  }
+
   return {
     tenantId: objetivo.tenantId,
     companyId: objetivo.companyId,
@@ -860,5 +940,657 @@ export async function cargarDatosEjemplo(
     periodoFiscalCreado,
     terceros: [...terceros.values()],
     facturas,
+    escenariosBandeja,
   };
+}
+
+// =============================================================================
+// ESCENARIOS DE BANDEJA (D-082 — encargo de datos de prueba)
+//
+// Cobertura visual de V-23 (reintegro de una rechazada), V-28 (nota crédito
+// rechazada recuperable) y las tres pestañas de `/bandeja` con datos que un
+// contador puede recorrer sin tener que rechazar o reintegrar nada a mano.
+//
+// FRONTERA: NO se toca el motor. Cada documento entra por `recibirDocumento`
+// (ingest real, dedupe por CUFE/hash), lo causa `vaciarCola` (el worker real:
+// `procesarJobCausacion` -> resolución determinista de A3), y las transiciones
+// de estado las hacen los servicios de dominio ya existentes
+// (`aprobarAsiento`, `reintegrarDocumentoRechazado`, `archivarDocumentoRechazado`).
+// Lo ÚNICO que se inserta directamente es la TRAZA de una propuesta de
+// clasificación (`extraction` con `origen = 'manual'` y su `score_confianza`):
+// es metadato de la IA, no un valor tributario (Regla de Oro 2) ni un cálculo
+// (Regla de Oro 4), y no toca el ledger. En un flujo real esa fila la deja
+// `clasificarDocumento` (A5) cuando hay un modelo disponible; aquí se simula
+// para que la bandeja muestre el badge de confianza con distintos niveles.
+//
+// NOTA SOBRE ESTADOS: la pestaña "Pendientes de aprobación" lista documentos
+// en `source_document.estado = 'pendiente_aprobacion'` (no 'parseado'); la de
+// "Pendientes de revisión", documentos en 'recibido'/'parseado' cuyo job de
+// causación terminó en revisión manual. El encargo pedía "recibido"/"parseado"
+// por el nombre; lo que importa es la pestaña, y ahí es donde caen.
+// =============================================================================
+
+interface CtxEscenarios {
+  tenantId: string;
+  companyId: string;
+  sessionToken: string;
+  userId: string;
+  proveedorPruebaId: string;
+  proveedorPruebaNit: string;
+  conceptoServGeneralesId: string;
+  log: (mensaje: string) => void;
+}
+
+const FECHA_ESCENARIO = '2026-08-15';
+const DESC_LINEA_ESCENARIO = 'Servicios de consultoría contable (dato de ejemplo)';
+const EMISOR_PRUEBA_NOMBRE = 'Proveedor Prueba SAS';
+
+/** CUFE de relleno: SHA-384 hex (96 caracteres) de la semilla del escenario.
+ *  Sin validez criptográfica — igual que los CUFE del resto de `db/demo/`. Solo
+ *  tiene que ser único por documento para que la deduplicación no los colapse. */
+function cufeEscenario(semilla: string): string {
+  return createHash('sha384').update(`demo-bandeja:${semilla}`).digest('hex');
+}
+
+/** Centavos (entero) -> monto UBL con dos decimales. */
+function montoUbl(centavos: number): string {
+  return (centavos / 100).toFixed(2);
+}
+
+interface PlantillaFactura {
+  id: string;
+  cufe: string;
+  fecha: string;
+  emisorNit: string;
+  emisorNombre: string;
+  descripcionLinea: string;
+  baseCentavos: number;
+}
+
+/** Factura UBL 2.1 de demostración. Misma estructura que
+ *  `db/demo/facturas/01-*.xml` (probada), parametrizada. El IVA del XML se
+ *  calcula con aritmética entera (sin literales decimales de tarifa: la tarifa
+ *  real la aplica el motor desde las tablas paramétricas, no este archivo). */
+function xmlFacturaEscenario(p: PlantillaFactura): Uint8Array {
+  const iva = Math.round((p.baseCentavos * 19) / 100);
+  const total = p.baseCentavos + iva;
+  const b = montoUbl(p.baseCentavos);
+  const i = montoUbl(iva);
+  const t = montoUbl(total);
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<!-- DATO DE EJEMPLO generado por npm run datos-ejemplo (escenarios de bandeja). NO es una captura de producción. -->
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+         xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+         xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:UBLVersionID>2.1</cbc:UBLVersionID>
+  <cbc:CustomizationID>10</cbc:CustomizationID>
+  <cbc:ID>${p.id}</cbc:ID>
+  <cbc:UUID schemeName="CUFE-SHA384">${p.cufe}</cbc:UUID>
+  <cbc:IssueDate>${p.fecha}</cbc:IssueDate>
+  <cbc:IssueTime>09:30:00-05:00</cbc:IssueTime>
+  <cbc:InvoiceTypeCode>01</cbc:InvoiceTypeCode>
+  <cbc:DocumentCurrencyCode>COP</cbc:DocumentCurrencyCode>
+  <cac:AccountingSupplierParty>
+    <cac:Party>
+      <cac:PartyTaxScheme>
+        <cbc:CompanyID schemeID="1" schemeName="31">${p.emisorNit}</cbc:CompanyID>
+        <cac:TaxScheme><cbc:ID>01</cbc:ID><cbc:Name>IVA</cbc:Name></cac:TaxScheme>
+      </cac:PartyTaxScheme>
+      <cac:PartyLegalEntity><cbc:RegistrationName>${p.emisorNombre}</cbc:RegistrationName></cac:PartyLegalEntity>
+    </cac:Party>
+  </cac:AccountingSupplierParty>
+  <cac:AccountingCustomerParty>
+    <cac:Party>
+      <cac:PartyTaxScheme>
+        <cbc:CompanyID schemeID="1" schemeName="31">800000000</cbc:CompanyID>
+        <cac:TaxScheme><cbc:ID>01</cbc:ID><cbc:Name>IVA</cbc:Name></cac:TaxScheme>
+      </cac:PartyTaxScheme>
+      <cac:PartyLegalEntity><cbc:RegistrationName>Empresa Cliente (la que usted creó con npm run arranque)</cbc:RegistrationName></cac:PartyLegalEntity>
+    </cac:Party>
+  </cac:AccountingCustomerParty>
+  <cac:TaxTotal>
+    <cbc:TaxAmount currencyID="COP">${i}</cbc:TaxAmount>
+    <cac:TaxSubtotal>
+      <cbc:TaxableAmount currencyID="COP">${b}</cbc:TaxableAmount>
+      <cbc:TaxAmount currencyID="COP">${i}</cbc:TaxAmount>
+      <cac:TaxCategory>
+        <cbc:Percent>19.00</cbc:Percent>
+        <cac:TaxScheme><cbc:ID>01</cbc:ID><cbc:Name>IVA</cbc:Name></cac:TaxScheme>
+      </cac:TaxCategory>
+    </cac:TaxSubtotal>
+  </cac:TaxTotal>
+  <cac:LegalMonetaryTotal>
+    <cbc:LineExtensionAmount currencyID="COP">${b}</cbc:LineExtensionAmount>
+    <cbc:TaxExclusiveAmount currencyID="COP">${b}</cbc:TaxExclusiveAmount>
+    <cbc:TaxInclusiveAmount currencyID="COP">${t}</cbc:TaxInclusiveAmount>
+    <cbc:PayableAmount currencyID="COP">${t}</cbc:PayableAmount>
+  </cac:LegalMonetaryTotal>
+  <cac:InvoiceLine>
+    <cbc:ID>1</cbc:ID>
+    <cbc:InvoicedQuantity unitCode="EA">1</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount currencyID="COP">${b}</cbc:LineExtensionAmount>
+    <cac:TaxTotal>
+      <cbc:TaxAmount currencyID="COP">${i}</cbc:TaxAmount>
+      <cac:TaxSubtotal>
+        <cbc:TaxableAmount currencyID="COP">${b}</cbc:TaxableAmount>
+        <cbc:TaxAmount currencyID="COP">${i}</cbc:TaxAmount>
+        <cac:TaxCategory>
+          <cbc:Percent>19.00</cbc:Percent>
+          <cac:TaxScheme><cbc:ID>01</cbc:ID><cbc:Name>IVA</cbc:Name></cac:TaxScheme>
+        </cac:TaxCategory>
+      </cac:TaxSubtotal>
+    </cac:TaxTotal>
+    <cac:Item><cbc:Description>${p.descripcionLinea}</cbc:Description></cac:Item>
+    <cac:Price><cbc:PriceAmount currencyID="COP">${b}</cbc:PriceAmount></cac:Price>
+  </cac:InvoiceLine>
+</Invoice>`;
+  return new TextEncoder().encode(xml);
+}
+
+interface PlantillaNota {
+  id: string;
+  cufe: string;
+  fecha: string;
+  emisorNit: string;
+  emisorNombre: string;
+  descripcionLinea: string;
+  baseCentavos: number;
+  facturaOriginalId: string;
+  facturaOriginalCufe: string;
+}
+
+/** Nota crédito UBL 2.1 de demostración. Misma estructura que
+ *  `tests/fixtures/ubl/credit-note-simple.xml`, parametrizada; referencia la
+ *  factura original por su CUFE (`BillingReference`). */
+function xmlNotaCreditoEscenario(p: PlantillaNota): Uint8Array {
+  const iva = Math.round((p.baseCentavos * 19) / 100);
+  const total = p.baseCentavos + iva;
+  const b = montoUbl(p.baseCentavos);
+  const i = montoUbl(iva);
+  const t = montoUbl(total);
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<!-- DATO DE EJEMPLO generado por npm run datos-ejemplo (escenario de nota crédito rechazada, V-28). NO es una captura de producción. -->
+<CreditNote xmlns="urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2"
+            xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+            xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:UBLVersionID>2.1</cbc:UBLVersionID>
+  <cbc:CustomizationID>10</cbc:CustomizationID>
+  <cbc:ID>${p.id}</cbc:ID>
+  <cbc:UUID schemeName="CUFE-SHA384">${p.cufe}</cbc:UUID>
+  <cbc:IssueDate>${p.fecha}</cbc:IssueDate>
+  <cbc:CreditNoteTypeCode>91</cbc:CreditNoteTypeCode>
+  <cbc:DocumentCurrencyCode>COP</cbc:DocumentCurrencyCode>
+  <cac:BillingReference>
+    <cac:InvoiceDocumentReference>
+      <cbc:ID>${p.facturaOriginalId}</cbc:ID>
+      <cbc:UUID>${p.facturaOriginalCufe}</cbc:UUID>
+    </cac:InvoiceDocumentReference>
+  </cac:BillingReference>
+  <cac:AccountingSupplierParty>
+    <cac:Party>
+      <cac:PartyTaxScheme>
+        <cbc:CompanyID schemeID="1" schemeName="31">${p.emisorNit}</cbc:CompanyID>
+        <cac:TaxScheme><cbc:ID>01</cbc:ID><cbc:Name>IVA</cbc:Name></cac:TaxScheme>
+      </cac:PartyTaxScheme>
+      <cac:PartyLegalEntity><cbc:RegistrationName>${p.emisorNombre}</cbc:RegistrationName></cac:PartyLegalEntity>
+    </cac:Party>
+  </cac:AccountingSupplierParty>
+  <cac:AccountingCustomerParty>
+    <cac:Party>
+      <cac:PartyTaxScheme>
+        <cbc:CompanyID schemeID="1" schemeName="31">800000000</cbc:CompanyID>
+        <cac:TaxScheme><cbc:ID>01</cbc:ID><cbc:Name>IVA</cbc:Name></cac:TaxScheme>
+      </cac:PartyTaxScheme>
+      <cac:PartyLegalEntity><cbc:RegistrationName>Empresa Cliente (la que usted creó con npm run arranque)</cbc:RegistrationName></cac:PartyLegalEntity>
+    </cac:Party>
+  </cac:AccountingCustomerParty>
+  <cac:TaxTotal>
+    <cbc:TaxAmount currencyID="COP">${i}</cbc:TaxAmount>
+    <cac:TaxSubtotal>
+      <cbc:TaxableAmount currencyID="COP">${b}</cbc:TaxableAmount>
+      <cbc:TaxAmount currencyID="COP">${i}</cbc:TaxAmount>
+      <cac:TaxCategory>
+        <cbc:Percent>19.00</cbc:Percent>
+        <cac:TaxScheme><cbc:ID>01</cbc:ID><cbc:Name>IVA</cbc:Name></cac:TaxScheme>
+      </cac:TaxCategory>
+    </cac:TaxSubtotal>
+  </cac:TaxTotal>
+  <cac:LegalMonetaryTotal>
+    <cbc:LineExtensionAmount currencyID="COP">${b}</cbc:LineExtensionAmount>
+    <cbc:TaxExclusiveAmount currencyID="COP">${b}</cbc:TaxExclusiveAmount>
+    <cbc:TaxInclusiveAmount currencyID="COP">${t}</cbc:TaxInclusiveAmount>
+    <cbc:PayableAmount currencyID="COP">${t}</cbc:PayableAmount>
+  </cac:LegalMonetaryTotal>
+  <cac:CreditNoteLine>
+    <cbc:ID>1</cbc:ID>
+    <cbc:CreditedQuantity unitCode="EA">1</cbc:CreditedQuantity>
+    <cbc:LineExtensionAmount currencyID="COP">${b}</cbc:LineExtensionAmount>
+    <cac:TaxTotal>
+      <cbc:TaxAmount currencyID="COP">${i}</cbc:TaxAmount>
+      <cac:TaxSubtotal>
+        <cbc:TaxableAmount currencyID="COP">${b}</cbc:TaxableAmount>
+        <cbc:TaxAmount currencyID="COP">${i}</cbc:TaxAmount>
+        <cac:TaxCategory>
+          <cbc:Percent>19.00</cbc:Percent>
+          <cac:TaxScheme><cbc:ID>01</cbc:ID><cbc:Name>IVA</cbc:Name></cac:TaxScheme>
+        </cac:TaxCategory>
+      </cac:TaxSubtotal>
+    </cac:TaxTotal>
+    <cac:Item><cbc:Description>${p.descripcionLinea}</cbc:Description></cac:Item>
+    <cac:Price><cbc:PriceAmount currencyID="COP">${b}</cbc:PriceAmount></cac:Price>
+  </cac:CreditNoteLine>
+</CreditNote>`;
+  return new TextEncoder().encode(xml);
+}
+
+/** Estado actual del `source_document`. */
+async function estadoDe(tx: SqlClient, sourceDocumentId: string): Promise<string> {
+  const { rows } = await tx.query<{ estado: string }>(
+    `SELECT estado FROM source_document WHERE id = $1`,
+    [sourceDocumentId],
+  );
+  return rows[0]?.estado ?? '(desconocido)';
+}
+
+/** Asiento BORRADOR del documento (causación o reversa), si lo hay. */
+async function draftEntryId(
+  tx: SqlClient,
+  sourceDocumentId: string,
+  tipo: 'causacion' | 'reversa',
+): Promise<string | null> {
+  const cond = tipo === 'reversa' ? `tipo = 'reversa'` : `tipo <> 'reversa'`;
+  const { rows } = await tx.query<{ id: string }>(
+    `SELECT id FROM journal_entry
+      WHERE source_document_id = $1 AND estado = 'draft' AND ${cond}
+      ORDER BY created_at DESC LIMIT 1`,
+    [sourceDocumentId],
+  );
+  return rows[0]?.id ?? null;
+}
+
+/** Rechaza el asiento borrador del documento, si sigue en borrador (idempotente:
+ *  si ya está rechazado/archivado/recausado, no hace nada). */
+async function rechazarSiEsBorrador(
+  tx: SqlClient,
+  sourceDocumentId: string,
+  ctx: CtxEscenarios,
+  motivo: string,
+  tipo: 'causacion' | 'reversa' = 'causacion',
+): Promise<boolean> {
+  const entry = await draftEntryId(tx, sourceDocumentId, tipo);
+  if (!entry) return false;
+  await aprobarAsiento(tx, {
+    journalEntryId: entry,
+    decision: 'rechazado',
+    userId: ctx.userId,
+    ip: '127.0.0.1',
+    userAgent: 'datos-ejemplo-cli',
+    motivo,
+  });
+  return true;
+}
+
+/** Estado actual del documento y la clave de idempotencia de su asiento vivo. */
+async function estadoYClave(
+  tx: SqlClient,
+  sourceDocumentId: string,
+): Promise<{ estado: string; idempotencyKey: string | null }> {
+  const { rows } = await tx.query<{ estado: string }>(
+    `SELECT estado FROM source_document WHERE id = $1`,
+    [sourceDocumentId],
+  );
+  const { rows: entryRows } = await tx.query<{ idempotency_key: string }>(
+    `SELECT idempotency_key FROM journal_entry
+      WHERE source_document_id = $1 AND estado <> 'anulado'
+      ORDER BY created_at DESC LIMIT 1`,
+    [sourceDocumentId],
+  );
+  return { estado: rows[0]?.estado ?? '(desconocido)', idempotencyKey: entryRows[0]?.idempotency_key ?? null };
+}
+
+export async function montarEscenariosBandeja(
+  db: DbHandle,
+  ctx: CtxEscenarios,
+): Promise<ResultadoEscenariosBandeja> {
+  const { log } = ctx;
+  const sess = { sessionToken: ctx.sessionToken, companyId: ctx.companyId };
+  const escenarios: EscenarioBandeja[] = [];
+
+  // Catálogo de los documentos que se van a montar. Los montos son "feos" a
+  // propósito: sirven para ejercitar los filtros de monto de la bandeja.
+  const APROBABLES = [
+    { clave: 'apr_alta', id: 'DEMO-B-APR-1', nombre: 'Aprobación · confianza alta', base: 213700000, scoreCentesimas: 92 },
+    { clave: 'apr_media', id: 'DEMO-B-APR-2', nombre: 'Aprobación · confianza media', base: 84600000, scoreCentesimas: 74 },
+    { clave: 'apr_baja', id: 'DEMO-B-APR-3', nombre: 'Aprobación · confianza baja', base: 541200000, scoreCentesimas: 58 },
+  ];
+  const REVISION = [
+    { id: 'DEMO-B-REV-1', nombre: 'Revisión · proveedor no registrado (papelería)', nit: '902111000', emisor: 'Suministros Sin Registro SAS', desc: 'Suministro de papelería y útiles de oficina (dato de ejemplo)', base: 71300000 },
+    { id: 'DEMO-B-REV-2', nombre: 'Revisión · proveedor no registrado (mantenimiento)', nit: '902222000', emisor: 'Ferretería No Vinculada SAS', desc: 'Mantenimiento de equipos de cómputo (dato de ejemplo)', base: 47700000 },
+    { id: 'DEMO-B-REV-3', nombre: 'Revisión · proveedor no registrado (mensajería)', nit: '902333000', emisor: 'Transportes Fantasma SAS', desc: 'Servicio de mensajería urbana (dato de ejemplo)', base: 45900000 },
+  ];
+  const ARCHIVAR = [
+    { id: 'DEMO-B-ARC-1', nombre: 'Rechazada y archivada (1)', base: 31700000 },
+    { id: 'DEMO-B-ARC-2', nombre: 'Rechazada y archivada (2)', base: 33900000 },
+  ];
+  const V23_ID = 'DEMO-B-V23-1';
+  const ORIGINAL_ID = 'DEMO-B-NC-ORIG';
+  const NOTA_ID = 'DEMO-B-NC-1';
+  const ORIGINAL_CUFE = cufeEscenario(ORIGINAL_ID);
+
+  // ---------------------------------------------------------------------------
+  // FASE A — ingest de todo lo causable + memoria del proveedor de prueba.
+  // ---------------------------------------------------------------------------
+  const ids = await withSessionContext(db, sess, async (tx) => {
+    // Una sola entrada de memoria cubre TODAS las facturas del proveedor de
+    // prueba (misma clave: company + tercero + patrón de la descripción).
+    await registrarDecisionHumana(tx, {
+      tenantId: ctx.tenantId,
+      companyId: ctx.companyId,
+      terceroId: ctx.proveedorPruebaId,
+      descripcion: DESC_LINEA_ESCENARIO,
+      conceptoId: ctx.conceptoServGeneralesId,
+      usuarioId: ctx.userId,
+    });
+
+    const recibir = async (bytes: Uint8Array, archivo: string): Promise<string> => {
+      const r = await recibirDocumento(tx, { bytes, nombreArchivo: archivo, origen: 'carga_manual' });
+      if (!r.ok) {
+        throw new DatosEjemploError(`El escenario "${archivo}" quedó en cuarentena: ${r.detalle}`);
+      }
+      return r.sourceDocumentId;
+    };
+
+    const aprobables: Record<string, string> = {};
+    for (const a of APROBABLES) {
+      aprobables[a.clave] = await recibir(
+        xmlFacturaEscenario({
+          id: a.id,
+          cufe: cufeEscenario(a.id),
+          fecha: FECHA_ESCENARIO,
+          emisorNit: ctx.proveedorPruebaNit,
+          emisorNombre: EMISOR_PRUEBA_NOMBRE,
+          descripcionLinea: DESC_LINEA_ESCENARIO,
+          baseCentavos: a.base,
+        }),
+        `${a.id}.xml`,
+      );
+    }
+
+    const revision: string[] = [];
+    for (const r of REVISION) {
+      revision.push(
+        await recibir(
+          xmlFacturaEscenario({
+            id: r.id,
+            cufe: cufeEscenario(r.id),
+            fecha: FECHA_ESCENARIO,
+            emisorNit: r.nit,
+            emisorNombre: r.emisor,
+            descripcionLinea: r.desc,
+            baseCentavos: r.base,
+          }),
+          `${r.id}.xml`,
+        ),
+      );
+    }
+
+    const archivar: string[] = [];
+    for (const a of ARCHIVAR) {
+      archivar.push(
+        await recibir(
+          xmlFacturaEscenario({
+            id: a.id,
+            cufe: cufeEscenario(a.id),
+            fecha: FECHA_ESCENARIO,
+            emisorNit: ctx.proveedorPruebaNit,
+            emisorNombre: EMISOR_PRUEBA_NOMBRE,
+            descripcionLinea: DESC_LINEA_ESCENARIO,
+            baseCentavos: a.base,
+          }),
+          `${a.id}.xml`,
+        ),
+      );
+    }
+
+    const v23 = await recibir(
+      xmlFacturaEscenario({
+        id: V23_ID,
+        cufe: cufeEscenario(V23_ID),
+        fecha: FECHA_ESCENARIO,
+        emisorNit: ctx.proveedorPruebaNit,
+        emisorNombre: EMISOR_PRUEBA_NOMBRE,
+        descripcionLinea: DESC_LINEA_ESCENARIO,
+        baseCentavos: 118900000,
+      }),
+      `${V23_ID}.xml`,
+    );
+
+    const original = await recibir(
+      xmlFacturaEscenario({
+        id: ORIGINAL_ID,
+        cufe: ORIGINAL_CUFE,
+        fecha: FECHA_ESCENARIO,
+        emisorNit: ctx.proveedorPruebaNit,
+        emisorNombre: EMISOR_PRUEBA_NOMBRE,
+        descripcionLinea: DESC_LINEA_ESCENARIO,
+        baseCentavos: 99400000,
+      }),
+      `${ORIGINAL_ID}.xml`,
+    );
+
+    return { aprobables, revision, archivar, v23, original };
+  });
+
+  log('  ingest de los documentos de escenario listo; causando...');
+  await vaciarCola(db, 'datos-ejemplo-cli');
+
+  // ---------------------------------------------------------------------------
+  // FASE B — traza de IA (score) para las tres aprobables + aprobar el
+  // original de la nota crédito + rechazar/archivar + rechazar/reintegrar V-23.
+  // ---------------------------------------------------------------------------
+  await withAdminContext(db, async (tx) => {
+    for (const a of APROBABLES) {
+      const sid = ids.aprobables[a.clave];
+      if (!sid) continue;
+      // Idempotente: no re-insertar la traza si ya existe una manual.
+      const { rows } = await tx.query<{ n: string }>(
+        `SELECT count(*)::text AS n FROM extraction WHERE source_document_id = $1 AND origen = 'manual'`,
+        [sid],
+      );
+      if (Number(rows[0]?.n ?? '0') > 0) continue;
+      await tx.query(
+        `INSERT INTO extraction
+           (tenant_id, company_id, source_document_id, datos_extraidos,
+            concepto_propuesto_id, score_confianza, origen)
+         VALUES ($1, $2, $3, $4::jsonb, $5, $6::numeric / 100, 'manual')`,
+        [
+          ctx.tenantId,
+          ctx.companyId,
+          sid,
+          JSON.stringify({
+            nota: 'Traza de propuesta de clasificación SIMULADA para npm run datos-ejemplo (no hubo modelo real).',
+            fuente: 'datos-ejemplo',
+          }),
+          ctx.conceptoServGeneralesId,
+          a.scoreCentesimas,
+        ],
+      );
+    }
+  });
+
+  const notaId = await withSessionContext(db, sess, async (tx): Promise<string> => {
+    // Nota crédito: su factura original tiene que quedar PUBLICADA antes de que
+    // el worker pueda causar la reversa (`causarNotaCredito` exige
+    // `source_document.estado = 'causado'` + asiento 'posted'). Idempotente: si
+    // ya está causada (segunda corrida), no hay borrador y no se hace nada.
+    const entryOriginal = await draftEntryId(tx, ids.original, 'causacion');
+    if (entryOriginal) {
+      await aprobarAsiento(tx, {
+        journalEntryId: entryOriginal,
+        decision: 'aprobado',
+        userId: ctx.userId,
+        ip: '127.0.0.1',
+        userAgent: 'datos-ejemplo-cli',
+        motivo: 'Aprobación de la factura original (escenario de nota crédito rechazada).',
+      });
+    }
+
+    // Dos rechazadas que se archivan. Cada paso comprueba el estado antes de
+    // actuar, así que correr el comando dos veces no rompe.
+    for (const [indice, sourceDocumentId] of ids.archivar.entries()) {
+      await rechazarSiEsBorrador(
+        tx,
+        sourceDocumentId,
+        ctx,
+        `Rechazo de ejemplo (${indice + 1}): la factura no corresponde a esta empresa.`,
+      );
+      if ((await estadoDe(tx, sourceDocumentId)) === 'rechazado') {
+        await archivarDocumentoRechazado(
+          tx,
+          sourceDocumentId,
+          'Archivada en la demostración: no se va a recausar.',
+        );
+      }
+    }
+
+    // V-23: rechazar, luego reintegrar. El worker la recausa con la clave
+    // versionada en la fase C. Solo la PRIMERA vez: si ya dejó atrás un asiento
+    // de causación anulado, el ciclo ya se corrió — no se repite (si no, cada
+    // corrida del comando sumaría un `#n` más).
+    const { rows: v23Anulados } = await tx.query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM journal_entry
+        WHERE source_document_id = $1 AND tipo <> 'reversa'
+          AND idempotency_key LIKE 'causacion:%' AND estado = 'anulado'`,
+      [ids.v23],
+    );
+    if (Number(v23Anulados[0]?.n ?? '0') === 0) {
+      await rechazarSiEsBorrador(
+        tx,
+        ids.v23,
+        ctx,
+        'Rechazo por error (escenario V-23): en realidad sí había que causarla.',
+      );
+      if ((await estadoDe(tx, ids.v23)) === 'rechazado') {
+        await reintegrarDocumentoRechazado(
+          tx,
+          ids.v23,
+          'Reintegro de la demostración: el rechazo fue un error, se devuelve a la cola (V-23).',
+        );
+      }
+    }
+
+    // Ahora que la original está publicada, se ingesta la nota crédito.
+    const r = await recibirDocumento(tx, {
+      bytes: xmlNotaCreditoEscenario({
+        id: NOTA_ID,
+        cufe: cufeEscenario(NOTA_ID),
+        fecha: FECHA_ESCENARIO,
+        emisorNit: ctx.proveedorPruebaNit,
+        emisorNombre: EMISOR_PRUEBA_NOMBRE,
+        descripcionLinea: 'Devolución parcial de servicios de consultoría (dato de ejemplo)',
+        baseCentavos: 40700000,
+        facturaOriginalId: ORIGINAL_ID,
+        facturaOriginalCufe: ORIGINAL_CUFE,
+      }),
+      nombreArchivo: `${NOTA_ID}.xml`,
+      origen: 'carga_manual',
+    });
+    if (!r.ok) {
+      throw new DatosEjemploError(`El escenario "${NOTA_ID}" quedó en cuarentena: ${r.detalle}`);
+    }
+    return r.sourceDocumentId;
+  });
+
+  // ---------------------------------------------------------------------------
+  // FASE C — segunda pasada del worker: recausa la V-23 (clave `#2`) y causa la
+  // reversa de la nota crédito. Después se rechaza la nota.
+  // ---------------------------------------------------------------------------
+  log('  segunda pasada de la cola (recausa V-23 + reversa de nota crédito)...');
+  await vaciarCola(db, 'datos-ejemplo-cli');
+
+  await withSessionContext(db, sess, async (tx) => {
+    await rechazarSiEsBorrador(
+      tx,
+      notaId,
+      ctx,
+      'Nota crédito rechazada en la demostración (escenario V-28): recuperable desde la sub-bandeja.',
+      'reversa',
+    );
+  });
+
+  // ---------------------------------------------------------------------------
+  // FASE D — resumen: dónde quedó cada documento.
+  // ---------------------------------------------------------------------------
+  await withAdminContext(db, async (tx) => {
+    const registrar = async (
+      nombre: string,
+      id: string,
+      sourceDocumentId: string | null,
+      dondeSeVe: string,
+      detalle: string,
+    ) => {
+      if (!sourceDocumentId) {
+        escenarios.push({ nombre, numeroDocumento: id, sourceDocumentId: '(no creado)', estado: '(no creado)', dondeSeVe, detalle });
+        return;
+      }
+      const { estado, idempotencyKey } = await estadoYClave(tx, sourceDocumentId);
+      escenarios.push({
+        nombre,
+        numeroDocumento: id,
+        sourceDocumentId,
+        estado,
+        dondeSeVe,
+        detalle: idempotencyKey ? `${detalle} · asiento ${idempotencyKey}` : detalle,
+      });
+    };
+
+    for (const a of APROBABLES) {
+      await registrar(
+        a.nombre,
+        a.id,
+        ids.aprobables[a.clave] ?? null,
+        'Bandeja › Pendientes de aprobación',
+        `confianza ${a.scoreCentesimas} · base $${montoUbl(a.base)}`,
+      );
+    }
+    for (const [i, sid] of ids.revision.entries()) {
+      await registrar(
+        REVISION[i]!.nombre,
+        REVISION[i]!.id,
+        sid,
+        'Bandeja › Pendientes de revisión',
+        'motivo: el emisor no está registrado como tercero',
+      );
+    }
+    for (const [i, sid] of ids.archivar.entries()) {
+      await registrar(ARCHIVAR[i]!.nombre, ARCHIVAR[i]!.id, sid, 'fuera de las vistas (terminal)', 'rechazada y luego archivada');
+    }
+    await registrar(
+      'Reintegro V-23 (rechazada → reintegrada → recausada)',
+      V23_ID,
+      ids.v23,
+      'Bandeja › Pendientes de aprobación',
+      'pasó por rechazo + reintegro; el asiento nuevo lleva la clave versionada',
+    );
+    await registrar(
+      'Factura original de la nota crédito',
+      ORIGINAL_ID,
+      ids.original,
+      'ledger (publicada)',
+      'aprobada para que la nota crédito tuviera de dónde partir',
+    );
+    await registrar(
+      'Nota crédito rechazada (V-28)',
+      NOTA_ID,
+      notaId,
+      'Bandeja › Rechazadas',
+      'reversa rechazada; recuperable (su asiento quedó anulado)',
+    );
+  });
+
+  for (const e of escenarios) {
+    log(`    - ${e.nombre}: ${e.estado} → ${e.dondeSeVe}`);
+  }
+
+  return { escenarios };
 }

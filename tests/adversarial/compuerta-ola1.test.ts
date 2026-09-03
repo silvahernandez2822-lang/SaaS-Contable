@@ -1173,6 +1173,9 @@ describe('A14 · la vía del buzón: ¿se puede cruzar de firma por ahí? (adjud
       'app.simular_impacto_municipio_ica',
       'app.simular_impacto_tax_concept',
       'app.simular_impacto_valor_base',
+      // D-084 (migración 174): ¿este tercero tiene movimientos? — para que la
+      // interfaz deshabilite "Eliminar" con el criterio del motor.
+      'app.tercero_tiene_movimientos',
       'app.tiene_permiso',
       'app.trg_espejo_acceso',
       'app.trg_espejo_usuario',

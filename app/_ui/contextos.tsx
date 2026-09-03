@@ -136,18 +136,28 @@ export function useDensidad(): DensidadCtx {
 
 /* --------------------------------------------------------------------- tema
  *
- * D-082 · tarea 7 (fusiona D-081). El tema por defecto es CLARO, siempre, sin
- * importar `prefers-color-scheme` del sistema operativo. El modo oscuro solo se
- * activa si el usuario lo elige con el toggle de la barra superior; la elección
- * se guarda en `localStorage` (preferencia de usuario, no derivada del SO) y se
- * aplica sobre `<html data-tema>` — el mismo atributo que ya lee `globals.css`.
- * El script en línea de `app/layout.tsx` la aplica antes del primer pintado
- * para que no haya parpadeo; este provider solo la mantiene en sincronía con la
- * interfaz de React.
+ * D-085 (revierte la parte de tema de D-081/D-082). Resolución del tema:
+ *
+ *   · Sin elección guardada  → se sigue `prefers-color-scheme` del SO. Lo hace
+ *     el CSS (`@media` en `globals.css`), sin una sola línea de JavaScript y
+ *     sin parpadeo.
+ *   · Con elección guardada  → gana la del usuario (toggle sol/luna). Se guarda
+ *     en la cookie `contable-co-tema` (NO en `localStorage`) para que el layout
+ *     de servidor pueda leerla y pintar `<html data-tema>` en el HTML inicial:
+ *     así tampoco hay parpadeo para la elección explícita, y no se necesita un
+ *     `<script>` bloqueante — que React 19 rechaza renderizar en sus re-render
+ *     de cliente («Encountered a script tag while rendering React component»),
+ *     que es lo que hacía saltar el error de consola al cambiar de empresa.
+ *
+ * Este provider recibe de servidor el tema de la cookie (`inicial`), así que
+ * arranca con el mismo valor en servidor y cliente (sin mismatch). Escribe la
+ * cookie y sincroniza `<html data-tema>` cuando el usuario alterna sin recargar.
  */
 export type Tema = 'claro' | 'oscuro';
 
-const CLAVE_TEMA = 'contable-co:tema';
+/** Debe coincidir con `COOKIE_TEMA` de `app/lib/sesion.ts`. */
+const COOKIE_TEMA = 'contable-co-tema';
+const UN_ANIO_EN_SEGUNDOS = 60 * 60 * 24 * 365;
 
 type TemaCtx = {
   tema: Tema;
@@ -157,41 +167,76 @@ type TemaCtx = {
 
 const ContextoTema = createContext<TemaCtx | null>(null);
 
-function aplicarTema(t: Tema) {
+/** Persiste la elección del usuario donde el servidor puede leerla. */
+function guardarCookieTema(t: Tema) {
   try {
-    document.documentElement.dataset.tema = t;
-    window.localStorage.setItem(CLAVE_TEMA, t);
+    const secure = window.location.protocol === 'https:' ? '; secure' : '';
+    document.cookie = `${COOKIE_TEMA}=${t}; path=/; max-age=${UN_ANIO_EN_SEGUNDOS}; samesite=lax${secure}`;
   } catch {
-    /* sin persistencia: no es crítico */
+    /* sin cookie: la elección no sobrevive a la recarga, no es crítico */
   }
 }
 
-export function TemaProvider({ children }: { children: ReactNode }) {
-  const [tema, setTema] = useState<Tema>('claro');
+/** Tema del SO (`prefers-color-scheme`), con claro como red de seguridad. */
+function temaDelSistema(): Tema {
+  try {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'oscuro' : 'claro';
+  } catch {
+    return 'claro';
+  }
+}
 
+export function TemaProvider({
+  inicial,
+  children,
+}: {
+  /** Tema de la cookie leído en servidor. `null` = sin elección; manda el SO. */
+  inicial: Tema | null;
+  children: ReactNode;
+}) {
+  // Mismo valor en servidor y cliente: sin elección, `claro` es solo el punto
+  // de partida del ícono del toggle; el color real lo pinta el CSS por `@media`.
+  const [tema, setTema] = useState<Tema>(inicial ?? 'claro');
+  const [hayEleccion, setHayEleccion] = useState<boolean>(inicial !== null);
+
+  // Sin elección propia: el estado de React sigue al SO (para que el ícono del
+  // toggle muestre lo correcto), y reacciona si el usuario cambia el modo del SO.
+  useEffect(() => {
+    if (hayEleccion) return;
+    const resolver = () => setTema(temaDelSistema());
+    resolver();
+    let mq: MediaQueryList | null = null;
+    try {
+      mq = window.matchMedia('(prefers-color-scheme: dark)');
+      mq.addEventListener('change', resolver);
+    } catch {
+      /* matchMedia no disponible */
+    }
+    return () => mq?.removeEventListener('change', resolver);
+  }, [hayEleccion]);
+
+  // Refleja el tema en `<html data-tema>` sin esperar a la próxima navegación.
+  // Con elección: fija el atributo. Sin elección: lo quita y deja mandar al CSS.
   useEffect(() => {
     try {
-      const guardado = window.localStorage.getItem(CLAVE_TEMA);
-      if (guardado === 'claro' || guardado === 'oscuro') {
-        setTema(guardado);
-        return;
-      }
+      if (hayEleccion) document.documentElement.dataset.tema = tema;
+      else delete document.documentElement.dataset.tema;
     } catch {
-      /* localStorage no disponible */
+      /* documento no disponible */
     }
-    // Sin elección previa: claro explícito, sin consultar al sistema operativo.
-    setTema('claro');
-  }, []);
+  }, [tema, hayEleccion]);
 
   const fijar = useCallback((t: Tema) => {
     setTema(t);
-    aplicarTema(t);
+    setHayEleccion(true);
+    guardarCookieTema(t);
   }, []);
 
   const alternar = useCallback(() => {
+    setHayEleccion(true);
     setTema((t) => {
       const siguiente: Tema = t === 'claro' ? 'oscuro' : 'claro';
-      aplicarTema(siguiente);
+      guardarCookieTema(siguiente);
       return siguiente;
     });
   }, []);

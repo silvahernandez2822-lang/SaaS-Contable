@@ -84,6 +84,16 @@ async function main(): Promise<void> {
       console.log(`    - ${f.archivo}: ${estado}${f.journalEntryId ? ` (asiento ${f.journalEntryId})` : ''}`);
       for (const m of f.motivos) console.log(`        motivo: ${m}`);
     }
+    if (resultado.escenariosBandeja) {
+      console.log('');
+      console.log(`  Escenarios de bandeja (${resultado.escenariosBandeja.escenarios.length}):`);
+      for (const e of resultado.escenariosBandeja.escenarios) {
+        console.log(`    - ${e.nombre}`);
+        console.log(`        documento ${e.numeroDocumento} · estado '${e.estado}' · ${e.dondeSeVe}`);
+        console.log(`        ${e.detalle}`);
+      }
+    }
+
     console.log('');
     console.log('  Entre a la aplicación (npm run dev), inicie sesión con el usuario que creó');
     console.log('  con  npm run arranque  y revise /bandeja: ahí están las facturas de ejemplo');

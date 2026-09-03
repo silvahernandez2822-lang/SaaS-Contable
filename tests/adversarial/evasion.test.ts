@@ -644,6 +644,10 @@ describe('A14 · barrido estructural de puertas laterales', () => {
       'app.simular_impacto_municipio_ica',
       'app.simular_impacto_tax_concept',
       'app.simular_impacto_valor_base',
+      // D-084 (migración 174): la interfaz pregunta si un tercero tiene
+      // movimientos para deshabilitar "Eliminar" con el mismo criterio que el
+      // motor. No cruza firmas — mira filas que la RLS de la sesión ya acota.
+      'app.tercero_tiene_movimientos',
       'app.tiene_permiso',
       'app.trg_espejo_acceso',
       'app.trg_espejo_usuario',

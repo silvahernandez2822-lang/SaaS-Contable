@@ -121,6 +121,56 @@
 > (40 rutas), `npm test` **1052 en verde** (51 archivos, sin cambio de conteo). Sin comitear. Ver
 > «D-082».
 >
+> 2026-09-02, después de eso — **D-083: escenarios completos de bandeja en `npm run datos-ejemplo`.**
+> `montarEscenariosBandeja` monta el tercero «Proveedor Prueba SAS», 3 facturas para aprobar (score
+> 92/74/58), 3 para revisión, 2 rechazadas/archivadas, 1 ciclo V-23 completo y 1 nota crédito
+> rechazada recuperable — todo por los servicios reales, sin tocar el ledger a mano. Contenido antes
+> mal documentado como «extensión posterior» de D-082; ahora en su propia ficha. `tsc` limpio. Sin
+> comitear. Ver «D-083».
+>
+> 2026-09-02, después de eso — **D-084: Módulo de Terceros, Fase 3.** (0) Cuerpo de las cinco
+> pantallas de `/terceros` migrado al kit de `app/_ui/` (tokens de tema, `Panel`, tabla sticky,
+> `EstadoVacio`); `/terceros` sale de `PREFIJOS_SIN_MIGRAR` y ya responde a `data-tema="oscuro"`
+> igual que `/` y `/bandeja`. Submódulo con pestañas internas Detalle · Atributos fiscales ·
+> Actividad económica · Historial. (1) Eliminar solo si el tercero nunca tuvo movimientos; si los
+> tuvo, solo inactivar — impuesto por el motor: `app.tercero_tiene_movimientos` + trigger
+> `third_party_restrict_delete` (SQLSTATE `TP001`, migración 174); el botón de eliminar se
+> deshabilita en la UI con explicación. (2) Exportación a Excel del maestro
+> (`GET /api/terceros/exportar`, `exceljs`) con los atributos fiscales y el historial COMPLETO de
+> vigencias, aislada por RLS. (3) Historial de vigencias en pestaña aparte
+> (`/terceros/[id]/historial`), solo lectura; la vista principal muestra solo el valor vigente.
+> (4) Permisos por el servicio central `src/auth/permisos.ts` (nunca cadenas sueltas); punto de
+> extensión listo para la Fase 8 (roles a la medida) = agregar filas a `role_permission`, sin
+> reescribir lógica. A14 ampliado verificado por pruebas: DELETE directo de un tercero con
+> movimientos → `TP001`; la exportación no trae filas de otra empresa. `tsc` limpio, `next build`
+> exit 0, `npm test` **1065 en verde** (52 archivos). Sin comitear. Ver «D-084».
+>
+> 2026-09-02, después de eso — **D-085: reversión del tema forzado + 3 bugs de shell + migración 174
+> aplicada, y convención nueva de QA en navegador real.** (1) Se revierte la parte de D-081/D-082 que
+> forzaba tema claro ignorando el SO: **sin elección guardada el tema sigue `prefers-color-scheme`
+> (lo resuelve el CSS con `@media`, sin JavaScript); con elección guardada gana la del usuario**. La
+> elección se persiste en la **cookie `contable-co-tema`** (no `localStorage`) para que
+> `app/layout.tsx` la lea en servidor y pinte `<html data-tema>` en el HTML inicial → sin parpadeo y
+> **sin `<script>` bloqueante**. (2) `<html suppressHydrationWarning>` — `data-tema` puede cambiar
+> servidor↔cliente al alternar sin recargar; es la única diferencia esperada. (3) El `<script>` JSX
+> crudo del `<head>` se **elimina**: React 19 aborta con `console.error` al reconciliar cualquier
+> `<script>` del árbol en un re-render de cliente (probado: inline, `next/script beforeInteractive`
+> con y sin `src`, y `<script src>` a `public/` — los cuatro lo disparan), y ese re-render es justo
+> el que provoca el server action de cambiar de empresa. (4) BUG «seleccionar empresa forzaba modo
+> claro»: causa raíz = con el script + `localStorage`, el refresh de server action re-renderizaba
+> `<html>` sin `data-tema` y React borraba el atributo. Con la cookie no hay nada que perder: sin
+> elección manda el CSS; con elección `app/layout.tsx` re-lee la cookie en ese mismo refresh y
+> vuelve a emitir `data-tema`, que React mantiene por ser una prop suya. (5) Migraciones 172, 173 y
+> **174** aplicadas a la Neon real (estaban pendientes, sin problema de orden):
+> `app.tercero_tiene_movimientos()` y el trigger `third_party_restrict_delete` confirmados en
+> `pg_proc`/`pg_trigger`. `tsc` limpio, `next build` exit 0, `npm test` **1065 en verde** (52
+> archivos, sin cambio). **Verificado en navegador real, en `next start` Y en `next dev`**: consola
+> sin errores ni warnings en `/entrar`, `/` y `/terceros`, al alternar el tema y al cambiar de
+> empresa; SO oscuro sin cookie abre oscuro, SO claro abre claro, el toggle escribe la cookie y
+> persiste tras navegar, y cambiar de empresa ya no altera el tema. Convención nueva de trabajo (no
+> es ficha D-0XX). Sin comitear. Ver «D-085» y «Convenciones establecidas → Verificación en
+> navegador real».
+>
 > Registro histórico: 2026-08-31 — **A14, compuerta del LOTE POSTERIOR A LA OLA 3 (V-17/A8, V-18/A11,
 > arranque y repaso 14.1/A12, datos de ejemplo/A1, entorno y despliegue/A15). Veredicto: LOTE APROBADO,
 > con tres vulnerabilidades encontradas por A14 y CORREGIDAS por A14 en la misma pasada (V-20, V-21,
@@ -2210,6 +2260,218 @@ tarifa»; se cambiaron a la forma `[2px]` que ya usaba el resto del kit. Sin com
 
 ---
 
+### D-083 — Datos de prueba de bandeja: escenarios completos en `npm run datos-ejemplo`
+
+**Nota de numeración.** Este contenido estuvo documentado por error como «Extensión posterior» dentro
+de la ficha D-082 (refinamiento visual). Es un trabajo aparte —datos de ejemplo, no interfaz— y se le
+asigna su propia ficha D-083. El código correspondiente está sin comitear en
+`src/bootstrap/datos-ejemplo.ts` y `src/bootstrap/datos-ejemplo-cli.ts`.
+
+**Encargo.** `npm run datos-ejemplo` debía dejar la bandeja recorrible de punta a punta —todos los
+estados y sub-bandejas visibles— sin que nadie tenga que rechazar, reintegrar o archivar nada a mano.
+
+**Qué monta (`montarEscenariosBandeja`), además de las tres facturas de siempre:**
+
+- Un tercero nuevo «Proveedor Prueba SAS» (NIT 901888777, registrado).
+- 3 facturas en **Pendientes de aprobación** con score de confianza distinto (92 / 74 / 58 — badge
+  verde / ámbar / ámbar).
+- 3 en **Pendientes de revisión** (emisor no registrado como tercero — NITs
+  902111000 / 902222000 / 902333000).
+- 2 rechazadas y archivadas.
+- 1 que recorre el ciclo **V-23** completo: rechazada → `reintegrarDocumentoRechazado` → recausada
+  con clave `causacion:<doc>#2`.
+- 1 **nota crédito rechazada** (V-28), visible en la sub-bandeja de Rechazadas como recuperable.
+
+**Frontera respetada.** Cada documento entra por `recibirDocumento`, lo causa `vaciarCola` (el worker
+real) y las transiciones las hacen los servicios existentes (`aprobarAsiento`,
+`reintegrarDocumentoRechazado`, `archivarDocumentoRechazado`). Lo único que se inserta directo es la
+traza de la propuesta de IA (`extraction` con `origen='manual'` y `score_confianza`) — metadato, no un
+valor tributario ni un cálculo. Idempotente (seguro de correr dos veces). Los XML de escenario se
+generan en código con aritmética entera (sin literales de tarifa en un `.ts`).
+
+**Archivos tocados:** `src/bootstrap/datos-ejemplo.ts`, `src/bootstrap/datos-ejemplo-cli.ts`.
+
+**Verificación.** `npx tsc --noEmit` limpio. Sin comitear.
+
+---
+
+### D-084 — Módulo de Terceros, Fase 3: migración visual + eliminar/inactivar + exportación + historial + permisos
+
+**Encargo.** Cerrar la Fase 3 del roadmap para el Módulo de Terceros. Dos frentes: (a) la deuda
+visual de D-077/D-082 —Terceros heredaba el `AppShell` nuevo pero conservaba «cuerpo viejo»
+(`style` inline, `<table border={1}>`, hexadecimales fijos), y por eso se veía blanco fijo con el
+tema oscuro activo—; (b) la funcionalidad nueva de la fase (eliminar/inactivar, exportación a
+Excel, historial de vigencias en pestaña aparte, punto de extensión de permisos).
+
+**TAREA 0 — Cuerpo migrado al kit.** Las cinco pantallas de `/terceros` (`page.tsx`,
+`[id]/page.tsx`, `[id]/atributos-fiscales`, `[id]/actividades`, `nuevo`) y `_componentes.tsx` se
+reescribieron sobre `app/_ui/` (tokens de tema, `Panel`, `Encabezado`, `Tabla`/`Th` sticky de
+D-078, `EstadoVacio`, `Boton`/`EnlaceBoton`, `MensajeEstado`, escala tipográfica de D-082). Cero
+`style` inline, cero `#hex`. `/terceros` **salió de `PREFIJOS_SIN_MIGRAR`** en `AppShell.tsx`: la
+escotilla `data-tema="claro"` ya no lo cubre, así que el subárbol responde a `data-tema="oscuro"`
+igual que `/` y `/bandeja`. Verificado con `next build` (18 páginas, las cinco rutas de terceros
+compiladas) y por inspección de que ninguna pantalla del subárbol conserva un color suelto.
+
+**Submódulo con pestañas internas.** La ficha de un tercero tiene su propia navegación:
+**Detalle · Atributos fiscales · Actividad económica · Historial** (`app/terceros/_ui.tsx`,
+`TabsTercero`). El listado (`/terceros`) es su propia pantalla con búsqueda y filtro por estado
+(activos / todos / inactivos).
+
+**TAREA 1 — Eliminar vs inactivar.** Un tercero solo se BORRA si nunca tuvo movimientos; si los
+tuvo, solo se INACTIVA (`third_party.activo = false`), nunca `DELETE`. La garantía la pone el
+**motor**, no la aplicación: migración `174_a8_d084_terceros_fase3.sql` añade
+`app.tercero_tiene_movimientos(uuid)` (true si el tercero aparece en `journal_line`,
+`source_document`, `retention_applied`, o tiene una vigencia de `third_party_fiscal_attribute` /
+`third_party_activity` que **ya surtió efecto** —`vigente_desde <= CURRENT_DATE`—; una vigencia
+futura es cancelable y no bloquea) y un trigger `third_party_restrict_delete BEFORE DELETE` que
+rechaza con SQLSTATE **`TP001`**. El trigger ordena alfabéticamente **después** de
+`third_party_permiso` (016): primero SE002 si falta `tercero.editar`, luego TP001. En la capa de
+servicio: `terceroTieneMovimientos`, `eliminarTercero` (limpia las vigencias futuras +
+`memoria_clasificacion` + `clasificacion_pendiente` antes del DELETE) y `fijarActivoTercero`.
+La interfaz (`/terceros/[id]`, panel «Eliminar o inactivar») **deshabilita el botón de eliminar
+con la explicación** cuando el tercero tiene movimientos — con el mismo criterio exacto que el
+motor, porque llama a la misma función.
+
+**TAREA 2 — Exportación a Excel.** Botón «Exportar a Excel» en `/terceros` →
+`GET /api/terceros/exportar` → `src/reports/terceros-maestro.ts` (`exceljs`, la misma dependencia
+que A9). Cuatro hojas: **Terceros** (valor vigente hoy, con estado activo/inactivo y todos los
+atributos fiscales vigentes), **Atributos fiscales (historial)** (una fila por vigencia —cerradas
+y abierta— de todos los terceros, con las nueve banderas, régimen, norma, fuente, notas),
+**Actividad económica (historial)** (todas las ternas municipio×CIIU y sus vigencias), **Papel de
+trabajo** (encabezado obligatorio de la §11.2 + conteos). La empresa **nunca** llega por
+parámetro: sale de `conSesion`, y la RLS de las tres tablas de terceros garantiza que no se
+exporte ni una fila de otra empresa. El permiso lo exige el servicio central
+(`exigirPermiso(tx, PERMISOS.TERCERO_LEER)`).
+
+**TAREA 3 — Historial de vigencias en pestaña aparte.** La pestaña «Detalle» muestra SOLO el valor
+vigente hoy de cada atributo fiscal (panel «Situación fiscal vigente») y las actividades vigentes.
+El historial completo —cerradas y abierta, fiscal y de actividad— vive en `/terceros/[id]/historial`
+(solo lectura, dos tablas del kit). Servicio nuevo: `listarHistorialActividadesTercero` (todas las
+ternas, no solo lo vigente). Los formularios de `atributos-fiscales` y `actividades` quedaron solo
+con el formulario de vigencia nueva; el historial que antes mostraban se movió a la pestaña.
+
+**TAREA 4 — Permisos por un solo servicio central.** Los helpers del módulo
+(`puedeVerTerceros`, `puedeEditarTerceros`, `puedeEditarAtributosFiscales`) dejaron de hacer su
+propio `SELECT app.tiene_permiso('...')` y delegan en `src/auth/permisos.ts` (`tienePermiso` →
+`app.tiene_permiso`) con los códigos del registro `PERMISOS`, nunca cadenas sueltas. La resolución
+ya es `role_permission` (datos), no un `if (rol === 'contador')`: cuando exista la Fase 8
+(Administración con roles a la medida), conectar un rol configurable será **agregar filas a
+`role_permission`**, sin tocar esta capa. El punto de extensión está documentado en la cabecera de
+la sección de permisos de `src/services/terceros.ts`. No se creó ningún permiso nuevo ni se tocó
+el modelo de roles: la fase no se bloquea por la ausencia de la Fase 8.
+
+**Auditoría A14 (modo ampliado), verificada por ejecución en
+`tests/services/terceros-d084.test.ts` (13 pruebas):**
+
+- **«Eliminar» no tiene ningún camino que borre un tercero con movimientos, ni desde la API
+  directa.** Prueba: `DELETE FROM third_party` directo contra la base (saltándose todo el
+  servicio) sobre un tercero con documento soporte → rechazado con `TP001`, la fila sigue.
+- **La exportación no filtra datos de otra empresa (RLS).** Prueba: dos firmas montadas, un tercero
+  con nombre secreto en la firma B; la exportación corrida como firma A no contiene ese nombre en
+  ninguna fila de la hoja «Terceros».
+- **Consistencia con el patrón de tabla / estados vacíos ya establecido.** Listado e historial usan
+  `Tabla`/`Th`/`Td` y `EstadoVacio` del kit; los formularios usan `MensajeEstado`. Sin componentes
+  nuevos de tabla.
+- **Vigencia futura vs. vigencia en firme.** Probado que una vigencia fiscal futura no cuenta como
+  movimiento (y se limpia al eliminar) y que una que ya rige sí bloquea el borrado.
+
+**Punto menor declarado (no bloqueante).** `eliminarTercero` incluye `DELETE FROM
+memoria_clasificacion` / `clasificacion_pendiente` por defensa; esas tablas exigen
+`concepto.editar` en escritura (016). En la práctica un tercero borrable nunca tiene esas filas
+(se escriben durante la causación, que exige un `source_document`, que ya lo marca como «con
+movimientos»), así que el `DELETE` de 0 filas no dispara el trigger de permiso. Si la Fase 8
+introdujera un rol que pueda borrar terceros sin `concepto.editar`, habría que mover esa limpieza
+a una función `SECURITY DEFINER`.
+
+**Archivos.** Nuevos: `db/migrations/174_a8_d084_terceros_fase3.sql`,
+`src/reports/terceros-maestro.ts`, `app/api/terceros/exportar/route.ts`,
+`app/terceros/_ui.tsx`, `app/terceros/[id]/historial/page.tsx`,
+`tests/services/terceros-d084.test.ts`. Tocados: `src/services/terceros.ts`,
+`src/db/types.ts` (SQLSTATE `TP001`), `app/_ui/AppShell.tsx` (sacar `/terceros` de
+`PREFIJOS_SIN_MIGRAR`, etiqueta «Historial»), `app/terceros/page.tsx`,
+`app/terceros/_componentes.tsx`, `app/terceros/[id]/page.tsx`, `app/terceros/[id]/acciones.ts`,
+`app/terceros/nuevo/page.tsx`, `app/terceros/[id]/atributos-fiscales/page.tsx`,
+`app/terceros/[id]/actividades/page.tsx`, `tests/adversarial/evasion.test.ts` +
+`tests/adversarial/compuerta-ola1.test.ts` (el inventario de funciones `app.*` ejecutables por
+`app_user` ahora incluye `app.tercero_tiene_movimientos`).
+
+**Verificación.** `npx tsc --noEmit` limpio · `npx next build` **exit 0** (18 páginas estáticas,
+`ƒ /api/terceros/exportar` y `ƒ /terceros/[id]/historial` entre las rutas) · `npm test`
+**1065 en verde** (52 archivos; base D-082 = 1052/51, esta ola suma el archivo
+`tests/services/terceros-d084.test.ts` con 13 pruebas; los dos ajustes del inventario `app.*` en
+`evasion` y `compuerta-ola1` son de conteo, no de comportamiento). Sin comitear.
+
+---
+
+### D-085 — Reversión del tema forzado a claro, tres bugs de shell y la migración 174 aplicada
+
+**Contexto.** D-081/D-082 forzaron tema claro por defecto ignorando el SO. Se revierte esa parte:
+el toggle sol/luna sigue, pero el valor por defecto vuelve a `prefers-color-scheme`. Regla:
+**sin elección guardada → sigue al SO; con elección guardada → gana la del usuario.**
+
+**Arquitectura del tema tras D-085 (dos entradas, cero JavaScript para el primer pintado):**
+
+1. **`@media (prefers-color-scheme: dark)` en `globals.css`** resuelve el modo del SO. Es el valor
+   por defecto cuando el usuario no ha elegido nada. El `@custom-variant dark` de Tailwind matchea
+   ese `@media` (salvo override a claro) **o** `[data-tema='oscuro']`; los tokens de la paleta
+   oscura se declaran en los dos selectores (CSS plano no comparte un bloque entre un `@media` y un
+   selector de atributo — igual que la paleta clara ya se repetía).
+2. **`<html data-tema="claro|oscuro">`** es la elección explícita del usuario y gana siempre. La
+   escribe `TemaProvider` en una **cookie `contable-co-tema`** (NO `localStorage`), y
+   `app/layout.tsx` la LEE en servidor y la pinta en `<html>` antes de mandar el HTML → sin
+   parpadeo tampoco para la elección explícita, y **sin `<script>` bloqueante**.
+
+Por qué cookie y no `localStorage` (el prompt pedía `localStorage`): con `localStorage` el
+servidor no puede conocer la preferencia, así que hace falta un `<script>` inline que la aplique
+antes del pintado — y **React 19 aborta con `console.error` («Encountered a script tag while
+rendering React component») al reconciliar CUALQUIER `<script>` del árbol en un re-render de
+cliente**, que es justo lo que dispara el refresh de server action al cambiar de empresa. Se
+probaron `<script>` inline, `next/script` `beforeInteractive` (con y sin `src`) y un `<script src>`
+a `public/`: los cuatro disparan el error. La cookie lo elimina de raíz: el estado vive en el HTML
+del servidor, no en un script.
+
+**BUG 1 — Hydration mismatch de `data-tema`.** `<html>` en `app/layout.tsx` lleva
+`suppressHydrationWarning`: el valor de `data-tema` puede cambiar entre servidor y cliente si el
+usuario alterna el tema sin recargar. Es la única diferencia esperada.
+
+**BUG 2 — `<script>` JSX crudo en `<head>`.** Eliminado del todo (ver arriba): el tema ya no
+necesita un script para el primer pintado. `next/script` está fuera de `app/layout.tsx`.
+
+**BUG 3 — Migración 174 no aplicada.** `npm run migrate` contra la Neon real aplicó **172, 173 y
+174** (estaban pendientes las tres; no había problema de orden ni dependencia). Confirmado por
+consulta directa: `app.tercero_tiene_movimientos(uuid)` existe en el esquema `app` con
+`prosecdef = true`, y el trigger `third_party_restrict_delete` existe sobre `third_party`.
+
+**BUG 4 — Seleccionar empresa forzaba modo claro. Causa raíz.** `cambiarEmpresaActivaAction` hace
+`redirect(destino)`; ese refresh de server action re-renderiza el árbol RSC completo, incluido
+`<html>`. Con el enfoque viejo (script + `localStorage`) el servidor emitía `<html>` **sin**
+`data-tema` y React eliminaba el atributo que había puesto el script → el CSS caía a claro. Con el
+enfoque de D-085 no hay nada que se pierda: si el usuario no eligió, no hay `data-tema` y manda el
+`@media` del CSS; si eligió, `app/layout.tsx` re-lee la cookie en ese mismo refresh y vuelve a
+emitir `<html data-tema="…">` — React lo mantiene porque ahora es una prop que él controla.
+`TemaProvider` recibe ese valor de servidor como prop `inicial`, así que arranca igual en servidor
+y cliente.
+
+**Archivos tocados.** `app/layout.tsx` (lee la cookie `contable-co-tema`, pinta `<html data-tema>`,
+`suppressHydrationWarning`; se quitó el `<script>` y el import de `next/script`),
+`app/lib/sesion.ts` (`COOKIE_TEMA = 'contable-co-tema'`), `app/_ui/contextos.tsx` (`TemaProvider`
+recibe `inicial`, escribe la cookie en `fijar`/`alternar`, sincroniza `<html data-tema>` sin
+esperar navegación, sigue al SO mientras no haya elección), `app/_ui/Chrome.tsx` (pasa `temaInicial`
+a `TemaProvider`), `app/globals.css` (`@custom-variant dark` con `@media` + `[data-tema='oscuro']`;
+bloque de tokens oscuros duplicado en `@media` y `[data-tema='oscuro']`). Nuevo:
+`.claude/launch.json` (perfil `dev` para la QA en navegador).
+
+**Verificación.** `npx tsc --noEmit` limpio · `npx next build` **exit 0** · `npm test`
+**1065 en verde** (52 archivos, sin cambio de conteo). **En navegador real, en `next start` Y en
+`next dev`** (sesión `prueba@contable.co`): consola **sin errores ni warnings** en `/entrar`, `/`
+(Inicio) y `/terceros`, al alternar el tema, y durante varios cambios de empresa seguidos (el
+`console.error` de React del enfoque viejo ya no aparece ni en dev). SO oscuro sin cookie abre
+oscuro (fondo `#09090b`, sin `data-tema`), SO claro sin cookie abre claro; el toggle escribe la
+cookie, el servidor la pinta en `<html data-tema>` y **persiste** tras navegar; cambiar de empresa
+(server action) **ya no altera** el tema. Sin comitear.
+
+---
+
 ## Vulnerabilidades — registro de A14
 
 | Id | Qué es | Gravedad | Estado | De quién |
@@ -2570,6 +2832,26 @@ await esperarErrorPg(() => ..., SQLSTATE.LEDGER_INMUTABLE, 'descripción');
   companyId, estado })`, que devuelve la contraseña y el secreto TOTP en claro para la prueba.
 - Errores de dominio nuevos: `SQLSTATE.SESION_INVALIDA` (SE001), `PERMISO_INSUFICIENTE` (SE002),
   `EMPRESA_NO_AUTORIZADA` (SE003).
+
+**Verificación en navegador real antes de reportar terminado (convención permanente desde D-085)**
+
+Además de `npx tsc --noEmit`, `npx next build` y `npm test`, ninguna tarea que toque `app/` se
+reporta como terminada sin haberla recorrido en un **navegador real** (el navegador propio del
+agente o la extensión de Chrome conectada). Se revisa **tanto `next dev` como el build de
+producción** (`next build && next start`): algunos `console.error` de React solo salen en uno de
+los dos (dev tiene el ruido de Fast Refresh; ciertos warnings de React se compilan fuera en prod).
+Se verifica:
+
+- **Consola limpia**: cero errores y cero warnings en la consola del navegador en cada pantalla
+  tocada por el cambio, en dev y en prod.
+- **El flujo ocurre de verdad**: que lo descrito se vea suceder en pantalla, no solo que compile.
+- **Casos de tema** (siempre que se toque `layout.tsx`, el shell, `TemaProvider` o `globals.css`):
+  cargar con el SO en oscuro y sin la cookie `contable-co-tema` (debe abrir oscuro); con el SO en
+  claro (debe abrir claro); tocar el toggle sol/luna y recargar (debe persistir la elección); y
+  seleccionar una empresa distinta en el selector sin que el tema cambie solo.
+
+El reporte de la tarea documenta **qué se vio en el navegador**, no solo el resultado de los
+comandos.
 
 **Comandos**
 

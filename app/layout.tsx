@@ -21,15 +21,24 @@
  *  · `globals.css` trae los tokens de color y tipografía aprobados (D-074).
  *  · Inter se sirve desde el propio dominio con `next/font/google` (no un `<link>`
  *    a Google Fonts): quita una petición a un tercero y el salto de texto.
- *  · D-082: el tema por defecto es claro SIEMPRE. El modo oscuro solo se activa
- *    si el usuario lo eligió con el toggle (persistido en `localStorage`). El
- *    script en línea de más abajo aplica esa elección sobre `<html>` ANTES del
- *    primer pintado, para que no haya un parpadeo claro→oscuro al cargar.
+ *  · D-085: el tema por defecto vuelve a seguir `prefers-color-scheme` del SO en
+ *    la primera visita (se revierte la parte de D-081/D-082 que lo forzaba a
+ *    claro). **Sin elección guardada → SO**, y lo resuelve el CSS con
+ *    `@media (prefers-color-scheme)` en `globals.css`, sin una línea de
+ *    JavaScript ni parpadeo. **Con elección guardada (toggle sol/luna) → la del
+ *    usuario, gana sobre el SO**: `TemaProvider` la escribe en la cookie
+ *    `contable-co-tema`, este layout de servidor la LEE y la pinta en
+ *    `<html data-tema>` antes de mandar el HTML — así tampoco hay parpadeo para
+ *    la elección explícita y no hace falta un `<script>` bloqueante (que además
+ *    React 19 rechaza renderizar en sus re-render de cliente: era el origen del
+ *    `console.error` al cambiar de empresa). `suppressHydrationWarning` porque
+ *    `data-tema` puede cambiar servidor↔cliente si el usuario alterna sin
+ *    recargar; es la única diferencia esperada.
  */
 import type { ReactNode } from 'react';
 import { Inter } from 'next/font/google';
 import { cookies } from 'next/headers';
-import { conSesionEmpresa, COOKIE_COMPANY_ID, SesionNoPresenteError } from './lib/sesion';
+import { conSesionEmpresa, COOKIE_COMPANY_ID, COOKIE_TEMA, SesionNoPresenteError } from './lib/sesion';
 import { SesionInvalidaError } from '../src/db/tenant-context';
 import { listarEmpresasAccesibles, type EmpresaAccesible } from '../src/services/bandeja';
 import { estadoDeMiCredencial } from '../src/services/administracion';
@@ -51,13 +60,20 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   let usuario: { nombre: string; email: string } | null = null;
   let activaId: string | null = null;
 
+  // Tema elegido por el usuario (cookie escrita por `TemaProvider`). Sin cookie
+  // (primera visita, o nunca tocó el toggle) → `null` y manda el SO por CSS.
+  const jarra = await cookies();
+  const temaCookie = jarra.get(COOKIE_TEMA)?.value;
+  const tema: 'claro' | 'oscuro' | null =
+    temaCookie === 'claro' || temaCookie === 'oscuro' ? temaCookie : null;
+
   try {
     const [lista, credencial] = await conSesionEmpresa('', async (tx) => {
       return [await listarEmpresasAccesibles(tx), await estadoDeMiCredencial(tx)] as const;
     });
     empresas = lista;
     usuario = credencial ? { nombre: credencial.nombreCompleto, email: credencial.email } : null;
-    activaId = (await cookies()).get(COOKIE_COMPANY_ID)?.value || null;
+    activaId = jarra.get(COOKIE_COMPANY_ID)?.value || null;
   } catch (error) {
     // Sin sesión (lo normal en `/entrar` y `/`): se pinta sin datos de shell y
     // cada página interna hace su propio desvío a `/entrar`. Cualquier otro
@@ -70,19 +86,14 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   }
 
   return (
-    <html lang="es" className={inter.variable}>
-      <head>
-        <script
-          // Antes del primer pintado: si el usuario eligió un tema explícito, se
-          // aplica; si no, se queda claro (no se mira `prefers-color-scheme`).
-          dangerouslySetInnerHTML={{
-            __html:
-              "try{var t=localStorage.getItem('contable-co:tema');if(t==='oscuro'||t==='claro'){document.documentElement.dataset.tema=t}}catch(e){}",
-          }}
-        />
-      </head>
+    <html
+      lang="es"
+      className={inter.variable}
+      data-tema={tema ?? undefined}
+      suppressHydrationWarning
+    >
       <body>
-        <Chrome empresas={empresas} activaId={activaId} usuario={usuario}>
+        <Chrome empresas={empresas} activaId={activaId} usuario={usuario} temaInicial={tema}>
           {children}
         </Chrome>
       </body>
