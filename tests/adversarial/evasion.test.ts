@@ -627,6 +627,13 @@ describe('A14 · barrido estructural de puertas laterales', () => {
       // `abrir_sesion`/`buscar_credencial`.
       'app.crear_token_integracion',
       'app.current_company_id',
+      // D-087 (migración 176): filas concretas detras del conteo del simulador
+      // de impacto de parametros. SECURITY DEFINER + row_security=off con
+      // filtro explicito por app.current_tenant_id() y exige parametro.editar,
+      // igual que sus hermanas app.simular_impacto_*.
+      'app.detalle_impacto_municipio_ica',
+      'app.detalle_impacto_tax_concept',
+      'app.detalle_impacto_valor_base',
       'app.empresas_accesibles',
       'app.fecha_minima_vigencia_municipio_ica',
       'app.fecha_minima_vigencia_tax_rule',

@@ -12,7 +12,12 @@
  * este archivo se equivoque.
  */
 import type { SqlClient } from '../db/types';
-import type { FechaIso, ResultadoResolucion, RetencionResuelta } from './tipos';
+import type {
+  EfectoAcumuladoIca,
+  FechaIso,
+  ResultadoResolucion,
+  RetencionResuelta,
+} from './tipos';
 
 export interface ContextoPersistencia {
   tenantId: string;
@@ -111,6 +116,58 @@ export async function persistirLista(
     ids.push(await insertar(tx, ctx, r, r.fechaHechoEconomico));
   }
   return ids;
+}
+
+/**
+ * D-088 — Aplica al acumulador de base mínima de ICA por periodo los efectos
+ * que calculó el motor.
+ *
+ * SE LLAMA SOLO CUANDO EL ASIENTO QUEDA ESCRITO, y en la MISMA transacción. El
+ * motor no escribe: si la resolución acaba en revisión manual, si es una
+ * previsualización, o si otro worker gana la carrera y se hace `ROLLBACK`, el
+ * acumulador no se mueve. Un acumulador adelantado respecto del ledger haría
+ * que la siguiente factura cruzara un umbral que en realidad nadie cruzó.
+ *
+ * La idempotencia NO la sostiene la aplicación: la sostiene el `jsonb` de
+ * `documentos_contados` en el propio `UPSERT`. Si el documento ya figura, ni la
+ * base ni la lista se tocan, y da igual cuántas veces se ejecute esto. Es lo
+ * que hace que recausar un documento no lo cuente dos veces (caso dorado 18).
+ */
+export async function aplicarAcumuladosIca(
+  tx: SqlClient,
+  ctx: { tenantId: string; companyId: string },
+  efectos: readonly EfectoAcumuladoIca[],
+): Promise<void> {
+  for (const e of efectos) {
+    await tx.query(
+      `INSERT INTO reteica_periodo_acumulado (
+         tenant_id, company_id, third_party_id, municipality_id, tipo_operacion_ica,
+         periodo_inicio, periodo_fin, base_acumulada_centavos, documentos_contados)
+       VALUES ($1,$2,$3,$4,$5,$6::date,$7::date,$8, jsonb_build_array($9::text))
+       ON CONFLICT ON CONSTRAINT reteica_periodo_acumulado_uq DO UPDATE SET
+         base_acumulada_centavos = CASE
+           WHEN reteica_periodo_acumulado.documentos_contados @> jsonb_build_array($9::text)
+             THEN reteica_periodo_acumulado.base_acumulada_centavos
+           ELSE reteica_periodo_acumulado.base_acumulada_centavos + EXCLUDED.base_acumulada_centavos
+         END,
+         documentos_contados = CASE
+           WHEN reteica_periodo_acumulado.documentos_contados @> jsonb_build_array($9::text)
+             THEN reteica_periodo_acumulado.documentos_contados
+           ELSE reteica_periodo_acumulado.documentos_contados || jsonb_build_array($9::text)
+         END`,
+      [
+        ctx.tenantId,
+        ctx.companyId,
+        e.terceroId,
+        e.municipalityId,
+        e.tipoOperacionIca,
+        e.periodoInicio,
+        e.periodoFin,
+        e.baseSumada,
+        e.sourceDocumentId,
+      ],
+    );
+  }
 }
 
 /** Lee la traza de un documento, en orden estable, para comparar o reversar. */

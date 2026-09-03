@@ -24,6 +24,7 @@
 import {
   RepositorioTributarioSql,
   agregar,
+  aplicarAcumuladosIca,
   persistirLista,
   persistirRetenciones,
   proporcion,
@@ -548,6 +549,9 @@ async function causarFactura(
     municipioOperacionId,
     fechaHechoEconomico: doc.fecha_hecho_economico,
     lineas: lineasFactura,
+    // D-088: la clave anti doble conteo del acumulador de base mínima de ICA
+    // por periodo. Sin ella, recausar el documento lo sumaría otra vez.
+    sourceDocumentId: doc.id,
   };
 
   const repo = new RepositorioTributarioSql(tx);
@@ -693,6 +697,17 @@ async function causarFactura(
     [journalEntryId, idsRetencion],
   );
   await tx.query(`UPDATE source_document SET estado = 'pendiente_aprobacion' WHERE id = $1`, [doc.id]);
+
+  // D-088. El acumulador de base mínima de ICA por periodo se mueve AQUÍ y no
+  // antes: el asiento ya está escrito y la transacción es la misma. Todas las
+  // salidas anteriores —revisión manual, período cerrado, carrera con otro
+  // worker— pasan sin tocarlo, así que el acumulado nunca va por delante del
+  // ledger que debería respaldarlo. En medición por factura la lista va vacía.
+  await aplicarAcumuladosIca(
+    tx,
+    { tenantId: doc.tenant_id, companyId: doc.company_id },
+    resultado.acumuladosIca,
+  );
 
   await completarJob(tx, jobId, {
     journalEntryId,

@@ -12,8 +12,10 @@ import { redirect } from 'next/navigation';
 import { conSesion } from '../../lib/sesion';
 import {
   editarMunicipioIcaRule,
+  exigirTestigoImpacto,
   simularImpactoMunicipioIca,
   EdicionRetroactivaError,
+  ImpactoNoSimuladoError,
   NormaDeRespaldoRequeridaError,
   ParametroNoEncontradoError,
   VigenciaInvalidaError,
@@ -28,6 +30,7 @@ function leer(fd: FormData, campo: string): string {
 function mensajeDeError(e: unknown): string {
   if (
     e instanceof EdicionRetroactivaError ||
+    e instanceof ImpactoNoSimuladoError ||
     e instanceof NormaDeRespaldoRequeridaError ||
     e instanceof VigenciaInvalidaError ||
     e instanceof ParametroNoEncontradoError
@@ -99,8 +102,15 @@ export async function confirmarAction(formData: FormData): Promise<void> {
       ? (Number(campos.tarifaGeneralPorMil) / 1000).toFixed(6)
       : null;
 
-    await conSesion((tx) =>
-      editarMunicipioIcaRule(tx, {
+    // V-39 (A14): sin el testigo del paso 1 no se abre vigencia ninguna.
+    const testigo = {
+      conceptos: leer(formData, 'conceptos'),
+      proveedores: leer(formData, 'proveedores'),
+    };
+
+    await conSesion(async (tx) => {
+      exigirTestigoImpacto(testigo, await simularImpactoMunicipioIca(tx, municipalityId));
+      return editarMunicipioIcaRule(tx, {
         municipalityId,
         reglaAnteriorId: reglaAnteriorId || null,
         practicaReteica: campos.practicaReteica === 'true',
@@ -112,8 +122,8 @@ export async function confirmarAction(formData: FormData): Promise<void> {
         vigenteDesde: campos.vigenteDesde,
         normaRespaldo: campos.normaRespaldo,
         alcanceNuevo: campos.alcanceNuevo === 'empresa' ? 'empresa' : 'firma',
-      }),
-    );
+      });
+    });
     destino = `${BASE}?ok=1`;
   } catch (e) {
     const qs = new URLSearchParams({

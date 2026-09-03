@@ -49,6 +49,7 @@
  * caso "administrador de firma edita un parámetro compartido".
  */
 import type { SqlClient } from '../db/types';
+import { PERMISOS, tienePermiso } from '../auth/permisos';
 
 // =============================================================================
 // ERRORES DE DOMINIO (no SQLSTATE: son validaciones tempranas para no gastar
@@ -95,6 +96,60 @@ export class EdicionRetroactivaError extends Error {
     );
     this.name = 'EdicionRetroactivaError';
     this.fechaMinima = fechaMinima;
+  }
+}
+
+/**
+ * V-39 (compuerta ampliada de D-087, A14). La sección 6.2, punto 6 exige que el
+ * simulador de impacto corra ANTES de guardar. D-087 lo montó como dos pantallas
+ * —`simular*Action` → `confirmar*Action`—, pero el paso 2 no comprobaba nada: un
+ * POST directo a la acción de confirmación (la carga masiva, un script, un
+ * enlace guardado) abría una vigencia nueva sin que nadie hubiera visto el
+ * impacto. El resguardo bloqueante era, en la práctica, decorativo.
+ *
+ * El paso 2 exige ahora el TESTIGO del paso 1: los conteos que el simulador
+ * mostró. Y no basta con que vengan: tienen que seguir siendo el impacto REAL en
+ * el momento de guardar. Así el testigo cubre a la vez el POST directo (no hay
+ * testigo) y la pantalla rancia (el testigo ya no coincide porque entretanto
+ * entraron conceptos o proveedores nuevos).
+ *
+ * Esto NO es el candado de seguridad —ese lo pone el motor con `parametro.editar`
+ * (SE002) y la vigencia append-only—: es la garantía de PROCESO de la sección 6.2.
+ */
+export class ImpactoNoSimuladoError extends Error {
+  constructor(mensaje: string) {
+    super(mensaje);
+    this.name = 'ImpactoNoSimuladoError';
+  }
+}
+
+/** Testigo tal y como viaja en el formulario del paso 2 (cadenas de `FormData`). */
+export interface TestigoImpacto {
+  conceptos: string;
+  proveedores: string;
+}
+
+export function exigirTestigoImpacto(testigo: TestigoImpacto, impacto: ImpactoSimulado): void {
+  const conceptos = Number(testigo.conceptos);
+  const proveedores = Number(testigo.proveedores);
+  if (
+    testigo.conceptos.trim() === '' ||
+    testigo.proveedores.trim() === '' ||
+    !Number.isInteger(conceptos) ||
+    !Number.isInteger(proveedores)
+  ) {
+    throw new ImpactoNoSimuladoError(
+      'No se puede guardar esta vigencia: el impacto del cambio no se ha simulado. ' +
+        'Vuelva al paso «Simular impacto» y revise a cuántos conceptos y proveedores afecta ' +
+        'antes de confirmar (sección 6.2, punto 6).',
+    );
+  }
+  if (conceptos !== impacto.conceptosAfectados || proveedores !== impacto.proveedoresAfectados) {
+    throw new ImpactoNoSimuladoError(
+      `El impacto cambió desde que usted lo revisó: ahora son ${impacto.conceptosAfectados} ` +
+        `concepto(s) y ${impacto.proveedoresAfectados} proveedor(es), no ${testigo.conceptos} y ` +
+        `${testigo.proveedores}. Vuelva a simular y confirme sobre las cifras vigentes.`,
+    );
   }
 }
 
@@ -333,6 +388,10 @@ export interface FilaTarifa {
   codigo: string;
   nombre: string;
   tarifa: string;
+  /** D-088: solo tiene sentido para `tipo='reteica'` con actividad. NULL = no
+   *  declarado (estado de toda fila anterior a D-088); false = actividad NO
+   *  gravada, el motor no retiene sin importar la tarifa. */
+  gravada: boolean | null;
   baseMinimaUvt: string | null;
   baseMinimaValor: string | null;
   comparadorBaseMinima: string;
@@ -367,6 +426,7 @@ interface FilaTarifaCruda {
   codigo: string;
   nombre: string;
   tarifa: string;
+  gravada: boolean | null;
   base_minima_uvt: string | null;
   base_minima_valor: string | null;
   comparador_base_minima: string;
@@ -398,6 +458,7 @@ function filaTarifaDe(f: FilaTarifaCruda): FilaTarifa {
     codigo: f.codigo,
     nombre: f.nombre,
     tarifa: f.tarifa,
+    gravada: f.gravada,
     baseMinimaUvt: f.base_minima_uvt,
     baseMinimaValor: f.base_minima_valor,
     comparadorBaseMinima: f.comparador_base_minima,
@@ -439,7 +500,7 @@ export async function listarTarifasPorTipo(
   const { rows } = await tx.query<FilaTarifaCruda>(
     `SELECT
         tr.id AS regla_id, tr.tax_concept_id, tr.tipo, tc.codigo, tc.nombre,
-        tr.tarifa::text AS tarifa, tr.base_minima_uvt::text, tr.base_minima_valor::text,
+        tr.tarifa::text AS tarifa, tr.gravada, tr.base_minima_uvt::text, tr.base_minima_valor::text,
         tr.comparador_base_minima, tr.aplica_sobre, tr.aplica_a, tr.tipo_persona,
         tr.account_id, tr.municipality_id, m.nombre AS municipality_nombre,
         tr.ciiu_activity_id, ci.codigo AS ciiu_codigo, ci.nombre AS ciiu_nombre,
@@ -516,7 +577,7 @@ export async function listarHistorialTaxRule(
   const { rows } = await tx.query<FilaTarifaCruda>(
     `SELECT
         tr.id AS regla_id, tr.tax_concept_id, tr.tipo, tc.codigo, tc.nombre,
-        tr.tarifa::text AS tarifa, tr.base_minima_uvt::text, tr.base_minima_valor::text,
+        tr.tarifa::text AS tarifa, tr.gravada, tr.base_minima_uvt::text, tr.base_minima_valor::text,
         tr.comparador_base_minima, tr.aplica_sobre, tr.aplica_a, tr.tipo_persona,
         tr.account_id, tr.municipality_id, m.nombre AS municipality_nombre,
         tr.ciiu_activity_id, ci.codigo AS ciiu_codigo, ci.nombre AS ciiu_nombre,
@@ -564,6 +625,23 @@ export async function simularImpactoTarifa(
   };
 }
 
+/**
+ * Concepto tributario al que pertenece una regla, resuelto EN LA BASE a partir
+ * del id de la regla que se está editando.
+ *
+ * V-41 (A14, compuerta ampliada de D-087): el paso 2 no puede fiarse del
+ * `taxConceptId` que venga del query string o del formulario. Si se acepta el de
+ * fuera, el detalle del impacto que ve el contador puede describir una regla
+ * distinta de la que va a guardar. Se resuelve por la regla, siempre.
+ */
+export async function taxConceptIdDeTaxRule(tx: SqlClient, reglaId: string): Promise<string | null> {
+  const { rows } = await tx.query<{ tax_concept_id: string }>(
+    'SELECT tax_concept_id FROM tax_rule WHERE id = $1',
+    [reglaId],
+  );
+  return rows[0]?.tax_concept_id ?? null;
+}
+
 /** Último hecho económico ya PUBLICADO con esta `tax_rule` exacta, o `null`
  * si nunca se ha publicado nada con ella. Sección 6.2, punto 3. */
 export async function fechaMinimaVigenciaTaxRule(
@@ -591,6 +669,7 @@ interface FilaTaxRuleAnterior extends FilaConAlcance {
   account_id: string | null;
   aplica_sobre: string;
   comparador_base_minima: string;
+  gravada: boolean | null;
   vigente_desde: string;
 }
 
@@ -609,6 +688,11 @@ export interface EditarTarifaInput {
   baseMinimaValor?: string | null;
   aplicaSobre?: string;
   comparadorBaseMinima?: string;
+  /** D-088. Solo para `tipo='reteica'` con actividad. `false` = actividad NO
+   *  gravada en el municipio: el motor no retiene. El CHECK de la base
+   *  (`tax_rule_gravada_ck`) obliga a `tarifa = 0` cuando es `false`; la capa
+   *  de servicio lo fuerza aquí para dar un mensaje claro antes del viaje. */
+  gravada?: boolean | null;
   accountId?: string | null;
   notas?: string | null;
   requiereVerificacionHumana?: boolean;
@@ -646,11 +730,21 @@ export async function editarTarifaTaxRule(
       'La base mínima se expresa en UVT o en pesos, nunca en las dos a la vez.',
     );
   }
+  // D-088: guard de consistencia gravada/tarifa, el mismo que impone el CHECK
+  // `tax_rule_gravada_ck`. Se rechaza aquí para no gastar un viaje a la base con
+  // una combinación que ya se sabe inválida (§6.2, y el CHECK sigue siendo la
+  // garantía real).
+  if (input.gravada === false && input.tarifa != null && Number(input.tarifa) !== 0) {
+    throw new VigenciaInvalidaError(
+      'Una actividad marcada como NO gravada de ICA no puede llevar tarifa distinta de cero: ' +
+        'ponga la tarifa en 0 o marque la actividad como gravada.',
+    );
+  }
 
   const { rows } = await tx.query<FilaTaxRuleAnterior>(
     `SELECT id, tenant_id, company_id, tax_concept_id, tipo, aplica_a, tipo_persona,
             municipality_id, ciiu_activity_id, rango_desde_uvt::text, rango_hasta_uvt::text,
-            uvt_adicionales::text, account_id, aplica_sobre, comparador_base_minima,
+            uvt_adicionales::text, account_id, aplica_sobre, comparador_base_minima, gravada,
             vigente_desde::text
        FROM tax_rule WHERE id = $1`,
     [input.reglaAnteriorId],
@@ -686,9 +780,9 @@ export async function editarTarifaTaxRule(
        comparador_base_minima, aplica_sobre, aplica_a, tipo_persona,
        municipality_id, ciiu_activity_id, rango_desde_uvt, rango_hasta_uvt, uvt_adicionales,
        account_id, vigente_desde, vigente_hasta, norma_respaldo, notas, requiere_verificacion_humana,
-       created_by
+       gravada, created_by
      ) VALUES (
-       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,NULL,$19,$20,$21,
+       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,NULL,$19,$20,$21,$22,
        app.current_user_id()
      )
      RETURNING id`,
@@ -714,6 +808,7 @@ export async function editarTarifaTaxRule(
       normaRespaldo,
       input.notas ?? null,
       input.requiereVerificacionHumana ?? false,
+      input.gravada ?? anterior.gravada,
     ],
   );
 
@@ -980,6 +1075,7 @@ export async function editarRoundingRule(
 export interface FilaMunicipioIca {
   municipalityId: string;
   municipalityNombre: string;
+  codigoDane: string;
   departamento: string;
   practicaReteica: boolean;
   baseMinimaServiciosUvt: string | null;
@@ -989,6 +1085,10 @@ export interface FilaMunicipioIca {
   usaTarifaDeActividad: boolean;
   tarifaGeneral: string | null;
   periodicidad: string;
+  /** D-088. 'por_factura' (default y estado previo a D-088) | 'por_periodo'. */
+  tipoMedicionBaseMinima: 'por_factura' | 'por_periodo';
+  /** D-088. Meses de la ventana de acumulación; solo con medición por periodo. */
+  periodoMeses: number | null;
   vigenteDesde: string;
   vigenteHasta: string | null;
   normaRespaldo: string;
@@ -1008,6 +1108,7 @@ export async function listarMunicipiosIca(
     regla_id: string | null;
     municipality_id: string;
     municipality_nombre: string;
+    codigo_dane: string;
     departamento: string;
     practica_reteica: boolean | null;
     base_minima_servicios_uvt: string | null;
@@ -1017,6 +1118,8 @@ export async function listarMunicipiosIca(
     usa_tarifa_de_actividad: boolean | null;
     tarifa_general: string | null;
     periodicidad: string | null;
+    tipo_medicion_base_minima: string | null;
+    periodo_meses: number | null;
     vigente_desde: string | null;
     vigente_hasta: string | null;
     norma_respaldo: string | null;
@@ -1024,10 +1127,12 @@ export async function listarMunicipiosIca(
     alcance: 'empresa' | 'firma' | 'global' | null;
   }>(
     `SELECT
-        r.id AS regla_id, m.id AS municipality_id, m.nombre AS municipality_nombre, m.departamento,
+        r.id AS regla_id, m.id AS municipality_id, m.nombre AS municipality_nombre,
+        m.codigo_dane, m.departamento,
         r.practica_reteica, r.base_minima_servicios_uvt::text, r.base_minima_compras_uvt::text,
         r.base_minima_servicios_valor::text, r.base_minima_compras_valor::text,
         r.usa_tarifa_de_actividad, r.tarifa_general::text, r.periodicidad,
+        r.tipo_medicion_base_minima, r.periodo_meses,
         r.vigente_desde::text, r.vigente_hasta::text, r.norma_respaldo, r.requiere_verificacion_humana,
         CASE WHEN r.id IS NULL THEN NULL
              WHEN r.company_id IS NOT NULL THEN 'empresa'
@@ -1049,6 +1154,7 @@ export async function listarMunicipiosIca(
     reglaId: f.regla_id,
     municipalityId: f.municipality_id,
     municipalityNombre: f.municipality_nombre,
+    codigoDane: f.codigo_dane,
     departamento: f.departamento,
     practicaReteica: f.practica_reteica ?? false,
     baseMinimaServiciosUvt: f.base_minima_servicios_uvt,
@@ -1058,6 +1164,8 @@ export async function listarMunicipiosIca(
     usaTarifaDeActividad: f.usa_tarifa_de_actividad ?? true,
     tarifaGeneral: f.tarifa_general,
     periodicidad: f.periodicidad ?? 'mensual',
+    tipoMedicionBaseMinima: (f.tipo_medicion_base_minima ?? 'por_factura') as 'por_factura' | 'por_periodo',
+    periodoMeses: f.periodo_meses ?? null,
     vigenteDesde: f.vigente_desde ?? '',
     vigenteHasta: f.vigente_hasta,
     normaRespaldo: f.norma_respaldo ?? '',
@@ -1096,6 +1204,13 @@ export interface EditarMunicipioIcaInput {
   usaTarifaDeActividad: boolean;
   tarifaGeneral?: string | null;
   periodicidad: 'mensual' | 'bimestral' | 'trimestral' | 'cuatrimestral' | 'anual';
+  /** D-088. Contra qué se compara la base mínima. Vacío = 'por_factura'
+   *  (default de la columna y comportamiento previo a D-088). */
+  tipoMedicionBaseMinima?: 'por_factura' | 'por_periodo';
+  /** D-088. Meses de la ventana de acumulación. Obligatorio con 'por_periodo',
+   *  debe ir vacío con 'por_factura' (lo impone el CHECK
+   *  `municipality_ica_periodo_medicion_ck`). */
+  periodoMeses?: number | null;
   vigenteDesde: string;
   normaRespaldo: string;
   notas?: string | null;
@@ -1109,6 +1224,15 @@ export async function editarMunicipioIcaRule(
 ): Promise<ResultadoEdicion> {
   const normaRespaldo = requerirNorma(input.normaRespaldo);
   requerirFechaIso(input.vigenteDesde);
+
+  const tipoMedicion = input.tipoMedicionBaseMinima ?? 'por_factura';
+  const periodoMeses = tipoMedicion === 'por_periodo' ? (input.periodoMeses ?? null) : null;
+  if (tipoMedicion === 'por_periodo' && (periodoMeses == null || periodoMeses < 1 || periodoMeses > 12)) {
+    throw new VigenciaInvalidaError(
+      'Con medición «por periodo» hay que indicar la ventana de acumulación en meses (1 a 12), ' +
+        'tal como la fije el acuerdo municipal.',
+    );
+  }
 
   let anterior: FilaValorBaseAnterior | null = null;
   if (input.reglaAnteriorId) {
@@ -1160,8 +1284,9 @@ export async function editarMunicipioIcaRule(
        base_minima_servicios_uvt, base_minima_compras_uvt,
        base_minima_servicios_valor, base_minima_compras_valor,
        usa_tarifa_de_actividad, tarifa_general, periodicidad,
+       tipo_medicion_base_minima, periodo_meses,
        vigente_desde, vigente_hasta, norma_respaldo, notas, requiere_verificacion_humana, created_by
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NULL,$13,$14,$15, app.current_user_id())
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NULL,$15,$16,$17, app.current_user_id())
      RETURNING id`,
     [
       ctx.tenantId,
@@ -1175,6 +1300,8 @@ export async function editarMunicipioIcaRule(
       input.usaTarifaDeActividad,
       input.tarifaGeneral ?? null,
       input.periodicidad,
+      tipoMedicion,
+      periodoMeses,
       input.vigenteDesde,
       normaRespaldo,
       input.notas ?? null,
@@ -1189,9 +1316,131 @@ export async function editarMunicipioIcaRule(
 // garantía real la impone el trigger de la base, esto NUNCA sustituye eso).
 // =============================================================================
 
-export async function puedeEditarParametros(tx: SqlClient): Promise<boolean> {
-  const { rows } = await tx.query<{ tiene: boolean }>(
-    "SELECT app.tiene_permiso('parametro.editar') AS tiene",
+/** Submódulos de `/parametros` con permiso propio desde D-087 (migración 176).
+ *  Sin `submodulo` se comprueba el permiso grueso `parametro.editar` /
+ *  `parametro.leer` — comportamiento previo intacto para los llamadores que no
+ *  pasen argumento. */
+export type SubmoduloParametro = 'tarifas' | 'valores_base' | 'reteica' | 'ica' | 'puc';
+
+const COD_EDITAR: Record<SubmoduloParametro, string> = {
+  tarifas: PERMISOS.PARAMETRO_TARIFAS_EDITAR,
+  valores_base: PERMISOS.PARAMETRO_VALORES_BASE_EDITAR,
+  reteica: PERMISOS.PARAMETRO_RETEICA_EDITAR,
+  ica: PERMISOS.PARAMETRO_ICA_EDITAR,
+  puc: PERMISOS.PARAMETRO_PUC_EDITAR,
+};
+
+const COD_LEER: Record<SubmoduloParametro, string> = {
+  tarifas: PERMISOS.PARAMETRO_TARIFAS_LEER,
+  valores_base: PERMISOS.PARAMETRO_VALORES_BASE_LEER,
+  reteica: PERMISOS.PARAMETRO_RETEICA_LEER,
+  ica: PERMISOS.PARAMETRO_ICA_LEER,
+  puc: PERMISOS.PARAMETRO_PUC_LEER,
+};
+
+/**
+ * Código que EL MOTOR exige de verdad para escribir cada submódulo (trigger de
+ * la migración 016). El sub-permiso de D-087 se suma a este, nunca lo sustituye:
+ * el candado sigue siendo el grueso.
+ */
+const COD_MOTOR_EDITAR: Record<SubmoduloParametro, string> = {
+  tarifas: PERMISOS.PARAMETRO_EDITAR,
+  valores_base: PERMISOS.PARAMETRO_EDITAR,
+  reteica: PERMISOS.PARAMETRO_EDITAR,
+  ica: PERMISOS.PARAMETRO_EDITAR,
+  puc: PERMISOS.PUC_EDITAR,
+};
+
+const COD_MOTOR_LEER: Record<SubmoduloParametro, string> = {
+  tarifas: PERMISOS.PARAMETRO_LEER,
+  valores_base: PERMISOS.PARAMETRO_LEER,
+  reteica: PERMISOS.PARAMETRO_LEER,
+  ica: PERMISOS.PARAMETRO_LEER,
+  puc: PERMISOS.PUC_LEER,
+};
+
+/**
+ * Solo para decidir qué botón mostrar (D-025: la garantía real la impone el
+ * trigger de la base sobre `parametro.editar` / `puc.editar`, esto NUNCA
+ * sustituye eso). Delega en el servicio central de permisos (`tienePermiso` →
+ * `app.tiene_permiso`) con los códigos del registro `PERMISOS`, nunca cadenas
+ * sueltas.
+ *
+ * A12 (revisión de seguridad de D-087): con `submodulo` se exigen **los dos**
+ * códigos, el fino y el grueso. El fino restringe; **no habilita**. Si bastara
+ * el fino, un rol propio de la Fase 8 con `parametro.tarifas.editar` y sin
+ * `parametro.editar` vería el formulario de guardar y el motor lo rechazaría
+ * con SE002 al enviarlo: la interfaz estaría ofreciendo lo que la base prohíbe.
+ * Para los cinco roles del sistema el resultado es idéntico al de antes del
+ * parche, porque 176 otorga el fino exactamente a quien ya tenía el grueso.
+ */
+export async function puedeEditarParametros(
+  tx: SqlClient,
+  submodulo?: SubmoduloParametro,
+): Promise<boolean> {
+  if (!submodulo) return tienePermiso(tx, PERMISOS.PARAMETRO_EDITAR);
+  const [fino, motor] = await Promise.all([
+    tienePermiso(tx, COD_EDITAR[submodulo]),
+    tienePermiso(tx, COD_MOTOR_EDITAR[submodulo]),
+  ]);
+  return fino && motor;
+}
+
+export async function puedeLeerParametros(
+  tx: SqlClient,
+  submodulo?: SubmoduloParametro,
+): Promise<boolean> {
+  if (!submodulo) return tienePermiso(tx, PERMISOS.PARAMETRO_LEER);
+  const [fino, grueso] = await Promise.all([
+    tienePermiso(tx, COD_LEER[submodulo]),
+    tienePermiso(tx, COD_MOTOR_LEER[submodulo]),
+  ]);
+  return fino && grueso;
+}
+
+// =============================================================================
+// DETALLE DEL SIMULADOR DE IMPACTO (D-087, migración 176) — las filas reales
+// (códigos + nombres) detrás del conteo, con la MISMA consulta base que
+// `app.simular_impacto_*`, para que conteo y detalle no diverjan.
+// =============================================================================
+
+export interface FilaImpacto {
+  clase: 'concepto' | 'proveedor';
+  codigo: string;
+  nombre: string;
+}
+
+export interface DetalleImpacto {
+  conceptos: Array<{ codigo: string; nombre: string }>;
+  proveedores: Array<{ codigo: string; nombre: string }>;
+}
+
+function agruparDetalle(rows: FilaImpacto[]): DetalleImpacto {
+  return {
+    conceptos: rows.filter((r) => r.clase === 'concepto').map((r) => ({ codigo: r.codigo, nombre: r.nombre })),
+    proveedores: rows.filter((r) => r.clase === 'proveedor').map((r) => ({ codigo: r.codigo, nombre: r.nombre })),
+  };
+}
+
+export async function detalleImpactoTarifa(tx: SqlClient, taxConceptId: string): Promise<DetalleImpacto> {
+  const { rows } = await tx.query<FilaImpacto>(
+    'SELECT clase, codigo, nombre FROM app.detalle_impacto_tax_concept($1)',
+    [taxConceptId],
   );
-  return rows[0]?.tiene === true;
+  return agruparDetalle(rows);
+}
+
+export async function detalleImpactoMunicipioIca(tx: SqlClient, municipalityId: string): Promise<DetalleImpacto> {
+  const { rows } = await tx.query<FilaImpacto>(
+    'SELECT clase, codigo, nombre FROM app.detalle_impacto_municipio_ica($1)',
+    [municipalityId],
+  );
+  return agruparDetalle(rows);
+}
+
+export async function detalleImpactoValorBase(tx: SqlClient): Promise<DetalleImpacto> {
+  const { rows } = await tx.query<FilaImpacto>(
+    'SELECT clase, codigo, nombre FROM app.detalle_impacto_valor_base()',
+  );
+  return agruparDetalle(rows);
 }

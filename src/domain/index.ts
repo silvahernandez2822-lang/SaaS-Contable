@@ -5,12 +5,21 @@
  * UVT viven aquí dentro: todo se resuelve consultando las tablas paramétricas
  * de A1 por la fecha del hecho económico.
  */
-export { AJUSTE, agregar, huellaDe, resolverFactura, resolverRetenciones } from './motor';
-export type { PoliticaRegimenSimple } from './motor';
+export {
+  AJUSTE,
+  SesionAcumuladosIca,
+  agregar,
+  huellaDe,
+  resolverFactura,
+  resolverRetenciones,
+  ventanaPeriodoIca,
+} from './motor';
+export type { ClaveAcumuladoIca, PoliticaRegimenSimple } from './motor';
 
 export { RepositorioTributarioSql } from './repositorio';
 export type {
   CriterioReglaRetefuente,
+  FilaAcumuladoIca,
   FilaActividadTercero,
   FilaAtributosFiscales,
   FilaConcepto,
@@ -26,7 +35,12 @@ export type {
 export { resolverReversaNotaCredito } from './nota-credito';
 export type { EntradaNotaCredito, ResultadoReversa } from './nota-credito';
 
-export { leerRetenciones, persistirLista, persistirRetenciones } from './persistencia';
+export {
+  aplicarAcumuladosIca,
+  leerRetenciones,
+  persistirLista,
+  persistirRetenciones,
+} from './persistencia';
 export type { ContextoPersistencia, FilaRetencionPersistida } from './persistencia';
 
 export {
@@ -48,6 +62,7 @@ export type { CalculoRetencion, ModoRedondeo } from './dinero';
 export { MOTIVO } from './tipos';
 export type {
   CodigoMotivo,
+  EfectoAcumuladoIca,
   EntradaFactura,
   EntradaResolucion,
   FechaIso,

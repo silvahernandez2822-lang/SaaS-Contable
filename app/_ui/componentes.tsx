@@ -21,7 +21,7 @@
  * `terciario`, y `EstadoVacio` para los «no hay nada aquí» neutros.
  */
 import Link from 'next/link';
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { IconoAlerta, IconoBandeja, IconoInfo } from './iconos';
 
 /* --------------------------------------------------------------- estados */
@@ -392,6 +392,105 @@ export function EstadoVacio({
       <p className="text-seccion font-semibold text-texto">{titulo}</p>
       {detalle && <p className="max-w-sm text-menor text-texto-suave">{detalle}</p>}
       {accion && <div className="mt-1">{accion}</div>}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------- modal
+ *
+ * D-087 · tarea 1. Extraído del modal de dirección DIAN de D-086
+ * (`app/terceros/_direccion-dian.tsx`): mismo markup y comportamiento —
+ * `role="dialog"` + `aria-modal`, overlay `bg-texto/40`, cierre con Escape y
+ * con clic fuera (mousedown sobre el overlay), el diálogo recibe el foco al
+ * abrir y lo devuelve al elemento previo al cerrar. Un `Tab`/`Shift+Tab`
+ * dentro del diálogo cicla entre sus elementos enfocables (foco atrapado).
+ * Sin colores sueltos: solo tokens.
+ */
+export function Modal({
+  titulo,
+  descripcion,
+  onCerrar,
+  children,
+  pie,
+  ancho = 'max-w-xl',
+}: {
+  titulo: ReactNode;
+  descripcion?: ReactNode;
+  onCerrar: () => void;
+  children: ReactNode;
+  pie?: ReactNode;
+  ancho?: string;
+}) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const previo = document.activeElement as HTMLElement | null;
+    const nodo = dialogRef.current;
+    nodo?.focus();
+
+    const enfocables = () =>
+      Array.from(
+        nodo?.querySelectorAll<HTMLElement>(
+          'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      );
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onCerrar();
+        return;
+      }
+      if (e.key !== 'Tab') return;
+      const items = enfocables();
+      if (items.length === 0) {
+        e.preventDefault();
+        nodo?.focus();
+        return;
+      }
+      const primero = items[0]!;
+      const ultimo = items[items.length - 1]!;
+      const activo = document.activeElement;
+      if (e.shiftKey && (activo === primero || activo === nodo)) {
+        e.preventDefault();
+        ultimo.focus();
+      } else if (!e.shiftKey && activo === ultimo) {
+        e.preventDefault();
+        primero.focus();
+      }
+    };
+
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      previo?.focus?.();
+    };
+  }, [onCerrar]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-texto/40 p-4 sm:items-center"
+      role="presentation"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onCerrar();
+      }}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={typeof titulo === 'string' ? titulo : undefined}
+        tabIndex={-1}
+        className={`w-full ${ancho} overflow-hidden rounded-[var(--radius-tarjeta)] border border-borde bg-superficie-elevada shadow-[var(--shadow-tarjeta)] outline-none`}
+      >
+        <header className="border-b border-borde bg-superficie px-5 py-3">
+          <h2 className="text-seccion font-semibold tracking-tight text-texto">{titulo}</h2>
+          {descripcion && <p className="mt-[2px] text-metadata text-texto-suave">{descripcion}</p>}
+        </header>
+        <div className="p-5">{children}</div>
+        {pie && (
+          <div className="flex justify-end gap-2 border-t border-borde bg-superficie px-5 py-3">{pie}</div>
+        )}
+      </div>
     </div>
   );
 }

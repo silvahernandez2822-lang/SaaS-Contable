@@ -61,7 +61,29 @@ vi.mock('../../app/lib/db.js', () => ({
 }));
 
 // Importaciones que dependen de los mocks: después de declararlos.
-const { guardarUvtAction } = await import('../../app/parametros/valores-base/acciones');
+// D-087: la edición de valores base pasó a DOS pasos (simular ANTES de
+// guardar). `guardarUvtAction` aquí es el helper que recorre los dos como lo
+// haría el contador: simula, y si el simulador no falló, confirma con los
+// campos que el paso 1 devolvió en el query string.
+const { simularUvtAction, confirmarUvtAction } = await import(
+  '../../app/parametros/valores-base/acciones'
+);
+async function guardarUvtAction(fd: FormData): Promise<void> {
+  await simularUvtAction(fd);
+  const sp = new URLSearchParams(ultimaRedireccion().split('?')[1] ?? '');
+  if (sp.get('error')) return;
+  const fd2 = new FormData();
+  // `conceptos` / `proveedores` son el TESTIGO del paso 1 (V-39, compuerta
+  // ampliada de D-087): la pantalla de confirmación los lleva en campos ocultos
+  // y la acción del paso 2 no escribe sin ellos.
+  for (const k of [
+    'reglaAnteriorId', 'anio', 'valorPesos', 'vigenteDesde', 'normaRespaldo', 'alcanceNuevo',
+    'conceptos', 'proveedores',
+  ]) {
+    fd2.set(k, sp.get(k) ?? '');
+  }
+  await confirmarUvtAction(fd2);
+}
 const { aprobarSeleccionAction } = await import('../../app/bandeja/acciones');
 const { obtenerBandejaConsolidada } = await import('../../app/lib/bandeja');
 

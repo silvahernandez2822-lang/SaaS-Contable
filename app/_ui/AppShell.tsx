@@ -70,6 +70,7 @@ const ETIQUETAS: Record<string, string> = {
   tarifas: 'Tarifas',
   'valores-base': 'Valores base',
   'reteica-municipios': 'ReteICA por municipio',
+  'ica-municipios': 'ICA por municipio',
   reportes: 'Reportes',
   'carga-masiva': 'Carga masiva',
   admin: 'Administración',
@@ -94,7 +95,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * esta lista, su contenido se pinta con `data-tema="claro"` fijo, tema aparte
  * del resto de la interfaz. Cuando un módulo migre, se borra su prefijo de
  * aquí — un solo sitio, no un `style` por archivo. */
-const PREFIJOS_SIN_MIGRAR = ['/parametros', '/reportes', '/admin', '/carga-masiva'];
+const PREFIJOS_SIN_MIGRAR = ['/reportes', '/admin', '/carga-masiva'];
 
 function esRutaSinMigrar(pathname: string): boolean {
   return PREFIJOS_SIN_MIGRAR.some((p) => pathname === p || pathname.startsWith(`${p}/`));

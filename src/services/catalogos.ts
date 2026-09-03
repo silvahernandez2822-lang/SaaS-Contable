@@ -335,6 +335,10 @@ export interface AltaTaxRuleInput {
   aplicaSobre?: string;
   aplicaA?: 'declarante' | 'no_declarante' | 'ambos';
   tipoPersona?: 'natural' | 'juridica' | 'ambos';
+  /** D-088. Solo ReteICA por actividad: `false` = actividad NO gravada en el
+   *  municipio (el motor no retiene). El CHECK `tax_rule_gravada_ck` obliga a
+   *  `tarifa = 0` cuando es `false`. */
+  gravada?: boolean | null;
   /** Código DANE del municipio (ReteICA). Opcional. */
   municipioDane?: string | null;
   /** Código CIIU (ReteICA / autorretención). Opcional. */
@@ -371,6 +375,14 @@ export async function crearOReemplazarTaxRule(
   if (input.vigenteHasta) requerirFechaIso(input.vigenteHasta, 'La fecha de fin de vigencia');
   if (input.baseMinimaUvt != null && input.baseMinimaValor != null) {
     throw new VigenciaInvalidaError('La base mínima se expresa en UVT o en pesos, nunca en las dos a la vez.');
+  }
+  // D-088: guard gravada/tarifa (el mismo que impone el CHECK tax_rule_gravada_ck),
+  // adelantado con un mensaje accionable.
+  if (input.gravada === false && Number(input.tarifa) !== 0) {
+    throw new VigenciaInvalidaError(
+      'Una actividad marcada como NO gravada de ICA no puede llevar tarifa distinta de cero: ' +
+        'ponga la tarifa en 0 o marque la actividad como gravada.',
+    );
   }
 
   const conceptoId = await resolverTaxConcept(tx, input.tipo, input.conceptoCodigo);
@@ -433,6 +445,7 @@ export async function crearOReemplazarTaxRule(
       baseMinimaUvt: input.baseMinimaUvt ?? null,
       baseMinimaValor: input.baseMinimaValor ?? null,
       aplicaSobre: input.aplicaSobre,
+      gravada: input.gravada,
       accountId,
       notas: input.notas ?? null,
       requiereVerificacionHumana: input.requiereVerificacionHumana,
@@ -446,8 +459,8 @@ export async function crearOReemplazarTaxRule(
        tenant_id, company_id, tax_concept_id, tipo, tarifa, base_minima_uvt, base_minima_valor,
        aplica_sobre, aplica_a, tipo_persona, municipality_id, ciiu_activity_id,
        rango_desde_uvt, rango_hasta_uvt, uvt_adicionales, account_id,
-       vigente_desde, vigente_hasta, norma_respaldo, notas, requiere_verificacion_humana, created_by
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,COALESCE($8,'base_gravable'),$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,
+       vigente_desde, vigente_hasta, norma_respaldo, notas, requiere_verificacion_humana, gravada, created_by
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,COALESCE($8,'base_gravable'),$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,
                app.current_user_id())
      RETURNING id`,
     [
@@ -472,6 +485,7 @@ export async function crearOReemplazarTaxRule(
       normaRespaldo,
       input.notas ?? null,
       input.requiereVerificacionHumana ?? false,
+      input.gravada ?? null,
     ],
   );
   return { reglaNuevaId: nueva[0]!.id, reglaAnteriorCerrada: false };

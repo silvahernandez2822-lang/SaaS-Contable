@@ -15,9 +15,12 @@ import { redirect } from 'next/navigation';
 import { conSesion } from '../../../lib/sesion';
 import {
   editarTarifaTaxRule,
+  exigirTestigoImpacto,
   fechaMinimaVigenciaTaxRule,
   simularImpactoTarifa,
+  taxConceptIdDeTaxRule,
   EdicionRetroactivaError,
+  ImpactoNoSimuladoError,
   NormaDeRespaldoRequeridaError,
   ParametroNoEncontradoError,
   VigenciaInvalidaError,
@@ -33,6 +36,7 @@ function leer(fd: FormData, campo: string): string {
 function mensajeDeError(e: unknown): string {
   if (
     e instanceof EdicionRetroactivaError ||
+    e instanceof ImpactoNoSimuladoError ||
     e instanceof NormaDeRespaldoRequeridaError ||
     e instanceof VigenciaInvalidaError ||
     e instanceof ParametroNoEncontradoError
@@ -103,12 +107,22 @@ export async function simularAction(formData: FormData): Promise<void> {
 }
 
 /** Paso 2: el usuario ya vio "esta tarifa afecta N conceptos y M proveedores"
- * y confirma. Aquí sí se escribe. */
+ * y confirma. Aquí sí se escribe.
+ *
+ * V-39 (A14): antes de escribir se exige el TESTIGO del paso 1 —los conteos que
+ * el simulador mostró— y se comprueba contra el impacto real de este instante.
+ * Sin testigo (POST directo saltándose `simularAction`) o con un testigo rancio,
+ * no se abre vigencia ninguna. El `tax_concept` con el que se mide sale de la
+ * REGLA (V-41), nunca del formulario. */
 export async function confirmarAction(formData: FormData): Promise<void> {
   const tipo = leer(formData, 'tipo');
   const reglaAnteriorId = leer(formData, 'reglaAnteriorId');
   const base = `/parametros/tarifas/${tipo}`;
   const vigenteDesde = leer(formData, 'vigenteDesde');
+  const testigo = {
+    conceptos: leer(formData, 'conceptos'),
+    proveedores: leer(formData, 'proveedores'),
+  };
 
   const campos = {
     tarifaPorcentaje: leer(formData, 'tarifaPorcentaje'),
@@ -123,6 +137,12 @@ export async function confirmarAction(formData: FormData): Promise<void> {
   try {
     const tarifa = (Number(campos.tarifaPorcentaje) / 100).toFixed(6);
     const resultado = await conSesion(async (tx) => {
+      const taxConceptId = await taxConceptIdDeTaxRule(tx, reglaAnteriorId);
+      if (!taxConceptId) {
+        throw new ParametroNoEncontradoError('tax_rule', reglaAnteriorId);
+      }
+      exigirTestigoImpacto(testigo, await simularImpactoTarifa(tx, taxConceptId));
+
       const accountId = campos.cuentaCodigo ? await resolverCuentaPorCodigo(tx, campos.cuentaCodigo) : undefined;
       return editarTarifaTaxRule(tx, {
         reglaAnteriorId,

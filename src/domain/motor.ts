@@ -39,6 +39,7 @@ import type {
   FilaAtributosFiscales,
   FilaConcepto,
   FilaEmpresa,
+  FilaMunicipioIca,
   FilaRedondeo,
   FilaTaxRule,
   FilaTercero,
@@ -47,6 +48,7 @@ import type {
 } from './repositorio';
 import {
   MOTIVO,
+  type EfectoAcumuladoIca,
   type EntradaFactura,
   type EntradaResolucion,
   type FechaIso,
@@ -90,6 +92,8 @@ interface Contexto {
   aiu: bigint | null;
   motivos: MotivoRevision[];
   redondeos: Map<string, FilaRedondeo | null>;
+  /** D-088. Acumuladores de base mínima de ICA por periodo. Solo lectura. */
+  sesionIca: SesionAcumuladosIca;
 }
 
 function motivo(codigo: string, detalle: string): MotivoRevision {
@@ -102,6 +106,7 @@ function vacio(motivos: MotivoRevision[]): ResultadoResolucion {
     agregados: [],
     requiereRevisionManual: motivos.length > 0,
     motivosRevision: motivos,
+    acumuladosIca: [],
     huella: huellaDe([], motivos),
   };
 }
@@ -249,6 +254,191 @@ function superaUmbral(base: bigint, umbral: bigint, comparador: string): boolean
   return comparador === 'mayor' ? base > umbral : base >= umbral;
 }
 
+// -----------------------------------------------------------------------------
+// D-088 — BASE MÍNIMA DE ICA MEDIDA POR PERIODO
+//
+// Hay municipios cuya base mínima no se compara contra la factura individual
+// sino contra el ACUMULADO del tercero en el municipio durante un periodo. El
+// motor necesita entonces dos cosas que hasta D-088 no tenía: saber dónde
+// empieza y dónde acaba la ventana, y saber cuánto llevaba acumulado ese
+// tercero. Lo segundo lo guarda `reteica_periodo_acumulado`.
+//
+// DOS ASUNCIONES QUE NO SE RESUELVEN EN SILENCIO. Están escritas aquí y en
+// ESTADO_PROYECTO.md como decisiones pendientes de confirmación del cliente
+// final, no como hechos normativos:
+//
+//  A. ANCLAJE DE LA VENTANA: año calendario. El primer periodo del año empieza
+//     el 1 de enero del AÑO DEL HECHO ECONÓMICO y los siguientes se encadenan
+//     cada `periodo_meses` meses (con periodo_meses = 2: ene-feb, mar-abr, …).
+//     La ventana NUNCA cruza el cambio de año: si `periodo_meses` no divide a
+//     12 (5, 7, 8, 9, 10, 11), el último periodo del año se recorta al 31 de
+//     diciembre en vez de invadir enero del año siguiente. Anclar al año
+//     calendario es lo que hace que la ventana sea reproducible sin depender de
+//     cuándo se cargó la parametrización ni de cuándo empezó a operar la
+//     empresa, que es lo que exige la Regla de Oro 3.
+//
+//  B. CRUCE DEL UMBRAL A MITAD DE PERIODO: se retiene SOLO HACIA ADELANTE. La
+//     factura que hace cruzar el acumulado retiene sobre SU PROPIA base, y las
+//     siguientes del periodo también; lo ya causado antes del cruce NO se
+//     ajusta retroactivamente. Es la lectura conservadora y reversible: si el
+//     municipio exige el ajuste retroactivo, se corrige por reversa sobre un
+//     ledger que no ha inventado nada. La contraria —recalcular hacia atrás—
+//     obligaría a tocar asientos ya publicados, que la Regla de Oro 1 prohíbe.
+//
+// Y una consecuencia que sí es una decisión del motor, no una asunción: la
+// factura que NO alcanza el umbral tampoco retiene, pero SÍ suma al acumulador.
+// Si no sumara, el umbral no se cruzaría nunca.
+// -----------------------------------------------------------------------------
+
+/** `YYYY-MM-DD` de un instante UTC. Aritmética de calendario, no de dinero. */
+function isoUtc(ms: number): FechaIso {
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+/**
+ * Ventana de acumulación vigente para una fecha, con el anclaje A de arriba.
+ * Devuelve `null` si `periodoMeses` no es un entero utilizable: sin ventana no
+ * hay acumulado, y el motor prefiere la revisión manual a una ventana inventada.
+ */
+export function ventanaPeriodoIca(
+  fecha: FechaIso,
+  periodoMeses: number,
+): { inicio: FechaIso; fin: FechaIso } | null {
+  if (!Number.isInteger(periodoMeses) || periodoMeses < 1 || periodoMeses > 12) return null;
+  const anio = Number(fecha.slice(0, 4));
+  const mes = Number(fecha.slice(5, 7));
+  if (!Number.isInteger(anio) || !Number.isInteger(mes) || mes < 1 || mes > 12) return null;
+
+  const indice = Math.floor((mes - 1) / periodoMeses);
+  const mesInicio = indice * periodoMeses + 1;
+  // Recorte al 31 de diciembre (asunción A): el mes siguiente al fin nunca pasa
+  // de enero del año siguiente.
+  const mesFinExclusivo = Math.min(mesInicio + periodoMeses, 13);
+  return {
+    inicio: isoUtc(Date.UTC(anio, mesInicio - 1, 1)),
+    // Día 0 del mes siguiente al último = último día del periodo. Sin tabla de
+    // meses ni cálculo de bisiestos a mano.
+    fin: isoUtc(Date.UTC(anio, mesFinExclusivo - 1, 0)),
+  };
+}
+
+export interface ClaveAcumuladoIca {
+  companyId: string;
+  terceroId: string;
+  municipalityId: string;
+  tipoOperacionIca: TipoOperacionIca;
+  periodoInicio: FechaIso;
+  periodoFin: FechaIso;
+}
+
+interface EstadoAcumulado {
+  clave: ClaveAcumuladoIca;
+  /** Lo que ya había en la base para esa ventana. */
+  previo: bigint;
+  /** El documento actual ya estaba contado en la base: esto es un reproceso. */
+  yaContado: boolean;
+  /** Lo que esta resolución añadiría (0 si `yaContado`). */
+  sumado: bigint;
+}
+
+function claveTexto(c: ClaveAcumuladoIca): string {
+  return [c.companyId, c.terceroId, c.municipalityId, c.tipoOperacionIca, c.periodoInicio].join('|');
+}
+
+function contieneDocumento(documentos: unknown, sourceDocumentId: string): boolean {
+  const lista =
+    typeof documentos === 'string' ? (JSON.parse(documentos) as unknown) : documentos;
+  return Array.isArray(lista) && lista.some((x) => x === sourceDocumentId);
+}
+
+/**
+ * Los acumuladores leídos durante UNA resolución (una factura completa, con sus
+ * varios grupos de concepto). Vive lo que dura la resolución.
+ *
+ * Es de LECTURA. No escribe ni una fila: acumula en memoria y al final entrega
+ * la lista de efectos para que los aplique quien persiste el asiento, en su
+ * misma transacción y solo si el asiento se escribe. Una previsualización que
+ * descarte el resultado no deja huella en el acumulador.
+ */
+export class SesionAcumuladosIca {
+  private readonly estados = new Map<string, EstadoAcumulado>();
+
+  constructor(
+    private readonly repo: RepositorioTributario,
+    private readonly sourceDocumentId: string | null,
+  ) {}
+
+  /** Lee el acumulado de la ventana una sola vez por clave. */
+  async abrir(clave: ClaveAcumuladoIca): Promise<void> {
+    const k = claveTexto(clave);
+    if (this.estados.has(k)) return;
+    const fila = await this.repo.acumuladoIca(
+      clave.companyId,
+      clave.terceroId,
+      clave.municipalityId,
+      clave.tipoOperacionIca,
+      clave.periodoInicio,
+    );
+    this.estados.set(k, {
+      clave,
+      previo: fila === null ? 0n : (aEntero(fila.base_acumulada_centavos) ?? 0n),
+      yaContado:
+        fila !== null &&
+        this.sourceDocumentId !== null &&
+        contieneDocumento(fila.documentos_contados, this.sourceDocumentId),
+      sumado: 0n,
+    });
+  }
+
+  /**
+   * Suma la base de esta liquidación y devuelve el acumulado CON ella dentro,
+   * que es contra lo que se compara la base mínima.
+   *
+   * Anti doble conteo: si el documento ya figura en `documentos_contados`, el
+   * acumulado de la base YA incluye esta factura y no se vuelve a sumar. Es lo
+   * que hace que recausar el mismo documento dé exactamente el mismo resultado
+   * (caso dorado 18) en vez de empujarlo por encima del umbral él solo.
+   */
+  acumular(clave: ClaveAcumuladoIca, base: bigint): { acumulado: bigint; previo: bigint; yaContado: boolean } {
+    const estado = this.estados.get(claveTexto(clave));
+    if (!estado) throw new Error('Acumulador de ICA usado sin abrirlo primero.');
+    if (!estado.yaContado) estado.sumado += base;
+    return {
+      acumulado: estado.previo + estado.sumado,
+      previo: estado.previo,
+      yaContado: estado.yaContado,
+    };
+  }
+
+  /**
+   * Efectos a aplicar si el asiento se persiste. Vacío cuando la resolución no
+   * sabe de qué documento viene: sin `sourceDocumentId` no hay clave anti doble
+   * conteo, y un acumulador que no distingue el reproceso es peor que ninguno.
+   */
+  efectos(): EfectoAcumuladoIca[] {
+    const doc = this.sourceDocumentId;
+    if (doc === null) return [];
+    const salida: EfectoAcumuladoIca[] = [];
+    for (const e of this.estados.values()) {
+      if (e.sumado === 0n && !e.yaContado) continue;
+      salida.push({
+        companyId: e.clave.companyId,
+        terceroId: e.clave.terceroId,
+        municipalityId: e.clave.municipalityId,
+        tipoOperacionIca: e.clave.tipoOperacionIca,
+        periodoInicio: e.clave.periodoInicio,
+        periodoFin: e.clave.periodoFin,
+        sourceDocumentId: doc,
+        baseSumada: aNumeroSeguro(e.sumado, 'base sumada al acumulador de ICA'),
+        yaContado: e.yaContado,
+        acumuladoPrevio: aNumeroSeguro(e.previo, 'acumulado previo de ICA'),
+        acumuladoResultante: aNumeroSeguro(e.previo + e.sumado, 'acumulado resultante de ICA'),
+      });
+    }
+    return salida.sort((a, b) => (claveTexto(a) < claveTexto(b) ? -1 : 1));
+  }
+}
+
 /** Base sobre la que la regla dice que se aplica la tarifa (sección 9.2). */
 function baseSegunRegla(ctx: Contexto, regla: FilaTaxRule): bigint | null {
   switch (regla.aplica_sobre) {
@@ -324,6 +514,7 @@ function textoPesos(centavos: bigint): string {
 async function abrirContexto(
   repo: RepositorioTributario,
   entrada: EntradaResolucion,
+  sesionIca: SesionAcumuladosIca,
 ): Promise<Contexto | ResultadoResolucion> {
   const motivos: MotivoRevision[] = [];
 
@@ -417,6 +608,7 @@ async function abrirContexto(
     aiu,
     motivos,
     redondeos: new Map(),
+    sesionIca,
   };
 }
 
@@ -694,7 +886,33 @@ async function resolverReteica(
   // regla dice otra, no se elige "la más razonable": se para.
   const tarifaGeneral = aEnteroEscalado(reglaMunicipal.tarifa_general, ESCALA_TARIFA);
   const elegida = elegirRegla(candidatas);
+
+  // D-088, TAREA 1 — ACTIVIDAD NO GRAVADA.
+  //
+  // `gravada = false` es una decisión normativa explícita del municipio: esa
+  // actividad no tributa ICA allí. El motor NO retiene, sin importar la tarifa
+  // que traiga la fila (el CHECK `tax_rule_gravada_ck` ya obliga a que sea 0,
+  // pero el flag manda igual: leer la tarifa y leer el flag no pueden dar
+  // resultados opuestos).
+  //
+  // No es revisión manual: no hay nada que un humano tenga que decidir. Se
+  // registra la EVALUACIÓN con `aplicada = false` y el motivo en texto, que es
+  // el mismo canal por el que ya se explica «la base no llegó al mínimo». El
+  // contador puede abrir la factura y leer por qué no retuvo.
+  //
+  // `gravada = true` y `gravada = null` (todas las reglas anteriores a D-088)
+  // no cambian de conducta ni un centavo.
+  let motivoNoAplicaForzado: string | null = null;
+  if (elegida.regla !== null && elegida.regla.gravada === false) {
+    motivoNoAplicaForzado =
+      `La actividad ${ciiuActivityId ?? '(sin actividad, tarifa general)'} está marcada como NO ` +
+      `GRAVADA de ICA en el municipio ${municipioId} por la regla ${elegida.regla.id}, vigente ` +
+      `desde ${elegida.regla.vigente_desde}. No se practica ReteICA sin importar la tarifa. ` +
+      `Norma: ${elegida.regla.norma_respaldo}.`;
+  }
+
   if (
+    motivoNoAplicaForzado === null &&
     !reglaMunicipal.usa_tarifa_de_actividad &&
     tarifaGeneral !== null &&
     elegida.regla !== null &&
@@ -710,13 +928,87 @@ async function resolverReteica(
     return;
   }
 
+  // D-088, TAREA 2 — MEDICIÓN DE LA BASE MÍNIMA.
+  //
+  // 'por_factura' (el default de la columna y el estado de toda fila anterior a
+  // D-088) no toca nada: se compara ESTA factura, como siempre.
+  //
+  // 'por_periodo' abre la ventana de acumulación del tercero en el municipio.
+  // Una actividad no gravada NO acumula: sumar base que por definición no
+  // tributa acercaría al tercero a un umbral que no le corresponde cruzar.
+  let acumulado: ClaveAcumuladoIca | undefined;
+  if (reglaMunicipal.tipo_medicion_base_minima === 'por_periodo' && motivoNoAplicaForzado === null) {
+    const clave = await abrirVentanaIca(ctx, reglaMunicipal, municipioId, naturaleza);
+    if (clave === null) return; // el motivo ya quedó escrito
+    acumulado = clave;
+  }
+
   await liquidar(repo, ctx, retenciones, 'reteica', candidatas, {
     municipalityId: municipioId,
     ciiuActivityId,
     tarifaOverride,
     nota,
     umbralExterno: umbralIca(reglaMunicipal, naturaleza, ctx.uvt),
+    motivoNoAplicaForzado,
+    acumulado,
   });
+}
+
+/**
+ * D-088. Resuelve la ventana de acumulación y deja el acumulado leído. Devuelve
+ * `null` —con el motivo ya escrito— cuando la parametrización no alcanza: sin
+ * ventana o sin saber si la operación es servicio o compra, el acumulado no
+ * significa nada y el motor prefiere la revisión manual a un umbral inventado.
+ */
+async function abrirVentanaIca(
+  ctx: Contexto,
+  reglaMunicipal: FilaMunicipioIca,
+  municipioId: string,
+  naturaleza: TipoOperacionIca | null,
+): Promise<ClaveAcumuladoIca | null> {
+  if (reglaMunicipal.periodo_meses === null) {
+    ctx.motivos.push(
+      motivo(
+        MOTIVO.ICA_PERIODO_SIN_VENTANA,
+        `El municipio ${municipioId} mide la base mínima de ICA por periodo y su regla vigente al ` +
+          `${ctx.entrada.fechaHechoEconomico} no dice de cuántos meses es la ventana ` +
+          '(municipality_ica_rule.periodo_meses). El motor no la supone.',
+      ),
+    );
+    return null;
+  }
+  if (naturaleza === null) {
+    ctx.motivos.push(
+      motivo(
+        MOTIVO.ICA_PERIODO_SIN_NATURALEZA,
+        `El municipio ${municipioId} acumula la base por periodo y el acumulado se lleva por ` +
+          `separado para servicios y para compras; el concepto ${ctx.concepto.codigo} no dice ` +
+          'cuál de los dos es (tipo_operacion_ica).',
+      ),
+    );
+    return null;
+  }
+  const ventana = ventanaPeriodoIca(ctx.entrada.fechaHechoEconomico, reglaMunicipal.periodo_meses);
+  if (ventana === null) {
+    ctx.motivos.push(
+      motivo(
+        MOTIVO.ICA_PERIODO_SIN_VENTANA,
+        `No se pudo derivar la ventana de acumulación de ICA del municipio ${municipioId} para ` +
+          `${ctx.entrada.fechaHechoEconomico} con periodo_meses = ${reglaMunicipal.periodo_meses}.`,
+      ),
+    );
+    return null;
+  }
+  const clave: ClaveAcumuladoIca = {
+    companyId: ctx.empresa.id,
+    terceroId: ctx.tercero.id,
+    municipalityId: municipioId,
+    tipoOperacionIca: naturaleza,
+    periodoInicio: ventana.inicio,
+    periodoFin: ventana.fin,
+  };
+  await ctx.sesionIca.abrir(clave);
+  return clave;
 }
 
 function umbralIca(
@@ -846,6 +1138,19 @@ interface OpcionesLiquidacion {
   tarifaOverride?: bigint | null;
   nota?: string | null;
   umbralExterno?: Umbral;
+  /**
+   * D-088. Motivo por el que esta retención NO se practica aunque la regla
+   * exista y la base alcance (hoy: actividad no gravada). Gana sobre la
+   * comparación de base mínima: si no está gravada, el umbral es irrelevante.
+   */
+  motivoNoAplicaForzado?: string | null;
+  /**
+   * D-088. Ventana del acumulador contra el que se compara la base mínima. Si
+   * viene, la comparación es contra el ACUMULADO del periodo, no contra la base
+   * de esta factura; la retención se sigue calculando sobre la base de ESTA
+   * factura (asunción B: solo hacia adelante, nunca retroactivo).
+   */
+  acumulado?: ClaveAcumuladoIca;
 }
 
 async function liquidar(
@@ -929,14 +1234,38 @@ async function liquidar(
           .filter((x) => x !== null && x !== undefined)
           .join(' ');
 
+  // D-088. Contra qué se mide el mínimo. Por omisión, contra la base de esta
+  // factura (todo lo anterior a D-088). Con acumulador, contra el acumulado del
+  // periodo — que incluye ESTA factura: la que hace cruzar el umbral retiene.
+  let baseComparada = base;
+  let etiquetaBase = 'La base';
+  let notaAcumulado: string | null = null;
+  if (opciones.acumulado !== undefined && (opciones.motivoNoAplicaForzado ?? null) === null) {
+    const acc = ctx.sesionIca.acumular(opciones.acumulado, base);
+    baseComparada = acc.acumulado;
+    etiquetaBase = 'El acumulado del periodo';
+    notaAcumulado =
+      `Base mínima medida POR PERIODO (${opciones.acumulado.periodoInicio} a ` +
+      `${opciones.acumulado.periodoFin}): acumulado del tercero en el municipio ` +
+      `${textoPesos(acc.acumulado)}, del que ${textoPesos(acc.previo)} venía de antes` +
+      (acc.yaContado
+        ? ' y este documento YA estaba contado (reproceso: no se suma dos veces).'
+        : '.') +
+      ' Si cruza el umbral se retiene sobre la base de esta factura, sin ajustar hacia atrás.';
+  }
+
   // Sección 9.3: base bajo el mínimo -> no se retiene, PERO se registra la
   // evaluación y el porqué. Es lo que el contador necesita poder mirar.
-  let motivoNoAplica: string | null = null;
-  if (umbral.valor !== null && !superaUmbral(base, umbral.valor, regla.comparador_base_minima)) {
+  let motivoNoAplica: string | null = opciones.motivoNoAplicaForzado ?? null;
+  if (
+    motivoNoAplica === null &&
+    umbral.valor !== null &&
+    !superaUmbral(baseComparada, umbral.valor, regla.comparador_base_minima)
+  ) {
     const comparador = regla.comparador_base_minima === 'mayor' ? 'superior a' : 'igual o superior a';
     motivoNoAplica =
-      `La base de ${textoPesos(base)} no alcanza la base mínima de la regla, que exige una base ` +
-      `${comparador} ${textoPesos(umbral.valor)}` +
+      `${etiquetaBase} de ${textoPesos(baseComparada)} no alcanza la base mínima de la regla, que ` +
+      `exige una base ${comparador} ${textoPesos(umbral.valor)}` +
       (umbral.baseMinimaUvt !== null ? ` (${umbral.baseMinimaUvt} UVT)` : '') +
       `. Norma: ${regla.norma_respaldo}.`;
   }
@@ -952,7 +1281,8 @@ async function liquidar(
       accountId: regla.account_id,
       municipalityId: opciones.municipalityId ?? null,
       ciiuActivityId: opciones.ciiuActivityId ?? null,
-      nota: notaOverride,
+      // Regla de Oro 6: la traza dice también con qué acumulado se decidió.
+      nota: [notaOverride, notaAcumulado].filter((x) => x !== null && x !== '').join(' ') || null,
       motivoNoAplica,
     }),
   );
@@ -1040,8 +1370,17 @@ export function agregar(retenciones: readonly RetencionResuelta[]): RetencionAgr
 export async function resolverRetenciones(
   repo: RepositorioTributario,
   entrada: EntradaResolucion,
+  /**
+   * D-088. Sesión de acumuladores compartida. La pasa `resolverFactura` para
+   * que los varios grupos de concepto de UNA factura sumen sobre el mismo
+   * acumulado en vez de leer cada uno el estado antiguo de la base. Si no
+   * viene, esta resolución abre la suya.
+   */
+  sesionCompartida?: SesionAcumuladosIca,
 ): Promise<ResultadoResolucion> {
-  const ctx = await abrirContexto(repo, entrada);
+  const sesionIca =
+    sesionCompartida ?? new SesionAcumuladosIca(repo, entrada.sourceDocumentId ?? null);
+  const ctx = await abrirContexto(repo, entrada, sesionIca);
   if ('retenciones' in ctx) return ctx;
 
   const retenciones: RetencionResuelta[] = [];
@@ -1055,6 +1394,9 @@ export async function resolverRetenciones(
     agregados: agregar(retenciones),
     requiereRevisionManual: ctx.motivos.length > 0,
     motivosRevision: ctx.motivos,
+    // Con sesión compartida los efectos los reporta `resolverFactura` una sola
+    // vez, no cada grupo de concepto.
+    acumuladosIca: sesionCompartida === undefined ? sesionIca.efectos() : [],
     huella: huellaDe(retenciones, ctx.motivos),
   };
 }
@@ -1074,19 +1416,28 @@ export async function resolverFactura(
   const grupos = agruparPorConcepto(factura.lineas, factura.municipioOperacionId);
   const retenciones: RetencionResuelta[] = [];
   const motivos: MotivoRevision[] = [];
+  // D-088: UNA sesión para toda la factura. Dos grupos de concepto en el mismo
+  // municipio y con la misma naturaleza suman al mismo acumulado, y el efecto
+  // que se persiste es uno solo por ventana.
+  const sesionIca = new SesionAcumuladosIca(repo, factura.sourceDocumentId ?? null);
 
   for (const grupo of grupos) {
-    const parcial = await resolverRetenciones(repo, {
-      companyId: factura.companyId,
-      terceroId: factura.terceroId,
-      conceptoId: grupo.conceptoId,
-      municipioOperacionId: grupo.municipioOperacionId,
-      baseGravable: grupo.baseGravable,
-      valorIva: grupo.valorIva,
-      fechaHechoEconomico: factura.fechaHechoEconomico,
-      valorAiu: grupo.valorAiu,
-      tipoOperacionIca: grupo.tipoOperacionIca,
-    });
+    const parcial = await resolverRetenciones(
+      repo,
+      {
+        companyId: factura.companyId,
+        terceroId: factura.terceroId,
+        conceptoId: grupo.conceptoId,
+        municipioOperacionId: grupo.municipioOperacionId,
+        baseGravable: grupo.baseGravable,
+        valorIva: grupo.valorIva,
+        fechaHechoEconomico: factura.fechaHechoEconomico,
+        valorAiu: grupo.valorAiu,
+        tipoOperacionIca: grupo.tipoOperacionIca,
+        sourceDocumentId: factura.sourceDocumentId ?? null,
+      },
+      sesionIca,
+    );
     retenciones.push(...parcial.retenciones);
     motivos.push(...parcial.motivosRevision);
   }
@@ -1096,6 +1447,7 @@ export async function resolverFactura(
     agregados: agregar(retenciones),
     requiereRevisionManual: motivos.length > 0,
     motivosRevision: motivos,
+    acumuladosIca: sesionIca.efectos(),
     huella: huellaDe(retenciones, motivos),
   };
 }

@@ -115,6 +115,15 @@ export interface FilaTaxRule {
   vigente_hasta: FechaIso | null;
   norma_respaldo: string;
   especificidad: number;
+  /**
+   * D-088. Tres estados, y el motor los distingue:
+   *  · `null`  — no declarado / no aplica. Es el estado de TODA regla anterior
+   *    a D-088: el motor se comporta exactamente como antes.
+   *  · `true`  — actividad gravada en el municipio.
+   *  · `false` — actividad NO gravada: el motor no retiene, sin importar la
+   *    tarifa (que además el CHECK `tax_rule_gravada_ck` obliga a que sea 0).
+   */
+  gravada: boolean | null;
 }
 
 export interface FilaMunicipioIca {
@@ -128,9 +137,27 @@ export interface FilaMunicipioIca {
   usa_tarifa_de_actividad: boolean;
   tarifa_general: string | null;
   regla_desempate_actividad: 'principal' | 'mayor_tarifa' | 'menor_tarifa';
+  /**
+   * D-088. Contra qué se compara la base mínima del municipio: contra ESTA
+   * factura (comportamiento previo, y el default de la columna) o contra el
+   * ACUMULADO del tercero en el municipio durante la ventana del periodo.
+   */
+  tipo_medicion_base_minima: 'por_factura' | 'por_periodo';
+  /** D-088. Meses de la ventana de acumulación. Solo con medición por periodo. */
+  periodo_meses: number | null;
   vigente_desde: FechaIso;
   vigente_hasta: FechaIso | null;
   norma_respaldo: string;
+}
+
+/** D-088. Fila del acumulador de base de ICA por periodo. Estado derivado. */
+export interface FilaAcumuladoIca {
+  id: string;
+  periodo_inicio: FechaIso;
+  periodo_fin: FechaIso;
+  /** `bigint` de la base, leído como texto (Regla de Oro 5: nunca float). */
+  base_acumulada_centavos: string;
+  documentos_contados: unknown;
 }
 
 export interface FilaActividadTercero {
@@ -220,6 +247,19 @@ export interface RepositorioTributario {
   ): Promise<FilaActividadTercero[]>;
   redondeo(empresa: FilaEmpresa, aplicaA: string, fecha: FechaIso): Promise<FilaRedondeo | null>;
   ajuste(companyId: string, clave: string): Promise<unknown | null>;
+  /**
+   * D-088. Acumulado del tercero en el municipio para la ventana que empieza en
+   * `periodoInicio`. Es SOLO LECTURA, como todo lo demás de este repositorio:
+   * el motor no escribe el acumulador, devuelve el efecto y lo aplica quien
+   * persiste el asiento (`aplicarAcumuladosIca`).
+   */
+  acumuladoIca(
+    companyId: string,
+    terceroId: string,
+    municipalityId: string,
+    tipoOperacionIca: TipoOperacionIca,
+    periodoInicio: FechaIso,
+  ): Promise<FilaAcumuladoIca | null>;
 }
 
 /**
@@ -312,7 +352,7 @@ export class RepositorioTributarioSql implements RepositorioTributario {
     SELECT id, tenant_id, company_id, tax_concept_id, tipo, tarifa::text, base_minima_uvt::text,
            base_minima_valor::text, comparador_base_minima, aplica_sobre, aplica_a, tipo_persona,
            municipality_id, ciiu_activity_id, account_id, vigente_desde::text,
-           vigente_hasta::text, norma_respaldo,
+           vigente_hasta::text, norma_respaldo, gravada,
            ((aplica_a <> 'ambos')::int * 4
             + (tipo_persona <> 'ambos')::int * 2
             + (ciiu_activity_id IS NOT NULL)::int) AS especificidad
@@ -428,7 +468,8 @@ export class RepositorioTributarioSql implements RepositorioTributario {
         `SELECT id, municipality_id, practica_reteica, base_minima_servicios_uvt::text,
                 base_minima_compras_uvt::text, base_minima_servicios_valor::text,
                 base_minima_compras_valor::text, usa_tarifa_de_actividad, tarifa_general::text,
-                regla_desempate_actividad, vigente_desde::text, vigente_hasta::text, norma_respaldo
+                regla_desempate_actividad, tipo_medicion_base_minima, periodo_meses,
+                vigente_desde::text, vigente_hasta::text, norma_respaldo
            FROM municipality_ica_rule
           WHERE municipality_id = $3
             AND app.esta_vigente(vigente_desde, vigente_hasta, $4::date)
@@ -479,6 +520,24 @@ export class RepositorioTributarioSql implements RepositorioTributario {
         '$2',
       ),
       [empresa.id, empresa.tenant_id, aplicaA, fecha],
+    );
+    return rows[0] ?? null;
+  }
+
+  async acumuladoIca(
+    companyId: string,
+    terceroId: string,
+    municipalityId: string,
+    tipoOperacionIca: TipoOperacionIca,
+    periodoInicio: FechaIso,
+  ): Promise<FilaAcumuladoIca | null> {
+    const { rows } = await this.tx.query<FilaAcumuladoIca>(
+      `SELECT id, periodo_inicio::text, periodo_fin::text,
+              base_acumulada_centavos::text, documentos_contados
+         FROM reteica_periodo_acumulado
+        WHERE company_id = $1 AND third_party_id = $2 AND municipality_id = $3
+          AND tipo_operacion_ica = $4 AND periodo_inicio = $5::date`,
+      [companyId, terceroId, municipalityId, tipoOperacionIca, periodoInicio],
     );
     return rows[0] ?? null;
   }

@@ -1141,6 +1141,11 @@ describe('A14 · la vía del buzón: ¿se puede cruzar de firma por ahí? (adjud
       // `buscar_credencial`.
       'app.crear_token_integracion',
       'app.current_company_id',
+      // D-087 (migración 176): detalle (filas concretas) del simulador de
+      // impacto de parametros, hermanas de app.simular_impacto_*.
+      'app.detalle_impacto_municipio_ica',
+      'app.detalle_impacto_tax_concept',
+      'app.detalle_impacto_valor_base',
       // A7, Ola 2 (migración 070): `app.empresas_accesibles()`, para la
       // bandeja multi-empresa (sección 4). SECURITY DEFINER + row_security=off,
       // mismo motivo que current_company_id: resolver "qué empresas puedo

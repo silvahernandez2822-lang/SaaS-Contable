@@ -78,12 +78,19 @@ export {
   simularImpactoMunicipioIca,
   editarMunicipioIcaRule,
   puedeEditarParametros,
+  puedeLeerParametros,
+  detalleImpactoTarifa,
+  detalleImpactoMunicipioIca,
+  detalleImpactoValorBase,
   diaAnterior,
   hoyIso,
   NormaDeRespaldoRequeridaError,
   VigenciaInvalidaError,
   ParametroNoEncontradoError,
   EdicionRetroactivaError,
+  ImpactoNoSimuladoError,
+  exigirTestigoImpacto,
+  taxConceptIdDeTaxRule,
 } from './parametrizacion';
 export type {
   AlertaParametro,
@@ -97,6 +104,9 @@ export type {
   EditarRoundingRuleInput,
   FilaMunicipioIca,
   EditarMunicipioIcaInput,
+  SubmoduloParametro,
+  DetalleImpacto,
+  TestigoImpacto,
 } from './parametrizacion';
 
 // A10 (Ola 3): cierre de las cuentas de resultado. Asiento NUEVO de tipo

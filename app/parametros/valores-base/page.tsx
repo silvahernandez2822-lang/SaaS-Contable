@@ -1,18 +1,44 @@
 /**
  * A8 — UVT, SMMLV/auxilio de transporte y redondeo general.
  *
- * Las consultas de LECTURA de esta página son directas (no pasan por una
- * función dedicada del servicio, a diferencia de `listarTarifasPorTipo`):
- * son de solo lectura y de una sola tabla con la misma prioridad de alcance
- * (empresa > firma > global) que usa el motor. La ESCRITURA sí pasa siempre
- * por el servicio (`editarUvtValue` / `editarSmmlvValue` / `editarRoundingRule`),
- * que es donde viven las seis conductas obligatorias y donde A14 las verifica.
+ * Las LECTURAS son consultas directas (solo lectura, una tabla, misma
+ * prioridad de alcance que el motor). Las ESCRITURAS pasan por el servicio
+ * (`editarUvtValue` / `editarSmmlvValue` / `editarRoundingRule`).
+ *
+ * D-087 · TAREA 0 — cuerpo migrado al kit de `app/_ui/`.
+ * D-087 · TAREA 2 — permiso de submódulo `valores_base`.
+ * D-087 · TAREA 3 — flujo de DOS pasos: se SIMULA el impacto (bloqueante,
+ *   con "Ver detalle") ANTES de que exista el botón de guardar.
  */
-import Link from 'next/link';
 import { conSesion } from '../../lib/sesion';
-import { puedeEditarParametros, simularImpactoValorBase, hoyIso } from '../../../src/services/parametrizacion';
+import {
+  detalleImpactoValorBase,
+  puedeEditarParametros,
+  simularImpactoValorBase,
+  hoyIso,
+  type DetalleImpacto,
+  type ImpactoSimulado,
+} from '../../../src/services/parametrizacion';
+import {
+  Boton,
+  Campo,
+  Encabezado,
+  EnlaceBoton,
+  Entrada,
+  MensajeEstado,
+  Panel,
+  Selector,
+} from '../../_ui/componentes';
 import { MensajeError } from '../_componentes';
-import { guardarRedondeoAction, guardarSmmlvAction, guardarUvtAction } from './acciones';
+import { BotonDetalleImpacto } from '../_detalle-impacto';
+import {
+  confirmarRedondeoAction,
+  confirmarSmmlvAction,
+  confirmarUvtAction,
+  simularRedondeoAction,
+  simularSmmlvAction,
+  simularUvtAction,
+} from './acciones';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,10 +72,16 @@ function cadena(sp: BusquedaParams, campo: string): string {
   return typeof v === 'string' ? v : '';
 }
 
-export default async function PaginaValoresBase({ searchParams }: { searchParams: Promise<BusquedaParams> }) {
+export default async function PaginaValoresBase({
+  searchParams,
+}: {
+  searchParams: Promise<BusquedaParams>;
+}) {
   const sp = await searchParams;
+  const cual = cadena(sp, 'cual');
+  const confirmando = cadena(sp, 'confirmar') === '1' && !!cual;
 
-  const { uvt, smmlv, redondeo, puedeEditar, impacto } = await conSesion(async (tx) => {
+  const { uvt, smmlv, redondeo, puedeEditar, impacto, detalle } = await conSesion(async (tx) => {
     const [uvtRes, smmlvRes, redondeoRes, puedeEditarRes, impactoRes] = await Promise.all([
       tx.query<FilaUvt>(
         `SELECT id, anio, valor::text, vigente_desde::text, norma_respaldo FROM uvt_value
@@ -67,222 +99,277 @@ export default async function PaginaValoresBase({ searchParams }: { searchParams
           WHERE aplica_a = 'todos' AND app.esta_vigente(vigente_desde, vigente_hasta, CURRENT_DATE)
           ORDER BY (company_id IS NOT NULL) DESC, (tenant_id IS NOT NULL) DESC LIMIT 1`,
       ),
-      puedeEditarParametros(tx),
+      puedeEditarParametros(tx, 'valores_base'),
       simularImpactoValorBase(tx),
     ]);
+    const detalleRes = confirmando && puedeEditarRes ? await detalleImpactoValorBase(tx) : null;
     return {
       uvt: uvtRes.rows[0] ?? null,
       smmlv: smmlvRes.rows[0] ?? null,
       redondeo: redondeoRes.rows[0] ?? null,
       puedeEditar: puedeEditarRes,
       impacto: impactoRes,
+      detalle: detalleRes,
     };
   });
 
+  const impactoTexto = `Cualquiera de estos tres valores afecta hoy a ${impacto.conceptosAfectados} concepto(s) de causación y ${impacto.proveedoresAfectados} proveedor(es) con historial en esta firma (sección 6.2, punto 6): todos calculan con base en la UVT, el SMMLV o el redondeo general.`;
+
   return (
-    <main style={{ maxWidth: 800, margin: '0 auto', padding: '24px' }}>
-      <p>
-        <Link href="/parametros">« Volver a parametrización</Link>
-      </p>
-      <h1>Valores base</h1>
+    <div className="mx-auto max-w-3xl p-5">
+      <Encabezado
+        titulo="Valores base"
+        descripcion="UVT, SMMLV / auxilio de transporte y redondeo general. Cada edición cierra la vigencia anterior e inserta una nueva; no afecta asientos publicados."
+        acciones={<EnlaceBoton href="/parametros" variante="fantasma">« Parametrización</EnlaceBoton>}
+      />
+
       <MensajeError error={cadena(sp, 'error') || undefined} />
       {cadena(sp, 'ok') && (
-        <p style={{ color: '#166534', border: '1px solid #166534', padding: '8px 12px' }}>
-          Vigencia guardada: la anterior quedó cerrada, la nueva rige desde la fecha confirmada.
-        </p>
+        <div className="my-3">
+          <MensajeEstado tipo="sin-datos" titulo="Vigencia guardada: la anterior quedó cerrada, la nueva rige desde la fecha confirmada." />
+        </div>
       )}
-
-      <p style={{ border: '1px solid #334155', padding: '8px 12px' }}>
-        <strong>
-          Cualquiera de estos tres valores afecta hoy a {impacto.conceptosAfectados} concepto(s) de
-          causación y {impacto.proveedoresAfectados} proveedor(es) con historial en esta firma
-          (sección 6.2, punto 6): todos calculan con base en la UVT, el SMMLV o el redondeo general.
-        </strong>
-      </p>
 
       {!puedeEditar && (
-        <p>
-          <em>Su sesión no tiene el permiso «parametro.editar»: solo puede consultar estos valores.</em>
-        </p>
+        <div className="my-3">
+          <MensajeEstado tipo="configuracion" titulo="Solo lectura">
+            Su sesión no tiene el permiso <code>parametro.valores_base.editar</code>.
+          </MensajeEstado>
+        </div>
       )}
 
-      <section style={{ marginTop: '24px' }}>
-        <h2>UVT — Unidad de Valor Tributario</h2>
-        {uvt ? (
-          <p>
-            Año {uvt.anio}: ${(Number(uvt.valor) / 100).toLocaleString('es-CO')} desde {uvt.vigente_desde}.
-            Norma: {uvt.norma_respaldo}
-          </p>
-        ) : (
-          <p style={{ color: '#b45309' }}>No hay ninguna UVT vigente hoy visible para esta sesión.</p>
-        )}
-        {puedeEditar && uvt && (
-          <form action={guardarUvtAction}>
-            <input type="hidden" name="reglaAnteriorId" value={uvt.id} />
-            <div>
-              <label>
-                Año <input name="anio" type="number" required defaultValue={uvt.anio} />
-              </label>
-            </div>
-            <div>
-              <label>
-                Valor nuevo (pesos){' '}
-                <input name="valorPesos" type="number" step="1" required defaultValue={Number(uvt.valor) / 100} />
-              </label>
-            </div>
-            <div>
-              <label>
-                Vigente desde <input name="vigenteDesde" type="date" required defaultValue={hoyIso()} />
-              </label>
-            </div>
-            <div>
-              <label>
-                Norma de respaldo <input name="normaRespaldo" type="text" required size={50} />
-              </label>
-            </div>
-            <div>
-              <label>
-                <input type="radio" name="alcanceNuevo" value="firma" defaultChecked /> Toda la firma
-              </label>
-              <label style={{ marginLeft: '16px' }}>
-                <input type="radio" name="alcanceNuevo" value="empresa" /> Solo esta empresa
-              </label>
-            </div>
-            <label>
-              <input type="checkbox" required /> He revisado el impacto indicado arriba.
-            </label>
-            <div>
-              <button type="submit">Guardar UVT nueva</button>
-            </div>
-          </form>
-        )}
-      </section>
+      {confirmando && puedeEditar ? (
+        <PanelConfirmar
+          cual={cual}
+          sp={sp}
+          impacto={impacto}
+          impactoTexto={impactoTexto}
+          detalle={detalle}
+          cadena={cadena}
+        />
+      ) : (
+        <div className="flex flex-col gap-4">
+          <div className="my-1">
+            <MensajeEstado tipo="configuracion" titulo="Impacto de un cambio en cualquiera de estos valores">
+              {impactoTexto}
+            </MensajeEstado>
+          </div>
 
-      <section style={{ marginTop: '24px' }}>
-        <h2>SMMLV y auxilio de transporte</h2>
-        {smmlv ? (
-          <p>
-            Año {smmlv.anio}: ${(Number(smmlv.valor_mensual) / 100).toLocaleString('es-CO')} mensual
-            {smmlv.auxilio_transporte ? `, auxilio $${(Number(smmlv.auxilio_transporte) / 100).toLocaleString('es-CO')}` : ''}
-            {' '}desde {smmlv.vigente_desde}. Norma: {smmlv.norma_respaldo}
-          </p>
-        ) : (
-          <p style={{ color: '#b45309' }}>
-            No hay ningún SMMLV vigente hoy (ver alerta en la página principal de parametrización).
-            Cárguelo aquí por primera vez llamando al servicio, o pida a A1 la verificación normativa.
-          </p>
-        )}
-        {puedeEditar && smmlv && (
-          <form action={guardarSmmlvAction}>
-            <input type="hidden" name="reglaAnteriorId" value={smmlv.id} />
-            <div>
-              <label>
-                Año <input name="anio" type="number" required defaultValue={smmlv.anio} />
-              </label>
+          <Panel titulo="UVT — Unidad de Valor Tributario">
+            <div className="p-5">
+              {uvt ? (
+                <p className="mb-3 text-menor text-texto-suave">
+                  Año {uvt.anio}: ${(Number(uvt.valor) / 100).toLocaleString('es-CO')} desde{' '}
+                  {uvt.vigente_desde}. Norma: {uvt.norma_respaldo}
+                </p>
+              ) : (
+                <p className="mb-3 text-menor text-pendiente-tinta">
+                  No hay ninguna UVT vigente hoy visible para esta sesión.
+                </p>
+              )}
+              {puedeEditar && uvt && (
+                <form action={simularUvtAction} className="grid max-w-lg grid-cols-1 gap-3">
+                  <input type="hidden" name="reglaAnteriorId" value={uvt.id} />
+                  <Campo etiqueta="Año" requerido>
+                    <Entrada name="anio" type="number" required defaultValue={uvt.anio} />
+                  </Campo>
+                  <Campo etiqueta="Valor nuevo (pesos)" requerido>
+                    <Entrada name="valorPesos" type="number" step="1" required defaultValue={Number(uvt.valor) / 100} />
+                  </Campo>
+                  <CamposVigencia />
+                  <div>
+                    <Boton tipo="submit">Simular impacto</Boton>
+                  </div>
+                </form>
+              )}
             </div>
-            <div>
-              <label>
-                Valor mensual nuevo (pesos){' '}
-                <input name="valorMensualPesos" type="number" step="1" required defaultValue={Number(smmlv.valor_mensual) / 100} />
-              </label>
-            </div>
-            <div>
-              <label>
-                Auxilio de transporte (pesos, opcional){' '}
-                <input
-                  name="auxilioTransportePesos"
-                  type="number"
-                  step="1"
-                  defaultValue={smmlv.auxilio_transporte ? Number(smmlv.auxilio_transporte) / 100 : ''}
-                />
-              </label>
-            </div>
-            <div>
-              <label>
-                Vigente desde <input name="vigenteDesde" type="date" required defaultValue={hoyIso()} />
-              </label>
-            </div>
-            <div>
-              <label>
-                Norma de respaldo <input name="normaRespaldo" type="text" required size={50} />
-              </label>
-            </div>
-            <div>
-              <label>
-                <input type="radio" name="alcanceNuevo" value="firma" defaultChecked /> Toda la firma
-              </label>
-              <label style={{ marginLeft: '16px' }}>
-                <input type="radio" name="alcanceNuevo" value="empresa" /> Solo esta empresa
-              </label>
-            </div>
-            <label>
-              <input type="checkbox" required /> He revisado el impacto indicado arriba.
-            </label>
-            <div>
-              <button type="submit">Guardar SMMLV nuevo</button>
-            </div>
-          </form>
-        )}
-      </section>
+          </Panel>
 
-      <section style={{ marginTop: '24px' }}>
-        <h2>Redondeo general</h2>
-        {redondeo ? (
-          <p>
-            {redondeo.codigo}: modo «{redondeo.modo}», múltiplo {redondeo.multiplo} centavos, desde{' '}
-            {redondeo.vigente_desde}. Norma: {redondeo.norma_respaldo}
-          </p>
-        ) : (
-          <p style={{ color: '#b45309' }}>No hay ninguna regla de redondeo general vigente hoy.</p>
-        )}
-        {puedeEditar && redondeo && (
-          <form action={guardarRedondeoAction}>
-            <input type="hidden" name="reglaAnteriorId" value={redondeo.id} />
-            <div>
-              <label>
-                Modo{' '}
-                <select name="modo" defaultValue={redondeo.modo}>
-                  <option value="half_up">Redondeo comercial (half_up)</option>
-                  <option value="half_even">Redondeo bancario (half_even)</option>
-                  <option value="truncar">Truncar</option>
-                  <option value="techo">Hacia arriba (techo)</option>
-                  <option value="piso">Hacia abajo (piso)</option>
-                </select>
-              </label>
+          <Panel titulo="SMMLV y auxilio de transporte">
+            <div className="p-5">
+              {smmlv ? (
+                <p className="mb-3 text-menor text-texto-suave">
+                  Año {smmlv.anio}: ${(Number(smmlv.valor_mensual) / 100).toLocaleString('es-CO')} mensual
+                  {smmlv.auxilio_transporte
+                    ? `, auxilio $${(Number(smmlv.auxilio_transporte) / 100).toLocaleString('es-CO')}`
+                    : ''}{' '}
+                  desde {smmlv.vigente_desde}. Norma: {smmlv.norma_respaldo}
+                </p>
+              ) : (
+                <p className="mb-3 text-menor text-pendiente-tinta">
+                  No hay ningún SMMLV vigente hoy (ver alerta en la página principal de parametrización).
+                </p>
+              )}
+              {puedeEditar && smmlv && (
+                <form action={simularSmmlvAction} className="grid max-w-lg grid-cols-1 gap-3">
+                  <input type="hidden" name="reglaAnteriorId" value={smmlv.id} />
+                  <Campo etiqueta="Año" requerido>
+                    <Entrada name="anio" type="number" required defaultValue={smmlv.anio} />
+                  </Campo>
+                  <Campo etiqueta="Valor mensual nuevo (pesos)" requerido>
+                    <Entrada
+                      name="valorMensualPesos"
+                      type="number"
+                      step="1"
+                      required
+                      defaultValue={Number(smmlv.valor_mensual) / 100}
+                    />
+                  </Campo>
+                  <Campo etiqueta="Auxilio de transporte (pesos, opcional)">
+                    <Entrada
+                      name="auxilioTransportePesos"
+                      type="number"
+                      step="1"
+                      defaultValue={smmlv.auxilio_transporte ? Number(smmlv.auxilio_transporte) / 100 : ''}
+                    />
+                  </Campo>
+                  <CamposVigencia />
+                  <div>
+                    <Boton tipo="submit">Simular impacto</Boton>
+                  </div>
+                </form>
+              )}
             </div>
-            <div>
-              <label>
-                Múltiplo (centavos: 100 = al peso){' '}
-                <input name="multiplo" type="number" required defaultValue={redondeo.multiplo} />
-              </label>
+          </Panel>
+
+          <Panel titulo="Redondeo general">
+            <div className="p-5">
+              {redondeo ? (
+                <p className="mb-3 text-menor text-texto-suave">
+                  {redondeo.codigo}: modo «{redondeo.modo}», múltiplo {redondeo.multiplo} centavos, desde{' '}
+                  {redondeo.vigente_desde}. Norma: {redondeo.norma_respaldo}
+                </p>
+              ) : (
+                <p className="mb-3 text-menor text-pendiente-tinta">
+                  No hay ninguna regla de redondeo general vigente hoy.
+                </p>
+              )}
+              {puedeEditar && redondeo && (
+                <form action={simularRedondeoAction} className="grid max-w-lg grid-cols-1 gap-3">
+                  <input type="hidden" name="reglaAnteriorId" value={redondeo.id} />
+                  <Campo etiqueta="Modo">
+                    <Selector name="modo" defaultValue={redondeo.modo}>
+                      <option value="half_up">Redondeo comercial (half_up)</option>
+                      <option value="half_even">Redondeo bancario (half_even)</option>
+                      <option value="truncar">Truncar</option>
+                      <option value="techo">Hacia arriba (techo)</option>
+                      <option value="piso">Hacia abajo (piso)</option>
+                    </Selector>
+                  </Campo>
+                  <Campo etiqueta="Múltiplo (centavos: 100 = al peso)">
+                    <Entrada name="multiplo" type="number" required defaultValue={redondeo.multiplo} />
+                  </Campo>
+                  <CamposVigencia />
+                  <div>
+                    <Boton tipo="submit">Simular impacto</Boton>
+                  </div>
+                </form>
+              )}
             </div>
-            <div>
-              <label>
-                Vigente desde <input name="vigenteDesde" type="date" required defaultValue={hoyIso()} />
-              </label>
-            </div>
-            <div>
-              <label>
-                Norma de respaldo <input name="normaRespaldo" type="text" required size={50} />
-              </label>
-            </div>
-            <div>
-              <label>
-                <input type="radio" name="alcanceNuevo" value="firma" defaultChecked /> Toda la firma
-              </label>
-              <label style={{ marginLeft: '16px' }}>
-                <input type="radio" name="alcanceNuevo" value="empresa" /> Solo esta empresa
-              </label>
-            </div>
-            <label>
-              <input type="checkbox" required /> He revisado el impacto indicado arriba.
-            </label>
-            <div>
-              <button type="submit">Guardar regla de redondeo</button>
-            </div>
-          </form>
-        )}
-      </section>
-    </main>
+          </Panel>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CamposVigencia() {
+  return (
+    <>
+      <Campo etiqueta="Vigente desde" requerido>
+        <Entrada name="vigenteDesde" type="date" required defaultValue={hoyIso()} />
+      </Campo>
+      <Campo etiqueta="Norma de respaldo" requerido>
+        <Entrada name="normaRespaldo" type="text" required />
+      </Campo>
+      <fieldset className="flex flex-wrap gap-4 text-cuerpo text-texto">
+        <label className="flex items-center gap-2">
+          <input type="radio" name="alcanceNuevo" value="firma" defaultChecked /> Toda la firma
+        </label>
+        <label className="flex items-center gap-2">
+          <input type="radio" name="alcanceNuevo" value="empresa" /> Solo esta empresa
+        </label>
+      </fieldset>
+    </>
+  );
+}
+
+function PanelConfirmar({
+  cual,
+  sp,
+  impacto,
+  impactoTexto,
+  detalle,
+  cadena,
+}: {
+  cual: string;
+  sp: BusquedaParams;
+  impacto: ImpactoSimulado;
+  impactoTexto: string;
+  detalle: DetalleImpacto | null;
+  cadena: (sp: BusquedaParams, campo: string) => string;
+}) {
+  const titulos: Record<string, string> = {
+    uvt: 'UVT',
+    smmlv: 'SMMLV y auxilio de transporte',
+    redondeo: 'Redondeo general',
+  };
+  const acciones = {
+    uvt: confirmarUvtAction,
+    smmlv: confirmarSmmlvAction,
+    redondeo: confirmarRedondeoAction,
+  } as const;
+  const camposPorCual: Record<string, string[]> = {
+    uvt: ['reglaAnteriorId', 'anio', 'valorPesos', 'vigenteDesde', 'normaRespaldo', 'alcanceNuevo'],
+    smmlv: [
+      'reglaAnteriorId',
+      'anio',
+      'valorMensualPesos',
+      'auxilioTransportePesos',
+      'vigenteDesde',
+      'normaRespaldo',
+      'alcanceNuevo',
+    ],
+    redondeo: ['reglaAnteriorId', 'modo', 'multiplo', 'vigenteDesde', 'normaRespaldo', 'alcanceNuevo'],
+  };
+  const accion = acciones[cual as keyof typeof acciones];
+  const campos = camposPorCual[cual] ?? [];
+  if (!accion) {
+    return <MensajeEstado tipo="error" titulo={`Valor base desconocido: ${cual}`} />;
+  }
+
+  return (
+    <Panel titulo={`Confirmar vigencia nueva — ${titulos[cual] ?? cual}`}>
+      <div className="space-y-3 p-5">
+        <MensajeEstado tipo="configuracion" titulo={impactoTexto} />
+        {detalle && <BotonDetalleImpacto detalle={detalle} />}
+        <ul className="list-disc pl-5 text-cuerpo text-texto">
+          {campos
+            .filter((c) => c !== 'reglaAnteriorId')
+            .map((c) => (
+              <li key={c}>
+                {c}: {cadena(sp, c) || '—'}
+              </li>
+            ))}
+        </ul>
+        <form action={accion} className="flex items-center gap-3">
+          {campos.map((c) => (
+            <input key={c} type="hidden" name={c} value={cadena(sp, c)} />
+          ))}
+          {/* Testigo del paso 1 (V-39): las cifras REALES que se acaban de
+              mostrar. La acción las vuelve a medir contra la base y solo escribe
+              si siguen siendo las mismas; sin ellas no guarda. */}
+          <input type="hidden" name="conceptos" value={String(impacto.conceptosAfectados)} />
+          <input type="hidden" name="proveedores" value={String(impacto.proveedoresAfectados)} />
+          <Boton tipo="submit">Guardar vigencia nueva</Boton>
+          <a
+            href="/parametros/valores-base"
+            className="font-semibold text-primario underline dark:text-primario-tinta-oscura"
+          >
+            Cancelar
+          </a>
+        </form>
+      </div>
+    </Panel>
   );
 }

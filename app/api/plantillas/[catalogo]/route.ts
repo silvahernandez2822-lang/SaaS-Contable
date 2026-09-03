@@ -18,6 +18,11 @@ import { conSesion, SesionNoPresenteError } from '../../../lib/sesion';
 import { SesionInvalidaError, EmpresaNoAutorizadaError } from '../../../../src/db/tenant-context';
 import { definicionPorClave, DEFINICIONES } from '../../../../src/services/carga-masiva/definiciones';
 import { construirPlantilla } from '../../../../src/services/carga-masiva/plantilla';
+import { construirPlantillaIcaMunicipio } from '../../../../src/services/carga-masiva/ica-municipio';
+
+/** D-088: la parametrización de ICA por municipio no es un catálogo de columnas
+ *  planas de `DEFINICIONES` — tiene layout propio (encabezado + tabla). */
+const CLAVE_ICA_D088 = 'ica_municipio_d088';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,7 +36,8 @@ export async function GET(
 ): Promise<Response> {
   const { catalogo } = await ctx.params;
   const definicion = definicionPorClave(catalogo);
-  if (!definicion) {
+  const esIcaD088 = catalogo === CLAVE_ICA_D088;
+  if (!definicion && !esIcaD088) {
     return error(
       404,
       `No existe la plantilla "${catalogo}". Disponibles: ${DEFINICIONES.map((d) => d.clave).sort().join(', ')}.`,
@@ -52,14 +58,15 @@ export async function GET(
     return error(500, 'No se pudo generar la plantilla. El detalle quedó en el registro del servidor.');
   }
 
-  const wb = construirPlantilla(definicion);
+  const wb = esIcaD088 ? construirPlantillaIcaMunicipio() : construirPlantilla(definicion!);
   const buffer = await wb.xlsx.writeBuffer();
+  const clave = esIcaD088 ? CLAVE_ICA_D088 : definicion!.clave;
 
   return new Response(new Uint8Array(buffer as ArrayBuffer), {
     status: 200,
     headers: {
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'Content-Disposition': `attachment; filename="plantilla_${definicion.clave}.xlsx"`,
+      'Content-Disposition': `attachment; filename="plantilla_${clave}.xlsx"`,
       'Cache-Control': 'no-store',
     },
   });

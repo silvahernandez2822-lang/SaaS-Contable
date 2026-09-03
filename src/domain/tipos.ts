@@ -43,6 +43,14 @@ export interface EntradaResolucion {
   valorAiu?: number | null;
   /** Sobreescribe la naturaleza de operación del concepto, si el documento la trae. */
   tipoOperacionIca?: TipoOperacionIca | null;
+  /**
+   * D-088. Documento del que sale esta resolución. Solo lo usa la base mínima
+   * de ICA medida POR PERIODO: es la clave anti doble conteo del acumulador
+   * (`reteica_periodo_acumulado.documentos_contados`). Sin él el motor sigue
+   * resolviendo —lee el acumulado y compara— pero NO emite efectos de
+   * acumulación, porque no podría reconocer un reproceso del mismo documento.
+   */
+  sourceDocumentId?: string | null;
 }
 
 /** Una línea de factura, para el caso de varias líneas con conceptos distintos. */
@@ -62,6 +70,36 @@ export interface EntradaFactura {
   municipioOperacionId: string | null;
   fechaHechoEconomico: FechaIso;
   lineas: readonly LineaFactura[];
+  /** D-088. Ver `EntradaResolucion.sourceDocumentId`. */
+  sourceDocumentId?: string | null;
+}
+
+/**
+ * D-088 — Efecto pendiente sobre el acumulador de base mínima de ICA por
+ * periodo (`reteica_periodo_acumulado`).
+ *
+ * EL MOTOR NO ESCRIBE. Calcula el efecto y lo devuelve; quien persiste el
+ * asiento decide si lo aplica, dentro de SU misma transacción y SOLO cuando el
+ * asiento queda escrito. Así, una simulación o una resolución que acaba en
+ * revisión manual leen el acumulado pero no lo mueven, y el acumulador nunca
+ * queda adelantado respecto del ledger que debería respaldarlo.
+ */
+export interface EfectoAcumuladoIca {
+  companyId: string;
+  terceroId: string;
+  municipalityId: string;
+  tipoOperacionIca: TipoOperacionIca;
+  periodoInicio: FechaIso;
+  periodoFin: FechaIso;
+  sourceDocumentId: string;
+  /** Centavos que este documento añade. 0 si el documento YA estaba contado. */
+  baseSumada: number;
+  /** El documento ya figuraba en `documentos_contados`: es un reproceso. */
+  yaContado: boolean;
+  /** Acumulado leído de la base antes de este documento, en centavos. */
+  acumuladoPrevio: number;
+  /** Acumulado con este documento incluido, en centavos. Es el que se comparó. */
+  acumuladoResultante: number;
 }
 
 /** Identificación de la regla paramétrica aplicada Y de su vigencia (Regla 6). */
@@ -139,6 +177,13 @@ export interface ResultadoResolucion {
   requiereRevisionManual: boolean;
   motivosRevision: readonly MotivoRevision[];
   /**
+   * D-088. Efectos que hay que aplicar al acumulador de base mínima de ICA por
+   * periodo SI —y solo si— el asiento se persiste. Vacío en el caso normal
+   * (medición por factura), en dry-run sin documento y cuando la resolución
+   * acaba en revisión manual antes de llegar a liquidar.
+   */
+  acumuladosIca: readonly EfectoAcumuladoIca[];
+  /**
    * Huella determinista del resultado (sección 8.4 y caso dorado 18). Dos
    * resoluciones de la misma factura con los mismos parámetros vigentes
    * producen la misma huella; cualquier diferencia la cambia.
@@ -166,6 +211,8 @@ export const MOTIVO = {
   EXTERIOR_SIN_CONCEPTO: 'proveedor_del_exterior_sin_concepto_de_reteiva',
   ICA_SIN_NATURALEZA: 'no_se_sabe_si_la_operacion_es_servicio_o_compra',
   TARIFA_INCONSISTENTE: 'tarifa_general_del_municipio_distinta_de_la_regla',
+  ICA_PERIODO_SIN_VENTANA: 'municipio_mide_por_periodo_sin_periodo_meses',
+  ICA_PERIODO_SIN_NATURALEZA: 'municipio_mide_por_periodo_sin_saber_si_es_servicio_o_compra',
   BASE_NEGATIVA: 'base_gravable_negativa',
 } as const;
 

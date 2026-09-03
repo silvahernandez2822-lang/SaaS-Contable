@@ -31,6 +31,26 @@ export const PERMISOS = {
   PERIODO_CERRAR: 'periodo.cerrar',
   PARAMETRO_LEER: 'parametro.leer',
   PARAMETRO_EDITAR: 'parametro.editar',
+  /** D-087 (migración 176): granularidad por submódulo de `/parametros`. La
+   * resolución sigue siendo por filas en `role_permission` — quien tiene el
+   * código grueso (`parametro.editar` / `parametro.leer`, o `puc.*`) recibe el
+   * fino equivalente por INSERT ... SELECT en 176, sin tocar lógica. La Fase 8
+   * conectará roles configurables agregando más filas. */
+  PARAMETRO_TARIFAS_LEER: 'parametro.tarifas.leer',
+  PARAMETRO_TARIFAS_EDITAR: 'parametro.tarifas.editar',
+  PARAMETRO_VALORES_BASE_LEER: 'parametro.valores_base.leer',
+  PARAMETRO_VALORES_BASE_EDITAR: 'parametro.valores_base.editar',
+  PARAMETRO_RETEICA_LEER: 'parametro.reteica.leer',
+  PARAMETRO_RETEICA_EDITAR: 'parametro.reteica.editar',
+  PARAMETRO_PUC_LEER: 'parametro.puc.leer',
+  PARAMETRO_PUC_EDITAR: 'parametro.puc.editar',
+  /** D-088 (migración 178): submódulo de parametrización de ICA por municipio
+   * (bases mínimas + tipo de medición + tabla de actividades gravadas). Mismo
+   * patrón que D-087: el fino restringe la interfaz, el candado real de
+   * escritura sigue siendo `parametro.editar` sobre `municipality_ica_rule` y
+   * `tax_rule`. Nivel firma (dato compartido entre empresas-cliente). */
+  PARAMETRO_ICA_LEER: 'parametro.ica.leer',
+  PARAMETRO_ICA_EDITAR: 'parametro.ica.editar',
   PUC_LEER: 'puc.leer',
   PUC_EDITAR: 'puc.editar',
   TERCERO_LEER: 'tercero.leer',
