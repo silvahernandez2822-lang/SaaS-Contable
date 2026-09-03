@@ -1,7 +1,68 @@
 # ESTADO_PROYECTO.md
 
 > Memoria única entre sesiones. Todo agente lo lee al empezar y lo actualiza al terminar.
-> Última actualización: 2026-09-01 — **A16 entrega la OLA 4, «Operación real»: navegación compartida,
+> Última actualización: 2026-09-03 — **A8 entrega la INTERFAZ, la CARGA MASIVA y el PERMISO de D-088
+> (ICA por municipio).** Pantalla `/parametros/ica-municipios`: selector de municipio y tres bloques
+> editables (bases mínimas + `tipo_medicion_base_minima` + `periodo_meses`; tabla de actividades
+> gravadas buscable y editable fila por fila; alta de actividad), cada uno con el **simulador de
+> impacto bloqueante de D-087 reutilizado** (dos pasos + testigo V-39 + «Ver detalle»). **Guard
+> gravada/tarifa** en la UI y en `editarTarifaTaxRule` / `crearOReemplazarTaxRule` (rechazo antes del
+> viaje; el CHECK `tax_rule_gravada_ck` sigue siendo la garantía real). **Carga masiva** de un
+> municipio completo con parser bespoke (`src/services/carga-masiva/ica-municipio.ts`): zero-pad de
+> códigos a 4 dígitos, las subclases de 5 dígitos del Distrito salen como fila con error (no se
+> inventan, no se callan, las buenas se cargan); fecha de vigencia + norma de respaldo se piden en el
+> formulario, no en el archivo. Plantilla en `GET /api/plantillas/ica_municipio_d088`. **Permiso**
+> propio: migración **178**, `parametro.ica.{leer,editar}`, nivel firma, verificado con A2 que la RLS
+> híbrida deja al administrador de firma editar parámetros compartidos. `tsc` limpio, `next build` OK,
+> `npm test` **1198/60** (+5 pruebas, 0 regresiones). Falta la compuerta de A14 y la verificación en
+> navegador. Sin comitear. Ver «D-088 — INTERFAZ, CARGA MASIVA y PERMISOS». Historial:
+> 2026-09-03 — **A3 entrega el MOTOR de D-088 (ICA por municipio) sobre el
+> modelo de A2.** Dos conductas nuevas y ninguna regresión: (1) `tax_rule.gravada = false` → el motor
+> NO practica ReteICA sin importar la tarifa, y lo deja escrito como evaluación con `aplicada=false`
+> (no como revisión manual: no hay nada que un humano decida); `true` y `NULL` —toda regla anterior a
+> D-088— no cambian ni un centavo. (2) `tipo_medicion_base_minima = 'por_periodo'` → la base mínima
+> se compara contra el ACUMULADO del tercero en el municipio en la ventana del periodo, con
+> `reteica_periodo_acumulado` como estado derivado. **El motor no escribe**: devuelve
+> `ResultadoResolucion.acumuladosIca` y los aplica `aplicarAcumuladosIca` desde `causarFactura`,
+> en la misma transacción y **solo después de que el asiento queda escrito** (dry-run y revisión
+> manual leen y no mueven nada). **DOS ASUNCIONES DECLARADAS, pendientes de confirmación del cliente
+> final** (no son bugs ni TODO): anclaje de la ventana al **año calendario** y retención **solo hacia
+> adelante** al cruzar el umbral a mitad de periodo. `tsc` limpio, `npm test` **1193 en verde (58
+> archivos)** — +16 pruebas nuevas, **0 regresiones**; los **20 casos dorados pasan**, incluidos el
+> 16, el 17 y el 18. Falta interfaz, carga masiva y la compuerta de A14. Sin comitear. Ver «D-088 —
+> MOTOR». Historial:
+> 2026-09-03 — **A2 entrega el MODELO DE DATOS de D-088 (ICA por municipio):
+> migración `177_a2_d088_ica_municipio_modelo.sql`.** Se EXTIENDE el modelo existente, no se crean
+> tablas paralelas: `municipality_ica_rule` gana `tipo_medicion_base_minima` (por factura / por
+> periodo) y `periodo_meses` con CHECK cruzado; `tax_rule` gana el flag explícito `gravada` con
+> guarda `gravada IS NOT FALSE OR tarifa = 0`; y nace `reteica_periodo_acumulado`, estado derivado
+> recalculable (no ledger: admite UPDATE) con RLS de doble nivel y FK compuestas de alcance.
+> `ciiu_activity` no se tocó. Cero valores tributarios en la migración. `tsc` limpio, `npm test`
+> **1177 en verde (57 archivos)**, la misma cifra que antes: ninguna prueba existente se rompió.
+> Motor, interfaz y carga masiva de D-088 **no** están hechos, y falta la compuerta de A14. Sin
+> comitear. Ver «D-088». Historial:
+> 2026-09-03 — **COMPUERTA AMPLIADA DE D-087: A14 verifica con suite propia
+> (`a14-d087-ampliada.test.ts`, 44 pruebas) y da PASA CON CORRECCIONES.** Cuatro defectos reales
+> encontrados y corregidos por A14 en la misma pasada: **V-39** el flujo de dos pasos no bloqueaba
+> nada (POST directo al paso 2 abría la vigencia en las tres pantallas → ahora hay testigo del paso 1);
+> **V-40** el conteo del simulador se pintaba del query string mientras el «Ver detalle» de al lado se
+> medía contra la base — podían contradecirse; **V-41** el detalle se pedía con el `taxConceptId` de la
+> URL, no con el de la regla que se editaba; **V-42** el banner de alertas renderizaba **1.122 badges**
+> (uno por municipio del catálogo DANE de D-086) — 984 KB de HTML que sepultaban las cuatro alertas
+> accionables. **Verificación en navegador real HECHA:** migraciones **175 y 176 aplicadas a la Neon**
+> (estaba en la 174, sin conflicto de checksum), `npm run seed` corrido, las cinco pantallas de
+> `/parametros` recorridas con sesión real; el simulador muestra cifras reales antes de guardar e
+> ignora las falseadas en la URL. Los **20 casos dorados** reejecutados completos: todos PASA.
+> `tsc` limpio, `next build` exit 0 (37 rutas), `npm test` **1177 en verde (57 archivos)**. Sin
+> comitear. Queda **V-42-bis bloqueado para A1+A8** (qué municipio debe tener regla de ReteICA ahora
+> que el catálogo es nacional) y la verificación **client-side** con navegador gráfico. Ver «Compuerta
+> AMPLIADA de D-087». Historial:
+> 2026-09-03 — **A8 entrega D-087 (Fase 4 de Parámetros tributarios): `/parametros`
+> migrado al kit y fuera de `PREFIJOS_SIN_MIGRAR`, `Modal` genérico en `app/_ui/`, badges de alerta
+> clicables, permiso por submódulo (migración 176) y simulador de impacto bloqueante con detalle real
+> en todas las pantallas de cambio. `tsc` limpio, `next build` exit 0, `npm test` 1115 en verde.
+> Navegador real y compuerta de A14: pendientes.**
+> 2026-09-01 — **A16 entrega la OLA 4, «Operación real»: navegación compartida,
 > carga masiva de quince catálogos con plantillas de Excel, PUC genérico + PUC propio por empresa,
 > ReteICA en cascada por municipio, los tres motivos separados por los que un reporte no sale, y el
 > módulo de administración de usuarios, roles y permisos con el rol todopoderoso blindado en el motor.
@@ -170,6 +231,69 @@
 > persiste tras navegar, y cambiar de empresa ya no altera el tema. Convención nueva de trabajo (no
 > es ficha D-0XX). Sin comitear. Ver «D-085» y «Convenciones establecidas → Verificación en
 > navegador real».
+>
+> 2026-09-02, después de eso — **D-086: catálogo geográfico DANE (departamento → municipio) +
+> selector de dirección en formato DIAN, sobre el módulo Terceros (D-084).** PARTE A: tabla nueva
+> `department` (33 dptos, sembrada en la migración 175) + `municipality.department_id` resuelto por
+> trigger + seed `db/seeds/tanda0-geografia/020_municipios.sql` con los **1.122** municipios DANE
+> (DIVIPOLA oficial de `datos.gov.co`, verificado con navegador el 2026-09-02); selector dependiente
+> departamento → municipio en crear/editar tercero. PARTE B: `src/domain/direccion-dian.ts` (puro,
+> abreviaturas oficiales de la nomenclatura DIAN/MUISCA) + modal que compone la dirección del
+> Formato 1001 campo a campo, sin texto libre — revalidado en el servidor. `third_party` gana
+> `direccion_dian jsonb` y las marcas `direccion_requiere_revision` / `municipio_requiere_revision`;
+> los terceros heredados conservan su dirección intacta y quedan MARCADOS y corregibles, nada se
+> borra. `tsc` limpio, `next build` exit 0, `npm test` **1085 en verde** (54 archivos). Verificación
+> en navegador real NO ejecutable aquí (sin DNS a la Neon). **Compuerta de A14 ampliada: PASA con
+> correcciones** — seis defectos (V-33…V-38) hallados y corregidos por A14 en la misma pasada, con
+> suite propia `tests/adversarial/a14-d086-ampliada.test.ts` (30 pruebas); suite total **1115 en
+> verde** (55 archivos). Queda: verificación en navegador real (convención D-085) y, si la migración
+> 175 ya se aplicó a alguna Neon, reaplicarla (A14 la editó por V-36). Sin comitear. Ver «D-086» y
+> «Compuerta AMPLIADA de D-086».
+>
+> 2026-09-03, después de eso — **COMPUERTA AMPLIADA DE D-086 (QA adversarial + arquitecto + product
+> owner). Veredicto de A14: PASA, con SEIS defectos encontrados y CORREGIDOS por A14 en la misma
+> pasada (V-33 … V-38), y una salvedad de proceso que no se cierra sola.** A14 no le creyó al
+> reporte: escribió su propia suite (`tests/adversarial/a14-d086-ampliada.test.ts`, 30 pruebas).
+> Lo bueno, verificado y no aceptado por reporte: el catálogo DANE es **correcto y completo** —los
+> **33** departamentos contrastados uno por uno, 1.122 municipios, cero duplicados, prefijo ==
+> departamento en todas las filas, `department_id` resuelto al 100 %—; `department` tiene RLS
+> `ENABLE`+`FORCE`, el trigger de resolución **no** engancha a un departamento de otra firma, la
+> guardia de alcance rechaza el cruce con `AL001` y **no se perdió** la cobertura de
+> `municipality_id` al recrear el trigger; los 20 casos dorados y D-084 siguen en verde. Lo grave
+> que apareció: el `jsonb` de la dirección **guardaba el JSON crudo del cliente** (V-33); un
+> desglose que no es del contrato **entraba por coerción de tipos** y dejaba una fila que ya no se
+> podía recomponer, además de tumbar el validador con un `TypeError` (V-34); el **texto libre
+> entraba sin dejar rastro** por la carga masiva y por POST directo, justo lo contrario de lo que
+> el entregable promete (V-35); el backfill **no marcaba al tercero nacional sin dirección
+> ninguna**, que es el que rompe el Formato 1001 (V-36); editar con texto libre **borraba en
+> silencio** un desglose ya normalizado (V-37); y dos regresiones de interfaz: perder el desglose
+> al volver de un error, y dejar **sin salida** al tercero mal marcado como del exterior (V-38).
+> Todo corregido con prueba de regresión. `tsc` limpio, `next build` exit 0, `npm test` **1115 en
+> verde** (55 archivos). **Salvedad:** la verificación en **navegador real** contra la Neon sigue
+> sin hacerse (sin ruta DNS desde este entorno) y, por la convención de D-085, **el entregable no
+> se comitea como cerrado hasta hacerla**. Además la **migración 175 se editó** en esta compuerta:
+> quien ya la hubiera aplicado a su Neon debe reaplicarla. Sin comitear. Ver «Compuerta AMPLIADA de
+> D-086».
+>
+> 2026-09-03, después de eso — **A8 entrega D-087 — Módulo de Parámetros tributarios, Fase 4.**
+> (0) Las seis pantallas de `/parametros` migradas al kit `app/_ui/` (tokens, `Panel`, `Encabezado`,
+> `Tabla` sticky, `MensajeEstado`, `Campo`/`Entrada`); `/parametros` **sale de `PREFIJOS_SIN_MIGRAR`**
+> y responde a `data-tema="oscuro"`. (1) `Modal` genérico extraído a `app/_ui/componentes.tsx` desde
+> el modal DIAN de D-086 (mismo comportamiento + foco atrapado); `_direccion-dian.tsx` lo consume sin
+> cambio observable; los badges FALTA DATO / VERIFICAR del banner de alertas abren ese `Modal` con un
+> enlace al submódulo que corrige el dato. (2) Migración `176`: ocho códigos
+> `parametro.{tarifas,valores_base,reteica,puc}.{leer,editar}` en el catálogo `permission`, espejados
+> en `PERMISOS`, otorgados por `INSERT ... SELECT` desde `role_permission` (quien tenía el permiso
+> grueso recibe el fino — sin `UPDATE`); los helpers del servicio aceptan submódulo. El motor sigue
+> imponiendo `parametro.editar` / `puc.editar` (triggers de 016 sin tocar): la granularidad fina es
+> UI hasta la Fase 8. (3) `valores-base` pasó a flujo de DOS pasos (simular ANTES de guardar) como
+> `tarifas` y `reteica-municipios`; las tres pantallas tienen «Ver detalle» con
+> `app.detalle_impacto_*` (migración 176) — filas reales de conceptos y proveedores con el MISMO
+> `WHERE` que el conteo de 080. PUC: migrado visual, sin simulador de conceptos (no abre vigencias
+> tributarias). `tsc` limpio, `next build` exit 0 (37 rutas), `npm test` **1115 en verde** (55
+> archivos, sin archivo de prueba nuevo). **Verificación en navegador real: NO ejecutada** (sin DNS a
+> la Neon) — por la convención de D-085 no se cierra hasta hacerlo. **Compuerta de A14: PENDIENTE.**
+> Sin comitear. Ver «D-087».
 >
 > Registro histórico: 2026-08-31 — **A14, compuerta del LOTE POSTERIOR A LA OLA 3 (V-17/A8, V-18/A11,
 > arranque y repaso 14.1/A12, datos de ejemplo/A1, entorno y despliegue/A15). Veredicto: LOTE APROBADO,
@@ -2472,10 +2596,938 @@ cookie, el servidor la pinta en `<html data-tema>` y **persiste** tras navegar; 
 
 ---
 
+### D-086 — Catálogo geográfico DANE (departamento → municipio) + selector de dirección en formato DIAN
+
+**Encargo.** Dos entregables sobre el módulo Terceros (D-084), sin romper nada de lo construido.
+PARTE A: catálogo parametrizado de los 33 departamentos y los 1.122 municipios de Colombia con su
+código DANE, verificados contra la fuente oficial, y reemplazo del campo de municipio por un
+selector dependiente departamento → municipio. PARTE B: al hacer clic en el campo de dirección
+(crear y editar tercero) se abre un modal que guía campo por campo y compone la dirección en el
+formato exacto de la DIAN (Formato 1001 de exógena), sin permitir texto libre fuera de esa
+estructura.
+
+**Verificación de la fuente (hecha con navegador, 2026-09-02).**
+- *Geografía*: DANE DIVIPOLA, descargada del portal oficial de datos abiertos del Estado
+  (`datos.gov.co`), datasets `vcjz-niiq` (departamentos) y `gdxc-w37w` (municipios). 33
+  departamentos (incluye «Bogotá, D.C.» como entidad propia) y **1.122** entidades territoriales:
+  1.103 municipios + 1 isla (San Andrés) + 18 áreas no municipalizadas. Cada código de 5 dígitos =
+  2 de departamento + 3 de municipio; el prefijo coincide con el código del departamento en las
+  1.122 filas (verificado). Conteos contrastados: Antioquia 125, Boyacá 123, Cundinamarca 116,
+  Santander 87, Nariño 64 — coinciden con las cifras DANE. Los códigos DANE son dato público y
+  estable (mismo criterio que `080_municipios.sql`): se cargan sin marca de verificación humana.
+- *Dirección DIAN*: documento oficial de nomenclatura de la DIAN (MUISCA, tabla `AC`…`ZN`) y el
+  «Generador de Direcciones» del portal MUISCA. La DIAN compone la dirección como secuencia de
+  tokens de un vocabulario cerrado: `<TIPO_VÍA> <número><letra?> [BIS] [CUADRANTE] # <número_gen><letra?>
+  [CUADRANTE] - <placa> [<TIPO_COMPLEMENTO> <valor>]...`. Las abreviaturas que usa el módulo (CL, CR,
+  AV, AK, AC, DG, TV, CIR… y los complementos IN, AP, TO, BL, OF…) son las de ese documento, sin
+  inventar ninguna.
+
+**Decisiones de modelado (para no reabrir).**
+1. **`municipality` NO se rehace.** Ya existía (004) como tabla plana con `departamento` /
+   `codigo_dane_departamento` de texto y FKs desde `third_party`, `company`, `third_party_activity`,
+   `municipality_ica_rule`. Se le **añade** `department_id uuid` (nullable) hacia la tabla nueva
+   `department`, y un trigger `municipality_resolver_departamento` la rellena desde
+   `codigo_dane_departamento` en el propio INSERT/UPDATE. Así cada INSERT antiguo (fixtures, seeds
+   080/040) sigue compilando y corriendo sin tocarse; las columnas de texto se conservan para los
+   consumidores previos (exógena lee `m.codigo_dane_departamento`).
+2. **Los 33 departamentos van en la MIGRACIÓN 175, los 1.122 municipios en un SEED.** Los
+   departamentos son 33 filas de identidad pura (código de 2 dígitos + nombre, cero valores
+   tributarios); tenerlas en la misma transacción que la FK permite reenlazar de inmediato los
+   municipios globales que un seed anterior ya hubiera cargado. Los municipios van en
+   `db/seeds/tanda0-geografia/020_municipios.sql` porque sembrarlos en una migración rompería las
+   pruebas de A1 que cuentan `municipality` tras la tanda 1. El prefijo `tanda0-` hace que corran
+   **antes** que tanda1/tanda2 (que redeclaran Bogotá/Medellín/Cali con `WHERE NOT EXISTS`), y el
+   trigger enlaza `department_id` en cada INSERT.
+3. **La dirección canónica sigue siendo `third_party.direccion` (texto).** Es lo que consume
+   exógena. Se añade `direccion_dian jsonb` con el desglose campo a campo; **cuando no es NULL,
+   `direccion` es exactamente su composición** (`componerDireccionDian`). El modal escribe las dos
+   cosas; el server action revalida y recompone en el servidor, así que el texto libre no entra ni
+   por POST directo.
+4. **Migración de datos: marcar, nunca borrar ni adivinar** (mismo criterio de A14 para V-23). Los
+   terceros creados antes de D-086 conservan su `direccion` de texto libre **intacta** y quedan con
+   `direccion_requiere_revision = true`; un tercero nacional sin municipio queda con
+   `municipio_requiere_revision = true`. La ficha del tercero y el listado muestran esas marcas con
+   un `MensajeEstado`/`Badge`; al guardar por el selector, la marca se apaga. El desglose
+   automático (`intentarDesglosarDireccionLibre`) es deliberadamente conservador: solo produce
+   estructura ante un patrón inequívoco y sin resto; cualquier coma, complemento o forma rara →
+   marcado para revisión. (En el esquema actual `municipality_id` ya era una FK, así que «municipio
+   en texto libre viejo» no existe como tal; el caso real que queda es el municipio ausente.)
+5. **Guardia de alcance de las FK nuevas** (D-032 / migración 018). `department` es catálogo
+   híbrido (`tenant_id` puede ser NULL) igual que `municipality`, así que la FK compuesta no es
+   expresable y va el trigger genérico `trg_fk_alcance`: se instala en `department` (→ company) y se
+   **recrean** `municipality_fk_alcance` y `third_party_fk_alcance` con el par nuevo añadido. El
+   barrido de `evasion.test.ts` («ningún hueco de alcance») pasa.
+
+**Estructura de la dirección DIAN en el modal.** Tipo de vía principal (con abreviatura visible,
+p.ej. «Carrera (CR)») · número + letra + BIS + cuadrante · `#` · número de vía generadora + letra +
+cuadrante · `-` · placa · complementos repetibles (tipo + valor, ambos de vocabulario cerrado). El
+input visible es de **solo lectura** y solo se edita por el modal; vista previa en vivo y lista de
+errores. Mismo lenguaje visual que el resto (tokens de tema, `Panel`, radios/inputs de D-082/D-084)
+— sin un `#hex` suelto.
+
+**Archivos.** Nuevos: `db/migrations/175_a8_d086_geografia_y_direccion_dian.sql`,
+`db/seeds/tanda0-geografia/020_municipios.sql`, `src/domain/direccion-dian.ts`,
+`app/terceros/_direccion-dian.tsx`, `tests/domain/direccion-dian.test.ts`,
+`tests/services/terceros-d086.test.ts`. Tocados: `src/services/terceros.ts` (tipos
+`DireccionDian`, `resolverMunicipio`/`resolverDireccion`, `listarDepartamentosParaSelector`,
+`listarGeografiaParaSelector`, `FilaTercero` con `departmentId`/`direccionDian`/marcas de revisión,
+`crear`/`editarTercero`), `app/terceros/nuevo/page.tsx` + `app/terceros/nuevo/acciones.ts`,
+`app/terceros/[id]/page.tsx` + `app/terceros/[id]/acciones.ts`, `app/terceros/page.tsx`.
+
+**Verificación.** `npx tsc --noEmit` limpio · `npx next build` **exit 0** (la advertencia `node:dns`
+en Edge Runtime es la de D-080, no de esta ola) · `npm test` **1115 en verde** (55 archivos; base
+D-085 = 1065/52; esta ola suma `tests/domain/direccion-dian.test.ts`,
+`tests/services/terceros-d086.test.ts` y la suite de A14 `tests/adversarial/a14-d086-ampliada.test.ts`
+con 30 pruebas). Gates adversariales de esquema, FK y valores tributarios en verde con la migración
+nueva.
+**Compuerta de A14 (modo ampliado): PASA con correcciones.** A14 no verificó por reporte: escribió
+su propia suite y encontró **seis defectos**, todos corregidos por él en la misma pasada — ver
+«Compuerta AMPLIADA de D-086» y V-33…V-38 en el registro de vulnerabilidades. En resumen: el `jsonb`
+guardaba claves inyectadas del cliente (V-33); coerción de tipos dejaba pasar un desglose que ya no
+recomponía (V-34); el texto libre entraba sin marca por carga masiva / POST directo (V-35); el
+backfill no marcaba al tercero nacional sin ninguna dirección (V-36); editar con texto libre
+borraba en silencio un desglose ya normalizado (V-37); dos regresiones de UI, incluida que un
+tercero mal marcado «del exterior» quedaba sin forma de volver a nacional (V-38). A14 también
+contrastó **los 33 departamentos uno por uno** contra DIVIPOLA (Chocó 31 y Guainía 8 son correctos
+y recientes: `27493 Nuevo Belén de Bajirá` creado en 2022, `Mapiripana` absorbido por Barrancominas).
+**Verificación en navegador real: NO se pudo hacer** (ni yo ni A14 tenemos ruta DNS a la Neon:
+`getaddrinfo ENOTFOUND …neon.tech`). Por la convención de D-085 **esto no se cierra hasta hacerlo**:
+aplicar 175 + `npm run seed` a la Neon, crear un tercero nuevo con ambos selectores de principio a
+fin, confirmar que un tercero migrado no mapeado se ve marcado, y probar el caso de V-38(b) (un
+tercero del exterior debe poder volver a ser nacional). **A14 editó la migración 175** (V-36): si ya
+se aplicó a alguna Neon, hay que reaplicarla o corregir su `checksum` (el runner las trata como
+inmutables). Sin comitear.
+
+---
+
+## Compuerta AMPLIADA de D-086 — veredicto de A14 (2026-09-03): **PASA con correcciones, hechas por A14 en la misma pasada**
+
+A14 no verificó por reporte. Escribió su propia suite —**`tests/adversarial/a14-d086-ampliada.test.ts`,
+30 pruebas**— contra lo que la compuerta de A8 no intentó, y **la primera pasada encontró SEIS
+defectos reales** (V-33 … V-38). Todos corregidos aquí, cada uno con su prueba de regresión.
+
+### Lo que se verificó y SÍ estaba bien (verificado por A14, no aceptado por reporte)
+
+- **El catálogo DANE es correcto y completo.** No un spot-check de tres: A14 comparó los **33
+  departamentos, uno por uno**, contra DIVIPOLA vigente. Total 1.122; Antioquia 125, Boyacá 123,
+  Cundinamarca 116, Santander 87, Tolima 47, Bolívar 46, Cauca 42, Valle 42, Norte de Santander 40,
+  Huila 37, **Chocó 31** (incluye `27493 Nuevo Belén de Bajirá`, creado en 2022 — señal de dataset
+  reciente), Magdalena 30, Córdoba 30, Meta 29, Caldas 27, Sucre 26, Cesar 25, Atlántico 23,
+  Casanare 19, Caquetá 16, La Guajira 15, Risaralda 14, Putumayo 13, Quindío 12, Amazonas 11,
+  **Guainía 8** (correcto: `Mapiripana` desapareció al municipalizarse Barrancominas), Arauca 7,
+  Vaupés 6, Guaviare 4, Vichada 4, San Andrés 2, Bogotá 1. **Cero códigos duplicados, cero códigos
+  malformados, prefijo == código de departamento en las 1.122 filas, `department_id` resuelto en el
+  100 %.** Spot-check de 29 códigos conocidos (Envigado, Soledad, Soacha, Buenaventura…): todos.
+- **Aislamiento (Regla 7) sobre lo nuevo.** `department` tiene RLS `ENABLE` **y** `FORCE` y una sola
+  política; un departamento de otra firma no se ve ni por el selector ni por SQL directo; el trigger
+  `municipality_resolver_departamento` **no engancha** un municipio a un `department` de otra firma
+  aunque comparta código DANE (cae al global, verificado); la guardia de alcance rechaza con `AL001`
+  apuntar `third_party.department_id` a un departamento ajeno; y **`municipality_id` sigue cubierta**
+  tras recrear `third_party_fk_alcance` (era el riesgo real de ese `DROP TRIGGER`: se comprobó contra
+  018 que el trigger viejo solo guardaba `municipality_id`, así que no se perdió ninguna pareja).
+  Sin `parametro.editar` no se escribe en `department`.
+- **Reglas 2 y 3 sobre el material nuevo.** La migración 175 no inserta ninguna fila normativa ni
+  menciona `vigente_desde`/`vigente_hasta`; el seed nuevo es solo datos (ni un `UPDATE`, ni un
+  `DELETE`, ni una función, e idempotente por `WHERE NOT EXISTS`). El detector de la Regla de Oro 2
+  barre `db/migrations/` y la raíz, y sigue en verde con la migración nueva.
+- **Orden de los seeds.** `tanda0-geografia/` ordena antes que `tanda1/` y `tanda2/` (orden
+  alfabético por ruta relativa, verificado en `src/db/seed.ts`), y los tres municipios que
+  redeclaran tanda1/tanda2 tienen **exactamente las mismas columnas**: no se pierde ningún dato al
+  quedar sus INSERT sin efecto. Las reglas de ReteICA se enganchan por `codigo_dane`, **no por
+  nombre**, así que el cambio de rótulo `Cali` → `Santiago de Cali` (nombre oficial DIVIPOLA) no
+  altera ningún cálculo — se verificó que el único consumidor por nombre, `datos-ejemplo`, también
+  resuelve por código.
+- **Los 20 casos dorados, completos.** Reejecutados de punta a punta por A14, no una muestra.
+- **D-084 intacto.** Eliminar/inactivar (`TP001`), historial de vigencias, exportación a Excel
+  aislada por RLS y exógena Formato 1001 (que sigue leyendo `third_party.direccion`, con semántica
+  sin cambios) siguen en verde.
+
+### Los seis defectos que A14 encontró y corrigió
+
+Ver V-33 … V-38 en el registro de vulnerabilidades.
+
+### Casos dorados — veredicto de esta compuerta, uno por uno
+
+| # | Caso | Resultado |
+|---|---|---|
+| 1 | Servicio $1.000.000 + IVA, PJ declarante, Bogotá | **PASA** (retefuente $40.000, ReteIVA $28.500; la pata de ReteICA de Bogotá sigue sin tarifa por actividad — V-5, abierta y declarada, no es de D-086) |
+| 2 | PN no declarante → 6 % | **PASA** |
+| 3 | Servicio bajo 2 UVT | **PASA** (no retiene, con motivo registrado) |
+| 4 | Compra bajo 10 UVT | **PASA** (no retiene, con motivo) |
+| 5 | Compra $600.000 a declarante | **PASA** |
+| 6 | Honorarios PJ $200.000 | **PASA** |
+| 7 | Arrendamiento inmueble vs. mueble | **PASA** |
+| 8 | Servicio en Medellín (ReteICA 2‰, base 15 UVT) | **PASA** |
+| 9 | Mismo servicio en Cali (base 3 UVT) | **PASA** — verificado además que el renombre a «Santiago de Cali» no lo toca |
+| 10 | Actividad de Cali manda sobre la de Bogotá | **PASA** |
+| 11 | Vigilancia con AIU | **PASA** (2 % sobre el AIU) |
+| 12 | Proveedor del exterior → ReteIVA 100 % | **PASA** — y A14 añadió que un tercero del exterior no arrastra dirección ni marcas colombianas |
+| 13 | Régimen SIMPLE | **PASA** (según parametrización, nunca por omisión) |
+| 14 | Tres líneas de conceptos distintos | **PASA** (+ variante hostil: trocear no esquiva la base mínima) |
+| 15 | Nota crédito sobre factura causada | **PASA** (reversa por asiento nuevo, sin mutar el original) |
+| 16 | Factura de junio procesada en julio | **PASA** (manda la fecha del hecho económico) |
+| 17 | Cambio de tarifa con vigencia futura | **PASA** (lo publicado no cambia; lo nuevo usa la tarifa nueva) |
+| 18 | Reprocesar 10 veces | **PASA** (asiento idéntico las 10) |
+| 19 | Segunda factura del mismo proveedor y descripción | **PASA** (cero llamadas al LLM, con espía de `fetch` a nivel de proceso) |
+| 20 | Tenant A consulta al tenant B | **PASA** (cero filas, impuesto por RLS) |
+
+Pruebas adicionales de integridad de la §12, reverificadas: grep de literales tributarios → cero;
+`UPDATE`/`DELETE` sobre asiento publicado → falla en BD; asiento desbalanceado → falla en BD;
+balance de prueba contra el ledger → cuadra al centavo.
+
+**Verificación final tras las correcciones de A14.** `npx tsc --noEmit` limpio · `npx next build`
+**exit 0** (la advertencia `node:dns` en Edge Runtime es la de D-080) · `npm test` **1115 en verde,
+55 archivos** (1085 de D-086 + las 30 pruebas nuevas de A14).
+
+**Salvedad que A14 NO da por cerrada (y que no bloquea el código):** la verificación en **navegador
+real** contra la Neon no se pudo hacer en este entorno (sin ruta DNS). Por la convención de D-085,
+**el entregable no se comitea como cerrado hasta que alguien con red a la Neon** aplique la
+migración 175 + `npm run seed` y recorra `/terceros`, `/terceros/nuevo` y `/terceros/[id]`
+(selector dependiente, modal de dirección, marcas de revisión, y **el caso corregido en V-38**:
+un tercero marcado como del exterior debe poder volver a ser nacional). Ojo con el orden: **la
+migración 175 se editó en esta compuerta** (V-36); si alguien ya la aplicó a su Neon antes de esta
+pasada, hay que reaplicarla o corregir a mano su `checksum`, porque el runner las trata como
+inmutables.
+
+---
+
+### D-087 — Módulo de Parámetros tributarios, Fase 4: migración visual + badges clicables + permiso por submódulo + simulador bloqueante en todas las pantallas
+
+**Encargo.** Cerrar COMPLETA la Fase 4 del Módulo de Parámetros. Cuatro frentes: (0) deuda visual
+de D-077/D-082 —`/parametros` heredaba el `AppShell` nuevo pero conservaba «cuerpo viejo» (`style`
+inline, `#hex`, `<table border={1}>`) y se pintaba con `data-tema="claro"` fijo—; (1) los badges
+FALTA DATO / VERIFICAR del banner de alertas ahora son accionables; (2) granularidad de permiso por
+submódulo; (3) el simulador de impacto, bloqueante y con detalle real, en TODA pantalla de cambio de
+parámetro.
+
+**TAREA 0 — Cuerpo migrado al kit.** Las seis pantallas de `/parametros` (`page.tsx`,
+`tarifas/[tipo]`, `valores-base`, `reteica-municipios`, `puc`) y `_componentes.tsx` se reescribieron
+sobre `app/_ui/` (tokens de tema, `Encabezado`, `Panel`, `Tabla`/`Th`/`Td` sticky de D-078,
+`MensajeEstado`, `Campo`/`Entrada`/`Selector`, `Boton`/`EnlaceBoton`, escala tipográfica de D-082).
+Cero `style` inline, cero `#hex`. **`/parametros` salió de `PREFIJOS_SIN_MIGRAR`** en `AppShell.tsx`:
+el subárbol responde a `data-tema="oscuro"` igual que `/` y `/terceros`. (`PREFIJOS_SIN_MIGRAR`
+queda con `/reportes`, `/admin`, `/carga-masiva`.) Verificado con `next build` (37 rutas, las cinco
+de `/parametros` compiladas).
+
+**TAREA 1 — Modal genérico extraído + badges clicables.** Se extrajo `Modal` a
+`app/_ui/componentes.tsx` desde el modal de dirección DIAN de D-086: mismo markup y comportamiento
+(`role="dialog"` + `aria-modal`, overlay `bg-texto/40`, cierre con Escape y con clic fuera, el
+diálogo recibe el foco al abrir y lo devuelve al cerrar) **más un `Tab`/`Shift+Tab` que cicla dentro
+del diálogo** (foco atrapado, que el de D-086 no tenía). `app/terceros/_direccion-dian.tsx` se
+refactorizó para consumir `Modal` — comportamiento idéntico, los 30 casos de
+`a14-d086-ampliada.test.ts` + `direccion-dian.test.ts` siguen verdes. En `BannerAlertas`
+(`_componentes.tsx`, ahora `'use client'`) cada badge es un botón; al pulsarlo abre `Modal` con el
+mensaje y un `EnlaceBoton` al **submódulo** que corrige el dato (no al campo), derivado de
+`AlertaParametro.categoria`: `municipality_ica_rule*` → `/parametros/reteica-municipios`,
+`tax_rule_reteica` → `/parametros/tarifas/reteica`, `retefuente_salarios` →
+`/parametros/tarifas/retefuente_salarios`, `smmlv_value`/`uvt_value` → `/parametros/valores-base`,
+`tax_calendar` → `/carga-masiva`, resto de `tax_rule*` → `/parametros/tarifas/retefuente`.
+
+**TAREA 2 — Permiso por submódulo (migración `176_a8_d087_permisos_parametros.sql`).** Ocho códigos
+nuevos en el catálogo `permission`: `parametro.{tarifas,valores_base,reteica,puc}.{leer,editar}`
+(`accion_tipo` `ver`/`editar` — el CHECK de 170 admite `ver`, no `leer`). Espejados en `PERMISOS`
+de `src/auth/permisos.ts` (la compuerta `seguridad.test.ts` exige que catálogo y espejo coincidan;
+pasa). El comportamiento actual se preserva con **`INSERT ... SELECT` desde `role_permission`**:
+quien tiene `parametro.editar` recibe los tres `*.editar` de parámetros, quien tiene `parametro.leer`
+los tres `*.leer`, y quien tiene `puc.editar`/`puc.leer` recibe `parametro.puc.editar`/`.leer` —
+**sin un solo `UPDATE`**. `admin_firma` tiene los códigos gruesos como filas explícitas (D-066), así
+que recibe los ocho y la invariante «admin_firma lo tiene todo» (`arranque.test.ts`) se mantiene.
+Los helpers `puedeEditarParametros(tx, submodulo?)` y el nuevo `puedeLeerParametros` aceptan el
+submódulo y delegan en `tienePermiso` con el código fino (registro `PERMISOS`, nunca cadena suelta);
+sin argumento siguen comprobando el código grueso (retrocompatible). **La ESCRITURA en la base la
+siguen imponiendo los triggers de 016 sobre `parametro.editar` / `puc.editar`**: no se retargeteó
+ningún trigger. Los códigos finos son, por ahora, para que la interfaz muestre u oculte cada
+submódulo con precisión; la Fase 8 podrá retargetear los triggers agregando/moviendo filas cuando
+exista un rol que edite un submódulo y no otro. Como todo rol con `parametro.editar` recibe los
+cuatro `*.editar`, el candado del motor no se relaja.
+
+**TAREA 3 — Simulador bloqueante + detalle real en TODA pantalla de cambio.**
+- `valores-base` pasó de un paso (checkbox «he revisado») a **DOS pasos** como `tarifas/[tipo]`:
+  `simular{Uvt,Smmlv,Redondeo}Action` calcula el impacto y redirige al paso de confirmación;
+  `confirmar{Uvt,Smmlv,Redondeo}Action` es la única que escribe. El simulador corre **antes** de que
+  exista el botón de guardar, nunca junto.
+- `reteica-municipios` ya era de dos pasos; se le añadió el detalle.
+- **`puc`**: se migró visualmente y usa `parametro.puc.editar` para mostrar el submódulo. **No se le
+  añadió simulador de N conceptos / M proveedores**: editar el PUC no abre ni cierra vigencias
+  tributarias, y el modelo de impacto (conceptos de causación × proveedores) no le aplica. Su
+  resguardo bloqueante es el guardia de «cuentas imputables» ya presente (D-064/D-065): sin al menos
+  una cuenta activa imputable no se puede apagar la herencia ni causar. Decisión declarada, no
+  bloqueante.
+- Migración 176 añade `app.detalle_impacto_{tax_concept,municipio_ica,valor_base}`: devuelven las
+  **filas reales** (conceptos de causación + proveedores, con código y nombre) usando **el mismo
+  `WHERE`** que las funciones de conteo hermanas de 080 — conteo y detalle no divergen. Mismas
+  garantías: `SECURITY DEFINER` + `row_security = off` + filtro explícito por `app.current_tenant_id()`
+  + `PERFORM app.exigir_permiso('parametro.editar')`. Wrappers en `src/services/parametrizacion.ts`
+  (`detalleImpacto{Tarifa,MunicipioIca,ValorBase}`); componente cliente `BotonDetalleImpacto`
+  (`app/parametros/_detalle-impacto.tsx`) que las muestra en el `Modal` del kit.
+
+**Cada edición de parámetro (verificado, sigue igual):** cierra la vigencia anterior e inserta fila
+nueva (nunca `UPDATE` — trigger PR001); exige fecha de vigencia y norma de respaldo (servicio +
+`NOT NULL`); no retroactiva sobre lo publicado (`app.fecha_minima_vigencia_*` + `EdicionRetroactivaError`);
+queda en `audit_log` con la norma (`app.trg_audit`); restringida a `parametro.editar` en el motor
+(SE002). El alcance firma-vs-empresa (D-015): un administrador de firma edita un parámetro compartido
+(`company_id NULL`) desde una sesión de firma sin que la RLS lo bloquee — ya verificado en
+`parametrizacion.test.ts` («administrador de firma edita un parámetro compartido»), sin cambio de A2
+necesario. D-087 no toca esa ruta.
+
+**Archivos.** Nuevo: `db/migrations/176_a8_d087_permisos_parametros.sql`,
+`app/parametros/_detalle-impacto.tsx`. Tocados: `app/_ui/componentes.tsx` (`Modal`),
+`app/_ui/AppShell.tsx` (sacar `/parametros` de `PREFIJOS_SIN_MIGRAR`),
+`app/terceros/_direccion-dian.tsx` (consume `Modal`), `app/parametros/_componentes.tsx`,
+`app/parametros/page.tsx`, `app/parametros/tarifas/[tipo]/page.tsx`,
+`app/parametros/valores-base/{page.tsx,acciones.ts}`,
+`app/parametros/reteica-municipios/page.tsx`, `app/parametros/puc/page.tsx`,
+`src/auth/permisos.ts` (8 códigos en `PERMISOS`), `src/services/parametrizacion.ts`
+(`SubmoduloParametro`, `puedeEditarParametros(submodulo?)`, `puedeLeerParametros`, `detalleImpacto*`,
+`DetalleImpacto`), `src/services/index.ts` (re-exports),
+`tests/adversarial/evasion.test.ts` + `tests/adversarial/compuerta-ola1.test.ts` (el inventario de
+funciones `app.*` ejecutables por `app_user` suma `app.detalle_impacto_*` — ajuste de conteo, no de
+comportamiento), `tests/adversarial/compuerta-ola2-interfaz.test.ts` (la compuerta de A14 que
+ejercía `guardarUvtAction` de un paso ahora recorre el flujo de dos pasos con un helper local
+`simularUvtAction` → `confirmarUvtAction`; todas sus aserciones —`ok=uvt`, redirección con error en
+el caso retroactivo y en el sin permiso, ledger intacto— se conservan).
+
+**Decisiones para no reabrir.**
+1. Los sub-permisos de parámetros son **UI-only por ahora**; el motor sigue en `parametro.editar` /
+   `puc.editar`. Conectar un rol que edite un submódulo y no otro = retargetear el trigger de 016 y
+   agregar filas en la Fase 8, sin reescribir esta capa.
+2. `parametro.puc.*` existe además de `puc.*` (no lo reemplaza): es el permiso del submódulo PUC
+   *dentro de* `/parametros`. Se otorga en lockstep con `puc.*` en 176.
+3. PUC no lleva simulador de conceptos/proveedores (no abre vigencias tributarias); su resguardo es
+   el guardia de cuentas imputables.
+4. `Modal` del kit añade foco atrapado (Tab cycle); el de D-086 no lo tenía. No cambia ningún
+   comportamiento observable de D-086.
+
+**Verificación.** `npx tsc --noEmit` limpio · `npx next build` **exit 0** (37 rutas; la advertencia
+`node:dns` en Edge Runtime es la de D-080) · `npm test` **1115 en verde** (55 archivos; base
+D-086 = 1115/55 — D-087 no añade archivo de prueba propio: la suite adversarial de D-087 la debe
+escribir A14). **Verificación en navegador real: NO ejecutada** (sin ruta DNS a la Neon desde este
+entorno, misma situación que D-086). Por la convención de D-085 **no se cierra hasta hacerlo**:
+aplicar la migración 176 a la Neon, entrar a `/parametros` con el tema oscuro y confirmar que ya no
+se pinta claro; abrir un badge de alerta y ver el modal con el enlace al submódulo; simular un cambio
+de tarifa y de UVT y confirmar que el conteo y el «Ver detalle» muestran números/filas reales
+**antes** de que aparezca el botón de guardar. **Compuerta de A14: PENDIENTE.**
+
+**Qué debe auditar A14.** (a) que `app.detalle_impacto_*` cuenta contra datos **reales** y coincide
+exactamente con el conteo de `app.simular_impacto_*` para el mismo parámetro (mismo `WHERE`), y que
+respeta RLS / no cruza firmas (mismo barrido que hizo con las de 080); (b) que la migración 176 no
+relaja el candado del motor —un rol con `parametro.tarifas.editar` pero **sin** `parametro.editar`
+sigue sin poder escribir `tax_rule` (SE002), porque el trigger de 016 no se tocó—; (c) que
+`admin_firma` sigue teniendo TODOS los permisos y `solo_lectura` sigue sin ningún `.editar`; (d) que
+el flujo de dos pasos de `valores-base` no tiene ningún camino que guarde sin simular primero
+(incluido POST directo a `confirmar*Action` — que sí se puede, pero entonces el contador no vio el
+impacto: valorar si el paso 2 debe exigir un testigo del paso 1); (e) que el refactor de
+`_direccion-dian.tsx` a `Modal` no rompió ninguno de los 20 casos dorados de dirección de D-086;
+(f) el simulador bloqueante para `reteica-municipios` y `tarifas` sigue corriendo ANTES de guardar,
+nunca junto.
+
+**Revisión de seguridad de A12 (2026-09-03) — alcance: SOLO la granularidad de permisos por
+submódulo y su relación con la RLS. Veredicto: PASA CON CORRECCIONES.** No cubre el simulador ni la
+migración visual (eso sigue siendo de A14, puntos (a), (d), (e) y (f) de arriba). Todo lo que sigue
+está verificado por ejecución en `tests/adversarial/a12-d087-permisos.test.ts` (**18 pruebas**), no
+por lectura:
+
+- **El candado del motor NO se relaja (confirmado leyendo 016 y 176, y atacando la tabla).** 176 no
+  contiene un solo `CREATE TRIGGER` ni toca `app.instalar_permiso_escritura`; los triggers de 016
+  siguen exigiendo `parametro.editar` (`tax_rule`, `tax_concept`, `tax_calendar`, `uvt_value`,
+  `smmlv_value`, `rounding_rule`, `municipality`, `municipality_ica_rule`, `ciiu_activity`) y
+  `puc.editar` (`account`, `niif_mapping`, `cost_center`). Probado con un **rol propio de firma** que
+  tiene `parametro.tarifas.editar` y `parametro.puc.editar` y **no** los gruesos: el `INSERT` directo
+  contra `tax_rule` y contra `account` —saltándose todo servicio— muere con **SE002**. Con control
+  positivo: el mismo rol, con `parametro.editar` añadido, sí escribe. Las tres
+  `app.detalle_impacto_*` también exigen el grueso y le contestan SE002.
+- **El reparto de `role_permission` es append-only y no mueve a nadie de sitio.** 176 solo tiene
+  `INSERT ... SELECT` + `ON CONFLICT DO NOTHING`, ningún `UPDATE`/`DELETE`; el trigger
+  `role_permission_blindaje` (170) no se dispara porque solo actúa cuando `TG_OP <> 'INSERT'`.
+  Probado por barrido: para los cinco roles del sistema, tener el fino ⇔ tener el grueso;
+  `admin_firma` no tiene ni un código del catálogo sin fila; `solo_lectura` no tiene **ningún**
+  permiso con `accion_tipo <> 'ver'`; `auxiliar_causacion` no tiene ningún `parametro.*.editar`.
+  `admin_tributario` y `contador` reciben exactamente los equivalentes de lo que ya tenían.
+- **El espejo `PERMISOS` coincide con el catálogo.** Compuerta ejecutada:
+  `tests/gates/seguridad.test.ts` («el catálogo de permisos del código y el de la base son el mismo»,
+  `SELECT codigo FROM permission` vs. `Object.values(PERMISOS)`) → **verde**, junto con
+  `tests/gates/arranque.test.ts` (57 pruebas entre las dos).
+- **RLS de doble nivel intacta.** `role_permission` (política de 012: `USING` = rol global o del
+  tenant en sesión) no deja ver las filas del rol propio de otra firma; `v_user_permission`
+  (`security_invoker`, apoyada en la RLS de `user_company_access`) no devuelve ni una fila con
+  `tenant_id` ajeno, y los ocho códigos finos solo aparecen para la empresa en contexto.
+  `permisosDeLaSesion` sigue filtrando por `app.current_company_id()` (sin cambios).
+- **Las tres `app.detalle_impacto_*` son `SECURITY DEFINER` + `row_security = off`, y están en las
+  DOS copias del inventario de funciones (D-042)**: `tests/adversarial/compuerta-ola1.test.ts` y
+  `tests/adversarial/evasion.test.ts`. Auditadas como **oráculo de existencia**: la respuesta al id
+  REAL de un `tax_concept` / `municipality` de otra firma es idéntica a la de un id inventado, y
+  `detalle_impacto_valor_base()` no deja caer nada de la otra firma. No filtran.
+
+**Dos correcciones aplicadas por A12 en la misma pasada** (ambas con prueba de regresión que falla
+sin el parche — verificado revirtiendo el parche y viendo caer la prueba):
+
+1. **La interfaz ofrecía guardar a un rol que el motor iba a rechazar.**
+   `puedeEditarParametros(tx, submodulo)` miraba **solo** el código fino. Como `fijarPermisosDeRol`
+   (D-067) **ya hoy** deja a un administrador de firma armar un rol propio con cualquier subconjunto
+   del catálogo —no hace falta esperar a la Fase 8—, un rol con `parametro.tarifas.editar` y sin
+   `parametro.editar` veía el formulario completo de vigencia nueva y recibía **SE002 en la cara** al
+   enviarlo. Ahora el sub-permiso **restringe pero no habilita**: se exigen los dos códigos, el fino
+   y el que el motor impone de verdad (`parametro.editar`, o `puc.editar` para el submódulo PUC).
+   Para los cinco roles del sistema el resultado es idéntico al de antes del parche, porque 176 da el
+   fino exactamente a quien ya tenía el grueso. Mismo criterio en `puedeLeerParametros`.
+2. **`permission.modulo` de los ocho códigos: `'parametros'` → `'parametrizacion'`.**
+   `/admin/roles` arma la matriz agrupando por `permission.modulo` (`listarCatalogoPermisos`), así
+   que los códigos nuevos habrían abierto un grupo «parametros» al lado del grupo «parametrizacion»
+   donde vive la casilla que **sí** manda (`parametro.editar`). Dos etiquetas homónimas en una
+   pantalla de otorgar privilegios, con el permiso efectivo separado de los decorativos, es una
+   trampa de configuración. Los ocho quedan en `'parametrizacion'`, junto al grueso.
+
+**Punto declarado, no bloqueante.** La divergencia inversa (un rol propio con `parametro.editar` y
+sin `parametro.tarifas.editar`) esconde el botón aunque el motor aceptaría: es fail-closed y se
+resuelve marcando también la casilla fina. Cuando la Fase 8 retargetee los triggers a los códigos
+finos, `COD_MOTOR_EDITAR` en `src/services/parametrizacion.ts` es el único sitio que cambia.
+
+**Archivos que tocó A12.** `db/migrations/176_a8_d087_permisos_parametros.sql` (módulo de los ocho
+permisos + comentario del porqué), `src/services/parametrizacion.ts` (`COD_MOTOR_EDITAR` /
+`COD_MOTOR_LEER`, `puedeEditarParametros`, `puedeLeerParametros`), nuevo
+`tests/adversarial/a12-d087-permisos.test.ts`. **La migración 176 cambió: si ya se aplicó a alguna
+base, hay que reaplicarla o corregir `permission.modulo` a mano.** `npx tsc --noEmit` limpio ·
+`npm test` **1133 en verde** (56 archivos; base D-087 = 1115/55). Sin comitear.
+
+---
+
+## Compuerta AMPLIADA de D-087 — veredicto de A14 (2026-09-03): **PASA con correcciones, hechas por A14 en la misma pasada**
+
+A14 no verificó por reporte —ni el de A8 ni el de A12—. Escribió su propia suite,
+**`tests/adversarial/a14-d087-ampliada.test.ts`, 44 pruebas**, sin reutilizar una sola aserción
+ajena, y la primera pasada **encontró CUATRO defectos reales** (V-39 … V-42). Todos corregidos aquí,
+cada uno con su prueba de regresión, verificada revirtiendo el parche y viendo caer la prueba.
+
+**Y esta vez SÍ hubo verificación en navegador real contra la Neon** (a diferencia de D-086 y de la
+entrega de A8): había ruta de red. Se aplicaron las migraciones **175 y 176** —la base estaba en la
+174, así que no hubo conflicto de `checksum` por las ediciones de A14 y A12—, se corrió `npm run seed`
+y se recorrieron las cinco pantallas de `/parametros` con una sesión real. **El defecto más grave de
+esta compuerta (V-42) solo era visible ahí.**
+
+### Vectores del encargo, uno por uno
+
+| # | Vector | Resultado |
+|---|---|---|
+| 1 | **El simulador cuenta contra datos REALES.** `app.simular_impacto_*` (080) vs. `app.detalle_impacto_*` (176), fila a fila | **PASA.** Escenario montado a propósito: tres conceptos de causación apuntando al MISMO `tax_concept` por **columnas distintas** (`retefuente`, `reteica`, `autorretención`) y en alcances distintos (firma y empresa), dos empresas hermanas, terceros con historial publicado, y **ruido deliberado** (concepto que no apunta, retenciones de otro municipio, `tipo` distinto de `reteica`, filas con `third_party_id` NULL, y toda la otra firma). El conteo y el detalle coinciden **exactamente** en las tres funciones, incluido el caso 0/0 y el caso «se añade un concepto y un tercero después» (no hay número congelado ni caché). El agregado es de **firma**, no de la empresa en sesión (D-015): medido con y sin empresa en contexto |
+| 2 | **RLS sobre permisos por submódulo y funciones de detalle** | **PASA.** Dos firmas montadas de punta a punta. La firma A no ve ni un concepto ni un proveedor de la B en ningún detalle; simular con el `tax_concept` **real** de la otra firma da 0/0 y detalle vacío; y el detalle **no es oráculo de existencia**: la respuesta al id ajeno REAL es idéntica, objeto a objeto, a la del id inventado, en `tax_concept` y en `municipality`. Pese a `row_security = off`, `detalle_impacto_valor_base()` no deja caer ni una fila de la otra firma. Sin sesión, ninguna de las tres responde |
+| 3 | **El modal se reutiliza, no se reinventa** | **PASA con deuda declarada.** Los tres consumidores (`_componentes.tsx`, `_detalle-impacto.tsx`, `_direccion-dian.tsx`) importan el `Modal` del kit y **ninguno** declara `role="dialog"` ni overlay propio; el `Modal` conserva Escape, clic fuera y devolución del foco de D-086 y añade el foco atrapado. **Pero el repo NO tiene un solo modal:** `app/_ui/CargaMasiva.tsx` sigue con markup propio (`role="dialog"`, overlay, y **sin** cierre con Escape ni foco atrapado). Es **anterior a D-087** y vive en `/carga-masiva`, que sigue en `PREFIJOS_SIN_MIGRAR`: se declara como deuda de quien migre ese subárbol, no se toca aquí. La prueba **fija la lista exacta** de archivos con diálogo propio, para que ningún modal nuevo se cuele sin pasar por esta compuerta, y comprueba que la deuda no ha entrado en `/parametros` ni en `/terceros`. Los casos de dirección DIAN de D-086 siguen verdes tras el refactor (`a14-d086-ampliada.test.ts` 30/30 + `direccion-dian.test.ts` 10/10) |
+| 4 | **El candado del motor no se relaja** | **PASA.** Rol propio de firma con los cuatro `*.editar` finos y **sin** los gruesos: no ve el formulario en ninguno de los cuatro submódulos **y** el `INSERT` directo contra `tax_rule` —saltándose todo servicio— muere con **SE002**. Rol con el grueso y sin el fino: **fail-closed** (no ve el botón) y, sin submódulo, `puedeEditarParametros` sigue devolviendo `true` (retrocompatible). Los **cinco roles del sistema**: fino ⇔ grueso en todos; `admin_firma` puede, `solo_lectura` y `auxiliar_causacion` no; `solo_lectura` no tiene **ningún** permiso con `accion_tipo <> 'ver'`. Las tres `app.detalle_impacto_*` exigen el permiso GRUESO, no el fino. Y 176 **no contiene un solo `CREATE TRIGGER`**, ni `instalar_permiso_escritura`, ni un `UPDATE`/`DELETE` sobre `role_permission` |
+| 5 | **El flujo de dos pasos es realmente bloqueante** | **FALLABA — V-39, corregido.** Era decorativo: un POST directo a `confirmarUvtAction`, a `confirmarAction` de tarifas y a `confirmarAction` de ReteICA **abría la vigencia nueva** sin que nadie hubiera visto el impacto. Medido en las tres pantallas. Ahora el paso 2 exige el **testigo del paso 1** y lo revalida contra el impacto real del instante |
+| 6 | **Migración visual real** | **PASA.** Cero `style` inline, cero `#hex`, cero `<table>` crudo en las seis piezas de `/parametros`; las cinco pantallas importan del kit; `/parametros` está fuera de `PREFIJOS_SIN_MIGRAR` (que queda con `/reportes`, `/admin`, `/carga-masiva`). Verificado además **en el HTML que sirve el servidor real**: `0` ocurrencias de `style="` |
+| 7 | **Regla de Oro 2 sobre lo de D-087** | **PASA.** La migración 176 no menciona `vigente_desde`/`vigente_hasta` y sus **únicos** `INSERT` son a `permission` y `role_permission` — identificadores de permiso, cero valores. Los doce archivos nuevos/migrados pasan el barrido de patrones tributarios. Los ocho códigos están en el catálogo **y** en el espejo `PERMISOS`, los ocho en `modulo = 'parametrizacion'` (la corrección de A12, verificada también **en la Neon**) |
+| 8 | **RO 1 y 3 sobre el ledger** | **PASA.** Nada de D-087 abre un camino de mutación: `UPDATE tax_rule` directo desde una sesión con `parametro.editar` sigue rebotando; `UPDATE`/`DELETE` sobre un asiento publicado, también; un asiento desbalanceado sigue muriendo en la BD; y simular + ver el detalle de las tres funciones no escribe **ni una fila** en el ledger |
+
+### Los cuatro defectos que A14 encontró y corrigió
+
+Ver **V-39 … V-42** en el registro de vulnerabilidades. En resumen:
+
+- **V-39** — el resguardo bloqueante del simulador no bloqueaba nada: el paso 2 se podía invocar
+  directo. Ahora hay **testigo** (`exigirTestigoImpacto`), que además ataja la pantalla rancia.
+- **V-40** — la pantalla de confirmación de tarifas y de ReteICA **pintaba el conteo del query
+  string** mientras el «Ver detalle» de al lado se medía contra la base: el número y la lista podían
+  contradecirse en la misma pantalla. Exactamente el «dice 3 y lista 2» que el encargo llamaba
+  bloqueante. Ahora las dos cifras salen de **la misma lectura**.
+- **V-41** — el detalle de tarifas se pedía con el `taxConceptId` **del query string**: el contador
+  podía estar mirando el impacto de otra regla mientras guardaba la suya.
+- **V-42** — *(hallazgo del navegador)* el banner de alertas renderizaba **1.122 badges**, uno por
+  municipio del catálogo DANE de D-086, cada uno —desde D-087— un `<button>` con su modal. 984 KB de
+  HTML y las cuatro alertas accionables sepultadas.
+
+### Los 20 casos dorados de la sección 12 — reejecutados COMPLETOS por A14
+
+| # | Caso | Resultado |
+|---|---|---|
+| 1 | Servicio $1.000.000 + IVA, PJ declarante, Bogotá | **PASA** (retefuente $40.000, ReteIVA $28.500; la pata de ReteICA de Bogotá sigue sin tarifa por actividad — V-5, abierta y declarada, ajena a D-087) |
+| 2 | PN no declarante → 6 % | **PASA** ($60.000; el eje «tercero» opera) |
+| 3 | Servicio de $80.000, bajo 2 UVT | **PASA** (no retiene, con el motivo registrado) |
+| 4 | Compra de $500.000, bajo 10 UVT | **PASA** (no retiene, con motivo) |
+| 5 | Compra $600.000 a declarante | **PASA** ($15.000) |
+| 6 | Honorarios PJ $200.000 | **PASA** ($22.000 desde el primer peso) |
+| 7 | Arrendamiento inmueble vs. mueble | **PASA** (el inmueble no retiene; el mueble sí, $16.000) |
+| 8 | Servicio en Medellín (2‰, base 15 UVT) | **PASA** |
+| 9 | Mismo servicio en Cali (base 3 UVT) | **PASA** |
+| 10 | Actividad de Cali manda sobre la de Bogotá | **PASA** (+ desempate configurable en el mismo municipio) |
+| 11 | Vigilancia con AIU | **PASA** (2 % sobre el AIU) |
+| 12 | Proveedor del exterior | **PASA** (ReteIVA 100 %; y sin regla de exterior → revisión manual, no un cero) |
+| 13 | Régimen SIMPLE | **PASA** (según parametrización, nunca por omisión) |
+| 14 | Tres líneas de conceptos distintos | **PASA** (+ variante hostil: trocear no esquiva la base mínima) |
+| 15 | Nota crédito sobre factura causada | **PASA** (reversa proporcional por asiento nuevo, sin mutar el original) |
+| 16 | Factura de junio procesada en julio | **PASA** (manda la fecha del hecho económico) |
+| 17 | Cambio de tarifa con vigencia futura | **PASA** (lo publicado no cambia; lo nuevo usa la tarifa nueva) |
+| 18 | Reprocesar 10 veces la misma factura | **PASA** (asiento idéntico las 10) |
+| 19 | Segunda factura del mismo proveedor y descripción | **PASA** (cero llamadas al LLM y cero costo; la memoria no se contagia a otro proveedor) |
+| 20 | Tenant A consulta al tenant B | **PASA** (cero filas, impuesto por RLS) |
+
+Pruebas adicionales de integridad de la §12, reverificadas en esta pasada: grep de literales
+tributarios → cero (`valores-tributarios.test.ts`, 42 pruebas, incluida la que gana la exención de
+las constantes de escala contra el esquema real); `UPDATE`/`DELETE` sobre asiento publicado → falla
+en BD; asiento desbalanceado → falla en BD; y las migraciones sin los seeds dejan las tablas
+normativas **vacías** (los casos no pasan sobre el vacío).
+
+### Verificación en NAVEGADOR REAL contra la Neon — **HECHA** (2026-09-03)
+
+- Migraciones **175 y 176 aplicadas** a `neondb` (estaba en la 174: **sin conflicto de `checksum`**,
+  las ediciones de A14 sobre 175 y de A12 sobre 176 entraron limpias). `npm run seed` corrido: **33
+  departamentos y 1.122 municipios** cargados.
+- **176 verificada en la base real:** los ocho códigos existen, los ocho con `modulo =
+  'parametrizacion'` y `accion_tipo` `ver`/`editar`; las tres `app.detalle_impacto_*` existen; el
+  reparto quedó `admin_firma` 8, `admin_tributario` 8, `contador` 4, `auxiliar_causacion` 4,
+  `solo_lectura` 4 — espejo exacto de los permisos gruesos que ya tenían.
+- **Las cinco pantallas de `/parametros` responden 200** con una sesión real de `admin_firma`.
+- **El simulador muestra números REALES antes de guardar**, comprobado en las tres pantallas: en
+  `valores-base`, «afecta hoy a 2 concepto(s) y 3 proveedor(es)» tanto en el paso 1 como en el paso 2,
+  con «Ver detalle» presente y el testigo (`conceptos=2`, `proveedores=3`) en el formulario.
+- **La corrección de V-40/V-41, comprobada contra el servidor real:** se pidió el paso 2 de tarifas
+  con `conceptos=999&proveedores=999&taxConceptId=00000000-…` en la URL y la pantalla mostró **2 y 3**,
+  los de verdad, con el testigo en 2 y 3. Igual en ReteICA (`888` forzado → mostró 1 y 1).
+- **La corrección de V-42, comprobada contra el servidor real:** `/parametros` pasó de **984 KB y
+  1.122 badges** a **307 KB y 14 badges**, con la línea «y 1.113 más de este mismo tipo» y las cuatro
+  alertas accionables otra vez visibles.
+- Higiene: la sesión que A14 emitió para la verificación quedó **revocada**, y los scripts temporales,
+  borrados.
+
+**Lo que A14 NO da por verificado y queda pendiente para un humano con navegador gráfico:** el
+comportamiento **client-side** —abrir el modal del badge y el de «Ver detalle» con el ratón, el foco
+atrapado con `Tab`, el cierre con `Escape`, y el aspecto en `data-tema="oscuro"`—. A14 verificó el
+HTML que sirve el servidor y el DOM estático del componente, no una sesión de teclado y ratón.
+
+### Verificación final tras las correcciones de A14
+
+`npx tsc --noEmit` limpio · `npx next build` **exit 0** (37 rutas; la advertencia `node:dns` en Edge
+Runtime es la de D-080) · `npm test` **1177 en verde, 57 archivos** (base D-087 + A12 = 1133/56;
++44 de la suite nueva de A14). Sin comitear: **A14 no comitea.**
+
+### Archivos que tocó A14 en esta compuerta
+
+Nuevo: `tests/adversarial/a14-d087-ampliada.test.ts`. Tocados: `src/services/parametrizacion.ts`
+(`ImpactoNoSimuladoError`, `TestigoImpacto`, `exigirTestigoImpacto`, `taxConceptIdDeTaxRule`),
+`src/services/index.ts` (re-exports), `app/parametros/tarifas/[tipo]/{page.tsx,acciones.ts}`,
+`app/parametros/valores-base/{page.tsx,acciones.ts}`,
+`app/parametros/reteica-municipios/{page.tsx,acciones.ts}`, `app/parametros/_componentes.tsx`
+(agrupación del banner, V-42), `tests/adversarial/compuerta-ola2-interfaz.test.ts` (su helper de dos
+pasos ahora lleva el testigo, como la pantalla real).
+
+---
+
+## D-088 — Parametrización de ICA por municipio: MODELO DE DATOS (A2, migración 177)
+
+**Alcance de esta entrega: solo esquema.** Motor, interfaz y carga masiva NO se tocan y los entrega
+otro agente sobre estas columnas. Sin comitear.
+
+### La decisión de fondo, tomada con el usuario ANTES de escribir nada
+
+**Se EXTIENDE el modelo existente. NO se crean tablas paralelas** (`municipio_ica_parametros`,
+`municipio_ica_actividad`) ni un catálogo de actividades propio. El ICA por municipio ya estaba
+modelado desde la Ola 0 y duplicarlo habría partido en dos la fuente de verdad de una retención:
+
+- `municipality_ica_rule` (004) — parámetros del municipio **por vigencia**: `practica_reteica`,
+  bases mínimas de servicios/compras en UVT o en pesos, `usa_tarifa_de_actividad`, `tarifa_general`,
+  `periodicidad`, `regla_desempate_actividad`. Con sus dos triggers de vigencia.
+- `tax_rule` con `tipo='reteica'` + `municipality_id` + `ciiu_activity_id` (006) — la **tarifa por
+  actividad**, también por vigencia, y con `comparador_base_minima` desde 050.
+- `ciiu_activity` (004) — el catálogo de actividades, ya sembrado y en uso por D-084. **No se tocó
+  ni se duplicó.**
+
+### Migración `db/migrations/177_a2_d088_ica_municipio_modelo.sql` — qué añade y por qué
+
+| Objeto | Definición exacta | Por qué |
+|---|---|---|
+| `municipality_ica_rule.tipo_medicion_base_minima` | `text NOT NULL DEFAULT 'por_factura' CHECK (IN ('por_factura','por_periodo'))` | El modelo solo sabía expresar *comparar cada factura contra la base mínima* (patrón renta/IVA). Hay municipios que comparan el **acumulado del tercero en el municipio durante el periodo**. Son dos formas estructuralmente distintas y no caben en un solo campo. `NOT NULL` con default conservador: el estado indeterminado en algo que decide si se retiene es peor que un default explícito, y `'por_factura'` reproduce exactamente el comportamiento previo a D-088 en todas las filas ya cargadas |
+| `municipality_ica_rule.periodo_meses` | `smallint CHECK (IS NULL OR BETWEEN 1 AND 12)` + `CONSTRAINT municipality_ica_periodo_medicion_ck CHECK (tipo_medicion_base_minima = 'por_periodo' OR periodo_meses IS NULL)` | Ventana de **acumulación** de la base. **No confundir con `periodicidad`**, que ya existía y es otra cosa: `periodicidad` es cada cuánto **declara y paga** el agente retenedor ante el municipio (obligación formal, ajena al cálculo); `periodo_meses` es la ventana sobre la que se **suma la base** para compararla con la base mínima (entra en el cálculo). Un municipio puede declarar bimestral y acumular anual. La diferencia queda escrita en el `COMMENT` de la columna, no solo aquí. El CHECK cruzado impide la fila que se contradice (ventana de acumulación con medición por factura) y lo impone **la base de datos** |
+| `tax_rule.gravada` | `boolean` (nullable) + `CONSTRAINT tax_rule_gravada_ck CHECK (gravada IS NOT FALSE OR tarifa = 0)` | Antes, «esta actividad no está gravada aquí» se representaba por **ausencia de fila**, indistinguible de «todavía no se ha cargado la tarifa» — y las dos exigen respuestas opuestas (§17: el dato faltante debe verse). Tres estados: `NULL` = no aplica / no declarado (**estado de todas las filas anteriores**: la migración no reinterpreta ni una fila cargada), `true` = gravada, `false` = **el motor no retiene, sin importar la tarifa**. Nullable porque solo tiene sentido para `tipo='reteica'` con `ciiu_activity_id`: un `NOT NULL` obligaría a responder «¿gravada?» a una regla de retefuente sobre honorarios. El CHECK impide `gravada=false` con tarifa distinta de cero, para que leer el flag y leer la tarifa no puedan dar resultados opuestos |
+| `reteica_periodo_acumulado` (tabla nueva) | `id`, `tenant_id`/`company_id` **NOT NULL**, `third_party_id`, `municipality_id`, `tipo_operacion_ica text CHECK IN ('servicios','compras')`, `periodo_inicio date`, `periodo_fin date`, `base_acumulada_centavos bigint NOT NULL DEFAULT 0 CHECK (>= 0)`, `documentos_contados jsonb NOT NULL DEFAULT '[]' CHECK (jsonb_typeof = 'array')`, `created_at`/`updated_at`. `UNIQUE (company_id, third_party_id, municipality_id, tipo_operacion_ica, periodo_inicio)`, `CHECK (periodo_fin >= periodo_inicio)`, índice `(company_id, third_party_id, municipality_id, periodo_inicio)`, trigger `updated_at`, `GRANT` a `app_user` | El acumulador que necesita la medición por periodo |
+
+### Decisiones de modelado no obvias de la tabla nueva
+
+1. **No es ledger y no le aplica la Regla de Oro 1.** Es **estado derivado y recalculable**: la
+   verdad sigue en los documentos y en el ledger, y esta tabla se reconstruye entera desde ellos.
+   Por eso **sí admite `UPDATE`** y no se corrige por reversa, se recalcula. `documentos_contados`
+   (array de `source_document.id` ya sumados) es lo que hace **idempotente** la acumulación: un
+   reproceso del mismo documento no suma dos veces, y el acumulado se puede cotejar contra el ledger.
+2. **No es paramétrica y no debe llevar vigencia.** Sin `vigente_desde`, `norma_respaldo` ni
+   `clave_vigencia`, y **sin** el trigger de `parametro.editar`: aquí no hay ninguna decisión
+   normativa, solo la suma de lo ya ocurrido, y quien escribe es el motor de causación en una
+   causación normal, no un administrador tributario abriendo vigencia.
+3. **El periodo se materializa como par de fechas, no como «año + número de periodo».** La ventana
+   la define `periodo_meses` de la regla del municipio **vigente a la fecha del hecho económico**, y
+   esa regla puede cambiar. Guardando las fechas concretas, el acumulado de un periodo pasado sigue
+   significando lo mismo aunque el municipio cambie la ventana mañana (Regla de Oro 3).
+4. **`tipo_operacion_ica` separa servicios de compras** porque el municipio puede fijar bases mínimas
+   distintas para cada uno (`base_minima_servicios_*` / `base_minima_compras_*`); mezclarlas en un
+   solo acumulado haría cruzar el umbral antes de tiempo.
+5. **Alcance amarrado por FK compuestas, no por trigger, donde se puede**:
+   `(company_id, tenant_id) → company` y `(third_party_id, tenant_id, company_id) → third_party`
+   (mismo patrón que `source_document`, 008). Para `municipality`, que es catálogo **híbrido**
+   (`tenant_id` puede ser NULL), la FK compuesta no es expresable y va el guardia genérico
+   `app.instalar_guardia_alcance` de 018. RLS: patrón A de 012
+   (`app.instalar_rls_tenant_company`), doble nivel tenant + company.
+
+### Reglas de Oro
+
+- **RO 2 — cero valores tributarios.** La migración no contiene ni una tarifa, base, UVT, tope ni
+  calendario, y ningún `INSERT`. Todos los defaults son neutros (`'por_factura'`, `0`, `'[]'`) o
+  `NULL`. Qué municipio mide por periodo, con cuántos meses, con qué base y con qué tarifa lo carga
+  el contador desde la interfaz, con su norma de respaldo y su vigencia. El detector de
+  `tests/adversarial/valores-tributarios.test.ts` barre `db/migrations/` y pasa.
+- **RO 1 y 3 — no se toca el ledger ni la resolución por vigencia.** Las dos columnas nuevas de
+  `municipality_ica_rule` y la de `tax_rule` **viajan con la fila de vigencia** que las contiene: un
+  cambio de medición o de «gravada» abre vigencia nueva por el mismo camino que todo lo demás, y una
+  factura vieja se sigue recalculando con la regla que estaba vigente ese día.
+
+### Verificación de A2 (suite desechable, no comiteada)
+
+Siete comprobaciones contra PGlite con las migraciones reales, todas en verde antes de retirar el
+archivo: (1) `periodo_meses` con medición por factura → rechazado por la BD con `23514`;
+(2) abrir la vigencia nueva con `'por_periodo'` **no altera** la anterior, y una consulta con fecha
+pasada resuelve la regla que estaba vigente entonces; (3) `gravada=false` con tarifa positiva →
+`23514`, y con tarifa cero entra; (4) el acumulador **no deja ver** una fila de otra firma ni de otra
+empresa con RLS activa (`asTenant`, no filtro de aplicación); (5) el acumulador **sí** admite
+`UPDATE` (estado derivado); (6) un tercero de otra empresa en el acumulador → `23503` por la FK
+compuesta; (7) base acumulada negativa → `23514`. **Estas comprobaciones no quedan como suite
+permanente a propósito: la compuerta la escribe A14 con su propio arsenal, sin reutilizar aserciones
+de quien construyó el esquema (D-047).**
+
+**Estado del árbol tras 177:** `npx tsc --noEmit` limpio · `npm test` **1177 en verde, 57 archivos**
+— exactamente la misma cifra que antes de la migración: **no se rompió ni se modificó ninguna prueba
+existente**. La migración **no está aplicada a la Neon**: quien despliegue debe correr `177`.
+
+### D-088 — DATOS PARAMÉTRICOS (A1, 2026-09-03) — Tarea A hecha, Tarea B NO
+
+Alcance de A1: solo filas de tabla. No se tocó motor, interfaz, migraciones ni carga masiva de
+código. Sin comitear.
+
+**Tarea A — catálogo maestro CIIU: HECHA.** Seed nuevo
+`db/seeds/tanda2/110_ciiu_completo_d088.sql`. Añade **446 clases CIIU de 4 dígitos** (Rev. 4 A.C.
+adaptada Colombia) que faltaban; **8 ya estaban** (7490, 4711, 7110, 0510, 6411, 5611, 6201, 1355) y
+el `NOT EXISTS` por código no las pisa. `ciiu_activity` global pasa de **8 a 454 filas**. Identidad
+estable: sin vigencia y sin `norma_respaldo` (la tabla no tiene esas columnas). Idempotente.
+`seccion` derivada de la división (2 primeros dígitos) por los rangos oficiales de secciones A–U.
+
+- **Fuente:** los códigos del Excel del usuario (`archivos-masivos/EJEMPLO_D088_parametrizacion_ica.xlsx`,
+  551 filas de actividad). De ahí se tomaron **solo los códigos de 4 dígitos**.
+- **Descartados:** 99 subclases de **5 dígitos** (código propio del Distrito de Bogotá / DIAN:
+  74901, 85591, 10201, 46201…) que no caben en `ciiu_codigo_ck` (`^[0-9]{4}$`) más 1 celda con
+  valor corrupto `"85232/8551"`. Van a pendientes de esquema (misma raíz que V-5).
+- **Pendiente de verificación humana:** las **descripciones** salen del Excel del usuario y pueden
+  estar abreviadas frente al literal oficial DANE. El código y su sección/división sí son
+  verificables; el texto de cada descripción no se contrastó contra la publicación oficial CIIU
+  Rev. 4 A.C.
+
+**Tarea B — tarifas de ICA de Bogotá por actividad: NO CARGADA. Deliberado.** `municipality_ica_rule`
+de Bogotá queda **sin encender ReteICA** y `tax_rule` tipo `reteica` sigue con **1 sola fila**
+(Medellín). Motivo: no se pudo verificar el Acuerdo 65 de 2002 de Bogotá (ni sus modificaciones
+vigentes: Acuerdos 98/2003, 780/2020) dentro del tiempo de la tarea, y el Excel del usuario **no es
+fuente normativa fiable** para esto: sus "tarifas por mil" están dispersas y con ruido evidente
+(valores de una sola aparición como 12.14, 8, 10.62; 14 tarifas distintas donde el Acuerdo agrupa
+por pocos grupos). Cargar eso sería inventar magnitudes en el motor tributario — peor que el hueco
+(§17, Regla de Oro 2). V-5 sigue **abierta** para Bogotá.
+
+**Estado del árbol:** `npx tsc --noEmit` limpio · `npm test` **1177 en verde, 57 archivos** —
+misma cifra que tras la 177: el seed nuevo no rompe ni modifica ninguna prueba. Ningún seed aplicado
+a la Neon.
+
+### D-088 — MOTOR de causación (A3, 2026-09-03)
+
+**Alcance de esta entrega: solo el motor.** No se tocó ni una migración, ni la interfaz, ni la carga
+masiva, ni un seed. Sin comitear. Falta la compuerta de A14.
+
+#### TAREA 1 — `gravada = false` nunca retiene
+
+En `resolverReteica` (`src/domain/motor.ts`), una vez elegida la `tax_rule` de la actividad con
+`elegirRegla`, si la regla trae `gravada = false` el motor **no practica ReteICA, sin importar la
+tarifa**. No es revisión manual —no hay nada que un humano tenga que decidir: es una decisión
+normativa ya tomada por el municipio y cargada como parámetro—, sino una **evaluación registrada**
+con `aplicada = false`, `valor = 0` y el motivo en texto, por el mismo canal por el que ya se
+explicaba «la base no llegó al mínimo». El contador abre la factura y lee *«La actividad X está
+marcada como NO GRAVADA de ICA en el municipio Y por la regla Z, vigente desde …»*, con su norma de
+respaldo; la traza conserva regla y vigencia (Regla de Oro 6). `gravada = true` y `gravada = NULL`
+—el estado de **todas** las reglas anteriores a D-088— conservan la conducta anterior byte a byte.
+El chequeo de coherencia `tarifa_general` vs `tax_rule` se salta cuando la actividad no está gravada,
+para que la tarifa cero que obliga el CHECK no dispare un falso `TARIFA_INCONSISTENTE`.
+
+#### TAREA 2 — base mínima medida por periodo
+
+Con `municipality_ica_rule.tipo_medicion_base_minima = 'por_periodo'`, la base mínima ya no se
+compara contra la factura sino contra el **acumulado del tercero en ese municipio** dentro de la
+ventana. `'por_factura'` (el default y el estado de toda fila existente) no pasa por nada de esto.
+
+**La decisión de arquitectura que evita el acumulador fantasma: el motor NO escribe.** Lo lee,
+acumula en memoria (`SesionAcumuladosIca`) y devuelve los efectos en
+`ResultadoResolucion.acumuladosIca`. Quien persiste el asiento los aplica con `aplicarAcumuladosIca`
+(`src/domain/persistencia.ts`), **en la misma transacción y solo después de que el asiento quedó
+escrito** — en `causarFactura`, justo tras el `UPDATE` de `source_document`. Todas las salidas
+anteriores (revisión manual, período fiscal cerrado, carrera con otro worker que hace
+`ROLLBACK TO SAVEPOINT`) pasan **sin tocar el acumulador**. Si el motor escribiera al calcular, un
+documento que acaba en revisión manual dejaría el acumulado por delante del ledger y la **siguiente**
+factura cruzaría un umbral que en realidad nadie cruzó. Consecuencia directa: el **dry-run sale
+gratis** — una previsualización descarta los efectos, lee el acumulado y no lo mueve. Con prueba.
+
+**Anti doble conteo en dos capas.** En memoria, la sesión no suma la base si el `source_document.id`
+ya figura en `documentos_contados`. Y en la base, el `UPSERT` decide con
+`documentos_contados @> jsonb_build_array($doc)`: si el documento ya está, ni la base ni la lista se
+tocan **por mucho que se ejecute**. La idempotencia no la sostiene la aplicación, la sostiene el
+`jsonb`. Es lo que hace que recausar dé el mismo resultado (caso dorado 18) en vez de que el propio
+documento se empuje por encima del umbral al reprocesarse.
+
+**Una sesión por factura, no por grupo de concepto.** `resolverFactura` agrupa por concepto y
+resuelve cada grupo por separado; si cada grupo leyera el acumulado de la base, dos grupos del mismo
+municipio y naturaleza verían ambos el estado antiguo. La sesión es compartida: suman al mismo
+acumulado y sale **un solo efecto por ventana**.
+
+#### LAS DOS ASUNCIONES — decisión normativa pendiente de confirmación del cliente final
+
+No son bugs, no son TODO y no se resolvieron en silencio. Están escritas en el comentario de cabecera
+de la sección D-088 de `src/domain/motor.ts` y aquí.
+
+1. **Anclaje de la ventana: AÑO CALENDARIO.** El primer periodo del año empieza el **1 de enero del
+   año del hecho económico** y los siguientes se encadenan cada `periodo_meses` meses (con
+   `periodo_meses = 2`: ene-feb, mar-abr, …). La ventana **nunca cruza el cambio de año**: si
+   `periodo_meses` no divide a 12 (5, 7, 8, 9, 10, 11), el último periodo se **recorta al 31 de
+   diciembre** en vez de invadir enero. Se eligió el año calendario porque hace la ventana
+   reproducible sin depender de cuándo se cargó la parametrización ni de cuándo empezó a operar la
+   empresa, que es lo que exige la Regla de Oro 3. **Alternativa no elegida:** anclar a
+   `municipality_ica_rule.vigente_desde`, que ataría la ventana a un dato administrativo y la movería
+   cada vez que el municipio abre vigencia nueva.
+2. **Cruce del umbral a mitad de periodo: SOLO HACIA ADELANTE.** La factura que hace cruzar el
+   acumulado retiene sobre **su propia base**, y las siguientes del periodo también; **lo ya causado
+   antes del cruce no se ajusta retroactivamente**. Es la lectura conservadora y reversible: si el
+   municipio exige el ajuste retroactivo, se corrige por reversa sobre un ledger que no ha inventado
+   nada. La contraria obligaría a reescribir asientos ya publicados, que la Regla de Oro 1 prohíbe.
+
+Y una tercera cosa que **no** es asunción sino decisión del motor, por si alguien la lee como bug:
+la factura que **no** alcanza el umbral tampoco retiene, **pero sí suma al acumulador** — si no
+sumara, el umbral no se cruzaría jamás. En cambio una actividad **no gravada no acumula**: sumar base
+que por definición no tributa acercaría al tercero a un umbral que no le corresponde cruzar.
+
+#### Vacíos de parametrización que van a revisión manual (§17.5: lo que falta se ve)
+
+- `MOTIVO.ICA_PERIODO_SIN_VENTANA` — el municipio mide por periodo y su regla vigente no dice de
+  cuántos meses es la ventana. El motor no la supone.
+- `MOTIVO.ICA_PERIODO_SIN_NATURALEZA` — el acumulado se lleva por separado para servicios y para
+  compras y el concepto no dice cuál es. Mezclarlos haría cruzar el umbral antes de tiempo.
+
+#### Archivos tocados
+
+| Archivo | Qué cambió |
+|---|---|
+| `src/domain/motor.ts` | `ventanaPeriodoIca` (exportada), `SesionAcumuladosIca`, `ClaveAcumuladoIca`, `abrirVentanaIca`; `resolverReteica` resuelve `gravada` y abre la ventana; `liquidar` gana `motivoNoAplicaForzado` y `acumulado`, y compara contra el acumulado cuando toca; `resolverRetenciones` acepta sesión compartida; `resolverFactura` abre una por factura |
+| `src/domain/tipos.ts` | `EfectoAcumuladoIca`; `ResultadoResolucion.acumuladosIca`; `sourceDocumentId` en `EntradaResolucion` y `EntradaFactura`; dos `MOTIVO` nuevos |
+| `src/domain/repositorio.ts` | `FilaTaxRule.gravada`; `FilaMunicipioIca.tipo_medicion_base_minima` y `.periodo_meses`; `FilaAcumuladoIca`; método **de solo lectura** `acumuladoIca(...)` |
+| `src/domain/persistencia.ts` | `aplicarAcumuladosIca` — el `UPSERT` idempotente por `documentos_contados` |
+| `src/services/causacion.ts` | pasa `sourceDocumentId` a `resolverFactura` y aplica los efectos **después** de escribir el asiento |
+| `src/domain/index.ts` | re-exports |
+| `tests/domain/motor-ica-d088.test.ts` | **nuevo**, 16 pruebas |
+
+#### Reglas de Oro
+
+- **RO 2 — cero valores tributarios.** Ni en el motor ni en la suite. La base mínima de Medellín, su
+  tarifa general y la UVT del año son las de A1: la prueba las **lee de la base** y calcula los montos
+  del escenario como **fracciones del umbral**, así que sigue siendo válida el día que A1 actualice el
+  dato. Lo único que la suite escribe son parámetros de **escenario**, marcados como tales en su
+  `norma_respaldo` (que Medellín mida por periodo, que la ventana sea de dos meses) y la tarifa cero
+  que el propio `tax_rule_gravada_ck` obliga en una actividad no gravada. La tarifa de la actividad
+  gravada de ejemplo **se copia con un `SELECT`** de la fila de A1, como ya hacía `_escenario.ts`.
+- **RO 1 — ledger inmutable.** El acumulador no es ledger (A2 lo dejó explícito) y es lo único que se
+  actualiza; ningún asiento se toca. La asunción «solo hacia adelante» existe justamente para no
+  tener que reescribir asientos publicados.
+- **RO 3 — vigencia por fecha del hecho.** La ventana se deriva de `periodo_meses` de la regla
+  **vigente a la fecha del hecho económico**, y se guarda como par de fechas concretas.
+- **RO 4 — la IA no interviene.** Aquí no hay LLM: es aritmética sobre parámetros.
+- **RO 5 — el dinero es entero.** Todo el acumulador en `bigint` de centavos, leído como texto y
+  convertido con `aEntero`. Ni un `float`.
+- **RO 6 — trazabilidad.** La `nota` de la retención dice la ventana usada, el acumulado, cuánto
+  venía de antes y si el documento ya estaba contado; el efecto persistido guarda periodo, base
+  sumada y acumulado resultante.
+
+#### Las 16 pruebas nuevas (`tests/domain/motor-ica-d088.test.ts`)
+
+Ventana: anclaje al año calendario · año bisiesto resuelto por el calendario, no por una tabla a mano
+· mensual y anual como extremos · recorte al 31-dic cuando `periodo_meses` no divide a 12 · ventana
+imposible devuelve `null`. Gravada: `false` no retiene aun con base muy superior al umbral · `true`
+retiene · `NULL` (la regla que dejó el montaje dorado) no cambia de conducta. Por periodo: tres
+facturas y la 2ª cruza (la 1ª sigue en cero y **nadie la ajusta**) · recausar la 2ª **dos veces** no
+cuenta doble y la **huella no se mueve** · **cruce del límite de periodo** (31-ago y 1-sep: el
+acumulador arranca de cero, no arrastra, y quedan dos filas con sus ventanas) · el acumulado de otro
+tercero no empuja el de este · **dry-run** lee y no escribe · sin documento no hay efectos pero el
+cálculo es correcto · medición por periodo sin ventana → revisión manual. No regresión: Cali sigue
+midiendo por factura y **no abre acumulador**.
+
+#### Estado del árbol
+
+`npx tsc --noEmit` limpio · `npm test` **1193 en verde, 58 archivos** (base antes de esta entrega:
+1177 / 57). **+16 pruebas, 0 regresiones, ninguna prueba existente modificada.**
+
+**Los 20 casos dorados, uno por uno** (`tests/golden/casos-dorados.test.ts`, reverificado con
+`--reporter=verbose` DESPUÉS del cambio):
+
+| # | Caso | Estado |
+|---|---|---|
+| 1 | Servicio $1.000.000 + IVA 19%, PJ declarante, Bogotá | ✅ pasa |
+| 1b | El ReteICA de Bogotá NO se inventa: A1 no cargó la tarifa por actividad | ✅ pasa |
+| 2 | Mismo servicio, PN no declarante: el eje «tercero» opera | ✅ pasa |
+| 3 | Servicio de $80.000 bajo la base mínima: no retiene y el motivo queda | ✅ pasa |
+| 4 | Compra $500.000 bajo la base mínima de compras: no retiene | ✅ pasa |
+| 5 | Compra de bienes $600.000 a declarante | ✅ pasa |
+| 6 | Honorarios PJ $200.000: retiene desde el primer peso | ✅ pasa |
+| 7 | Arrendamiento de inmueble $400.000 no retiene; de mueble por igual valor sí | ✅ pasa |
+| 8 | Servicio en Medellín: tarifa general del municipio y su base mínima | ✅ pasa |
+| 9 | Mismo servicio en Cali: la base mínima de servicios es distinta | ✅ pasa |
+| 10 | Principal en Bogotá y secundaria en Cali; operación en Cali | ✅ pasa |
+| 10b | Varias actividades en el mismo municipio: desempate configurable | ✅ pasa |
+| 11 | Vigilancia $5.000.000 con AIU de $500.000: la base es el AIU | ✅ pasa |
+| 12 | Proveedor del exterior: ReteIVA al 100% | ✅ pasa |
+| 12b | Exterior sin regla de exterior parametrizada: revisión manual | ✅ pasa |
+| 13 | Régimen SIMPLE: tratamiento diferenciado según parametrización | ✅ pasa |
+| 14 | Factura con 3 líneas de conceptos distintos: retención por concepto, agregada | ✅ pasa |
+| 14b | Partir un concepto en dos líneas no esquiva la base mínima | ✅ pasa |
+| 15 | Nota crédito: reversa proporcional por documento nuevo, sin mutar el original | ✅ pasa |
+| 15b | Una nota crédito por el total reversa exactamente lo retenido | ✅ pasa |
+| **16** | **Factura fechada antes del decreto, procesada después: manda la fecha del hecho (vigencia por fecha del hecho)** | ✅ **pasa** |
+| **17** | **Cambio de tarifa con vigencia futura: lo publicado no cambia (no retroactividad)** | ✅ **pasa** |
+| **18** | **Reprocesar 10 veces la misma factura: resultado idéntico las 10 (determinismo al reprocesar)** | ✅ **pasa** |
+| 19 | El motor no llama a ningún LLM: no tiene con qué | ✅ pasa |
+| 20 | Usuario del tenant B resolviendo contra el tenant A: cero filas | ✅ pasa |
+
+El 18 queda **reforzado** por D-088: además de las 10 corridas del caso dorado, hay prueba de que
+recausar un documento en un municipio que mide por periodo **no lo cuenta dos veces** y la huella no
+se mueve.
+
+#### Limitación declarada, no silenciada
+
+**La nota crédito no descuenta del acumulador.** `causarNotaCredito` reversa las retenciones
+proporcionalmente pero no resta la base del acumulado del periodo, así que tras una nota crédito el
+acumulado queda por encima de la base neta real y el tercero puede cruzar el umbral algo antes. Se
+declara en vez de resolverse a ojo porque la respuesta correcta depende de la asunción 2: si el
+municipio manda «solo hacia adelante», restar hacia atrás sería incoherente con ella. Va con la
+confirmación normativa del cliente final. La tabla es **estado derivado y recalculable**, así que
+corregirlo después no exige tocar ledger.
+
+### D-088 — INTERFAZ, CARGA MASIVA y PERMISOS (A8, 2026-09-03)
+
+**Alcance de esta entrega: TAREAS 3, 4 y 5.** No se tocó el motor (`src/domain/*`) ni las migraciones
+de esquema ya hechas (177). Sin comitear. Falta la compuerta de A14 y la verificación en navegador.
+
+#### TAREA 5 — permiso propio del submódulo · migración **178**
+
+`db/migrations/178_a8_d088_permisos_ica.sql`, misma mecánica que la 176 de D-087:
+
+- Dos códigos nuevos en `permission`, `modulo = 'parametrizacion'`: `parametro.ica.leer` (`ver`) y
+  `parametro.ica.editar` (`editar`).
+- `INSERT ... SELECT` en `role_permission`: quien tiene `parametro.editar` recibe `parametro.ica.editar`
+  y quien tiene `parametro.leer` recibe `parametro.ica.leer`. Nunca un `UPDATE`. `admin_firma` los
+  recibe y la invariante «lo tiene todo» se mantiene.
+- Espejo en `src/auth/permisos.ts` (`PARAMETRO_ICA_LEER` / `PARAMETRO_ICA_EDITAR`) y en el registro
+  `SubmoduloParametro` de `parametrizacion.ts` (`'ica'` → fino `parametro.ica.editar`, **motor**
+  `parametro.editar`). El fino restringe la interfaz; el candado real de escritura sobre
+  `municipality_ica_rule` y `tax_rule` sigue siendo `parametro.editar` (trigger de 016), no se
+  retargetea nada.
+- **Nivel firma**, no empresa: dato compartido entre empresas-cliente (igual que el catálogo DANE de
+  D-086). La escritura crea filas con `company_id NULL` salvo que el contador pida override de una
+  empresa. Verificado con A2: la RLS híbrida ya deja a un administrador de firma escribir
+  `company_id NULL` desde una sesión con o sin empresa seleccionada — sin cambios de A2 (mismo
+  fundamento que el comentario de cabecera de `parametrizacion.ts`).
+- Pruebas de compuerta ajustadas al alza (8 → 10 códigos `parametro.%.%`): `a12-d087-permisos.test.ts`
+  y `a14-d087-ampliada.test.ts`. La gate `seguridad.test.ts` (PERMISOS espejo == catálogo) pasa.
+
+#### TAREA 3 — pantalla `/parametros/ica-municipios`
+
+`app/parametros/ica-municipios/{page.tsx,acciones.ts,_carga-masiva.tsx}`. Sigue el patrón de
+`reteica-municipios` y `tarifas/[tipo]`: selector de municipio (DANE), y **tres** bloques editables,
+cada uno con el **simulador de impacto bloqueante de D-087 reutilizado** (dos pasos
+`simular*` → `confirmar*`, testigo `exigirTestigoImpacto` de V-39, botón «Ver detalle» con
+`app.detalle_impacto_*`):
+
+1. **Regla del municipio** — bases mínimas compras/servicios (UVT), `tipo_medicion_base_minima`
+   (`por_factura` / `por_periodo`), `periodo_meses` (condicional, 1–12), periodicidad de declaración.
+   Impacto por `simularImpactoMunicipioIca` + `detalleImpactoMunicipioIca`.
+2. **Tabla de actividades gravadas** — `tax_rule` tipo `reteica` con `ciiu_activity_id` del municipio,
+   buscable por código/descripción (`?q=`), editable fila por fila. Impacto por `simularImpactoTarifa`
+   sobre el concepto de ReteICA.
+3. **Alta de actividad nueva** por código CIIU.
+
+**Guard gravada/tarifa en la UI y en la capa de servicio.** Si se marca «No gravada», el formulario
+guarda `tarifa = 0` y la acción lo fuerza; `editarTarifaTaxRule` y `crearOReemplazarTaxRule` rechazan
+`gravada = false` con tarifa ≠ 0 con `VigenciaInvalidaError` **antes** del viaje a la base — el CHECK
+`tax_rule_gravada_ck` (177) sigue siendo la garantía real.
+
+Servicios extendidos (capa de servicios, no motor):
+`parametrizacion.ts` — `EditarMunicipioIcaInput` gana `tipoMedicionBaseMinima` / `periodoMeses` (con
+validación cruzada), `editarMunicipioIcaRule` los inserta; `FilaMunicipioIca` gana `codigoDane`,
+`tipoMedicionBaseMinima`, `periodoMeses`; `FilaTarifa` / `EditarTarifaInput` / `FilaTaxRuleAnterior`
+ganan `gravada` y `editarTarifaTaxRule` lo propaga (hereda el de la fila anterior si no se pasa).
+`catalogos.ts` — `AltaTaxRuleInput.gravada`, propagado en las dos ramas de `crearOReemplazarTaxRule`;
+`AltaMunicipioIcaInput` ya reenvía los dos campos nuevos vía `...input`.
+
+Nav: enlace en `app/parametros/page.tsx` y etiqueta `ica-municipios` en `AppShell.tsx`.
+
+#### TAREA 4 — carga masiva de un municipio completo
+
+`src/services/carga-masiva/ica-municipio.ts` (parser bespoke con `exceljs` + importador + plantilla),
+**no** una entrada de `definiciones.ts` (el layout del cliente no es de columnas planas). Acción
+`cargarIcaMunicipioAction` en `acciones.ts`, UI en `_carga-masiva.tsx` (`useActionState`, informe de
+filas con error). Plantilla descargable en `GET /api/plantillas/ica_municipio_d088`.
+
+- Layout: bloque de encabezado por **etiqueta** (tolerante a la posición) — «Municipio» (código DANE
+  de 5 dígitos **o** nombre), base mínima compra/servicio UVT, «Tipo de medición» → `por_factura` /
+  `por_periodo`, «Periodo en meses». Tabla de actividades: fila de encabezados detectada por traer
+  «Código» y «Gravada»; columnas Código / Descripción / Tarifa por mil / Gravada.
+- **Zero-pad a 4 dígitos** antes de resolver contra `ciiu_activity`. Código de **5 dígitos**
+  (subclases del Distrito), corrupto o inexistente → **fila con error en el informe**, NO se inserta,
+  NO se inventa; **las buenas sí se cargan** (a diferencia del todo-o-nada de `importar.ts`: el
+  archivo real trae ~100 subclases que el cliente no puede quitar). Un fallo inesperado en un INSERT
+  sí deshace todo (ROLLBACK de `conSesion`).
+- «Gravada = N» → `gravada = false`, `tarifa = 0` (aunque la celda de tarifa venga vacía).
+  9,66 «por mil» → fracción `0.009660`.
+- **La fecha de vigencia, la norma de respaldo y la periodicidad NO van en el archivo** (no están en
+  el layout del cliente): las escribe el contador en el formulario, una vez para todo el municipio
+  (§6.2). Sin ellas no se carga nada.
+- Encabezado → `crearOReemplazarMunicipioIca`; cada actividad → `crearOReemplazarTaxRule`
+  (tipo `reteica`, concepto global `reteica_tarifa_general_municipio` del seed 100 — el motor resuelve
+  por municipio + CIIU y trata el concepto como opcional). Audita con `app.registrar_carga_masiva`.
+
+#### Parámetros ya editables desde la interfaz tras D-088
+
+| Parámetro de ICA por municipio | Antes de D-088 | Ahora |
+|---|---|---|
+| Bases mínimas compras/servicios (UVT o pesos) | `/parametros/reteica-municipios` | **también** `/parametros/ica-municipios` (por UVT) |
+| `tipo_medicion_base_minima` (`por_factura` / `por_periodo`) | — (columna nueva de 177) | **`/parametros/ica-municipios`** + carga masiva |
+| `periodo_meses` (ventana de acumulación) | — | **`/parametros/ica-municipios`** + carga masiva |
+| Tarifa de ICA por actividad (`tax_rule` reteica × municipio × CIIU) | `/parametros/tarifas/reteica` (sin filtro de municipio) | **`/parametros/ica-municipios`** (tabla por municipio, buscable) + carga masiva |
+| Flag `gravada` de la actividad | — (columna nueva de 177) | **`/parametros/ica-municipios`** (con guard) + carga masiva |
+| Periodicidad de declaración | `/parametros/reteica-municipios` | **también** `/parametros/ica-municipios` |
+| `usa_tarifa_de_actividad`, `tarifa_general` | `/parametros/reteica-municipios` | sin cambio (la pantalla de ICA asume tarifa por actividad) |
+
+**Falta** (fuera del alcance de D-088, deuda declarada): editar `reteica_periodo_acumulado` no aplica
+(estado derivado, lo escribe el motor); descontar la nota crédito del acumulador (declarado por A3);
+V-5 de Bogotá (A1 no cargó la tarifa por actividad — se puede cargar ya con la nueva carga masiva
+cuando se verifique el Acuerdo).
+
+#### Estado del árbol
+
+`npx tsc --noEmit` limpio · `npx next build` OK (solo la advertencia preexistente de `node:dns` en
+Edge, D-080) · `npm test` **1198 en verde, 60 archivos** (base D-088/A3 = 1193/58; **+5 pruebas en 2
+archivos nuevos**: `tests/services/carga-masiva-ica-d088.test.ts` — carga buena + informe de 5
+dígitos + `por_periodo`; `tests/services/parametrizacion-gravada-d088.test.ts` — guard gravada/tarifa
+en servicio y CHECK de la base). Ninguna migración/seed aplicado a la Neon: quien despliegue corre
+`177` y `178`. Sin comitear.
+
+---
+
 ## Vulnerabilidades — registro de A14
 
 | Id | Qué es | Gravedad | Estado | De quién |
 |---|---|---|---|---|
+| **V-39** | **El «flujo bloqueante de dos pasos» no bloqueaba nada.** D-087 partió la edición en `simular*Action` → `confirmar*Action` y declaró que «el simulador corre ANTES de guardar, nunca junto». Pero el paso 2 **no comprobaba absolutamente nada**: un POST directo a `confirmarUvtAction`, a `confirmarAction` de `tarifas/[tipo]` o a `confirmarAction` de `reteica-municipios` abría la vigencia nueva sin que el contador hubiera visto jamás el impacto. A14 lo midió en las tres pantallas: contó las filas antes y después, y en las tres **había una vigencia nueva**. El resguardo de la sección 6.2, punto 6 era decorativo | Media-alta (no es fuga de seguridad —el motor sigue exigiendo `parametro.editar`— pero es la garantía de PROCESO que el módulo entero vende: cambiar una tarifa sin ver a quién afecta) | **CORREGIDA por A14**: `exigirTestigoImpacto` en `src/services/parametrizacion.ts`. El paso 2 exige el **testigo del paso 1** (los conteos que el simulador mostró) **y** lo revalida contra el impacto real del instante — así cubre a la vez el POST directo (no hay testigo) y la pantalla rancia (el testigo ya no coincide porque entretanto entraron conceptos o proveedores). Aplicado a las **seis** acciones de confirmación (UVT, SMMLV, redondeo, tarifas, ReteICA). En tarifas, el `tax_concept` con el que se mide se resuelve **en la base** desde la regla (`taxConceptIdDeTaxRule`), no del formulario. Seis pruebas: POST directo → no escribe; testigo falseado → no escribe; flujo completo → sí escribe, en las tres pantallas | era de **A8** |
+| **V-40** | **El número del simulador y su detalle podían contradecirse en la misma pantalla.** En el paso 2 de `tarifas/[tipo]` y de `reteica-municipios`, el titular «esta tarifa afecta N conceptos y M proveedores» se pintaba con `cadena(sp, 'conceptos')` — **el query string**, que el usuario controla y que envejece —, mientras el botón «Ver detalle» de al lado listaba las filas **medidas contra la base en ese render**. Un enlace guardado, un `?conceptos=999` a mano, o simplemente un concepto creado por otro usuario entre el paso 1 y el paso 2, y el contador leía un número y una lista que no cuadraban. Es literalmente el caso que el encargo declaraba bloqueante: «un simulador que dice “afecta 3 conceptos” y el detalle lista 2» | Media-alta (el simulador es el resguardo de la sección 6.2.6; si su cifra no es la de la base, no resguarda nada) | **CORREGIDA por A14**: las dos pantallas miden el conteo **en la misma lectura** que el detalle (`simularImpactoTarifa` / `simularImpactoMunicipioIca` dentro del mismo `conSesion`) y el query string ya no pinta nada. `valores-base` ya lo hacía bien. Prueba de código que prohíbe leer `conceptos`/`proveedores` de `searchParams` en las tres pantallas, más verificación contra el servidor real: con `conceptos=999` forzado en la URL, la pantalla muestra el 2 de verdad | era de **A8** |
+| **V-41** | **El detalle del impacto se pedía con el `tax_concept` del query string.** `detalleImpactoTarifa(tx, taxConceptId)` con `taxConceptId = cadena(sp, 'taxConceptId')`: independiente de la regla que se estaba editando. Un enlace con el `taxConceptId` de otro concepto de la misma firma mostraba el impacto de **otra regla** mientras el formulario guardaba la propia. No cruza firmas (la función filtra por tenant), pero sí desalinea la decisión de la evidencia que la respalda | Media (la traza que justifica el cambio describe otra cosa; rompe el espíritu de la Regla 6) | **CORREGIDA por A14**: el detalle se pide con el `taxConceptId` de la **fila real** de la tarifa que se edita, y el paso 2 lo resuelve **en la base** desde `reglaAnteriorId`. Dos pruebas de código + verificación contra el servidor real con un `taxConceptId` falseado en la URL | era de **A8** |
+| **V-42** | **El banner de alertas se convirtió en un muro de 1.122 badges — y solo se veía en el navegador.** `detectarAlertasParametrizacion` emite **una alerta por municipio sin regla de ReteICA**. Cuando `municipality` tenía las ~40 filas curadas de A1 eso era una lista útil; con el catálogo DANE completo que cargó **D-086** (1.122 municipios) y las badges clicables que añadió **D-087**, `/parametros` pasó a renderizar **1.122 `<button>` con su modal cada uno**: **984 KB de HTML** en la pantalla que el contador abre a diario, y las **cuatro** alertas que sí puede resolver hoy (tabla de salarios, SMMLV, UVT, calendario) sepultadas entre mil líneas idénticas. La advertencia 17.5 pide que lo que falta **se vea**; mil líneas iguales consiguen justo lo contrario. Ninguna prueba lo detectaba porque el escenario de pruebas no carga el catálogo completo: **apareció al abrir la página contra la Neon real** | Media-alta como producto (inutiliza la pantalla principal de parametrización y anula el mecanismo de la 17.5) | **CORREGIDA por A14** en `BannerAlertas`: se **agrupa por categoría** sin ocultar nada — se listan las primeras de cada tipo y el resto se resume en una línea que dice **cuántas son** y lleva al mismo submódulo; el total real sigue en la cabecera y el modal del resumen dice cuántas quedan. **El servicio no se toca**: sigue devolviendo la verdad completa, así que la semántica normativa queda intacta. Medido contra el servidor real: **984 KB → 307 KB, 1.122 badges → 14**. Dos pruebas (con mil alertas agrupa; con pocas no cambia nada) | era de **A8**, agravado por el catálogo de **D-086** |
+| **V-42-bis** | **Pendiente de decisión normativa, NO corregido por A14.** La causa raíz de V-42 es semántica: tras D-086, `municipality` es el **catálogo nacional**, no la lista de municipios en los que opera la firma. Exigir regla de ReteICA a los 1.122 —incluidos los que ningún cliente de la firma pisa— ya no significa nada. Lo razonable sería alertar solo por los municipios **en uso** (referenciados por una empresa, un tercero o con historial de retención), pero eso es una decisión normativa y de producto | Baja como riesgo inmediato (V-42 ya devolvió la pantalla a la usabilidad), media como deuda de diseño | **BLOQUEADO / pendiente**: le corresponde a **A1** (semántica del dato normativo) con **A8** (interfaz). A14 no inventa el criterio | **A1** + **A8** |
+| **V-33** | **El `jsonb` de la dirección guardaba el JSON CRUDO del cliente.** `resolverDireccion` validaba `input.direccionDian` pero persistía **ese mismo objeto**, no el normalizado: un POST directo metía en `third_party.direccion_dian` claves inventadas (`malicioso: '<script>…'`, `direccion: 'IGNÓRAME'`, `complementos[].extra`) que quedaban almacenadas para siempre | Media-alta (dato de fuera persistido sin acotar, en la tabla que alimenta la exógena) | **CORREGIDA por A14**: se persiste `normalizarDireccionDian(...)`, que ahora **acota el objeto a las 11 claves del contrato**. Prueba que compara la lista exacta de claves guardadas | era de **A8** |
+| **V-34** | **Se podía guardar un desglose que NO es del contrato, por coerción de tipos.** `normalizarDireccionDian` hacía `(s ?? '').toString()`: `{toString:()=>'CL'}` y `['CL']` pasaban la validación y entraban al `jsonb`. La fila resultante **ya no se podía recomponer** — `componerDireccionDian` sobre lo guardado lanzaba —, es decir, rompía la invariante que es el corazón del entregable. Y `complementos` que no fuera un arreglo **tumbaba el validador con un `TypeError`** en vez de dar un error de validación | **Alta** (fila irrecuperable + invariante rota + excepción de runtime desde entrada externa) | **CORREGIDA por A14**: solo se admite `string` (o `number`, que es inequívoco y se valida contra `^\d{1,4}$`); cualquier otra forma se trata como campo ausente, y `complementos` no-arreglo se reporta como error de validación. 14 pruebas de evasión (homoglifos, letra multicarácter, cuadrante inventado, separadores y saltos de línea en complementos) | era de **A8** |
+| **V-35** | **El texto libre entraba sin dejar rastro.** El entregable afirmaba «el texto libre no entra por ningún camino», pero `crearTercero` con `direccion` y sin `direccionDian` —que es **el camino de la carga masiva de terceros** y el de un POST directo— guardaba texto libre con `direccion_requiere_revision = false`. Solo quedaban marcados los terceros anteriores a la migración: los nuevos se colaban invisibles | Media-alta (la exógena se lleva texto libre y nadie lo ve; es exactamente lo que D-086 dice evitar) | **CORREGIDA por A14**: toda dirección que no venga del desglose DIAN **nace marcada**, en crear y en editar. Con prueba | era de **A8** |
+| **V-36** | **El backfill de la migración 175 dejaba fuera el caso peor.** Marcaba al tercero nacional con dirección de texto (`direccion IS NOT NULL AND btrim(…) <> ''`), pero **no** al tercero nacional **sin dirección ninguna** — los creados antes de que D-084 la hiciera obligatoria. Ese es justo el que rompe el Formato 1001, y era el único que no aparecía en ninguna lista | Media | **CORREGIDA por A14** (migración 175, PARTE B: se marca todo tercero nacional sin `direccion_dian`), con prueba que barre la tabla buscando filas nacionales sin dirección y sin marca | era de **A8** |
+| **V-37** | **Editar un tercero YA normalizado con texto libre le borraba la estructura en silencio.** El `CASE WHEN … THEN false ELSE direccion_requiere_revision END` solo sabía apagar la marca: un guardado sin `direccionDian` ponía `direccion_dian = NULL`, dejaba texto libre y **conservaba la marca en `false`**. Se perdía el desglose sin que nada lo dijera | Media-alta (pérdida silenciosa de dato ya normalizado) | **CORREGIDA por A14**: el estado de la marca es función de lo que se guarda, no de lo que hubiera antes. Con prueba | era de **A8** |
+| **V-38** | **Dos regresiones de interfaz de D-086.** (a) En `/terceros/nuevo`, tras cualquier error recuperable (documento repetido, municipio faltante) la acción devolvía el formulario con la dirección como **texto** y **sin** el desglose: al reenviar, el tercero se creaba con texto libre y `direccion_dian` NULL, tirando lo que el contador ya había compuesto en el modal. (b) En `/terceros/[id]`, condicionar el bloque de geografía y dirección a `!tercero.esDelExterior` en un **componente de servidor** dejó **sin salida** al tercero mal marcado como del exterior: marcar «No» no re-renderiza, guardar exige dirección y municipio, y no hay dónde ponerlos. Antes de D-086 los campos estaban siempre y el camino funcionaba | Media (una pierde trabajo del usuario; la otra hace irreparable un error de captura frecuente) | **CORREGIDAS por A14**: (a) el desglose viaja de vuelta en la redirección y la pantalla lo revalida y lo repone; (b) los campos se renderizan siempre, con `requerido` condicional — el servidor ya los anula cuando el tercero es del exterior | era de **A8** |
 | V-24 | **Carrera edición ↔ publicación: se podía mutar un asiento YA PUBLICADO.** `editarAsientoBorrador` leía el estado sin bloquear la fila; con la aprobación en paralelo, el `UPDATE journal_line` caía sobre un asiento ya `posted` y ningún trigger se enteraba (el de inmutabilidad vio `draft`; el de balance calla porque la edición cuadra) | **Alta** (rompe la Regla de Oro 1) | **CORREGIDA por A14** en la compuerta de D-079 (`SELECT ... FOR UPDATE`), con prueba | era de **A7** |
 | V-25 | **Un humano podía reescribir el monto/cuenta de una retención calculada por el motor.** El ledger y `retention_applied` —fuente de la exógena (1001/1003) y de los certificados— divergían para siempre, sin rastro de que alguien se apartó del motor | **Alta** (rompe las Reglas de Oro 4 y 6) | **CORREGIDA por A14** en la compuerta de D-079 (partida con `retention_applied_id` no editable, en servicio y en UI), con prueba | era de **A7** |
 | V-26 | **El filtro de monto de la bandeja escondía facturas que sí había que aprobar** (formulario en pesos, comparación contra centavos). Además `?desde=` con basura tumbaba la bandeja de las 30-60 empresas, y una cuenta desactivada seguía siendo imputable desde la edición | Media (una factura que no se ve no se causa) | **CORREGIDA por A14** en la compuerta de D-079, con pruebas | era de **A7** |
@@ -3532,12 +4584,16 @@ Medellín**), `rounding_rule` **1** (parámetro operativo global, D-046), `munic
 | Dato | Motivo | Estado |
 |---|---|---|
 | Tarifas de retefuente **anteriores** al 1-jul-2026 | La sección 7.2 solo trae la tabla posterior al Decreto 572 | pendiente. Afecta al caso dorado 16 en su forma literal; A14 lo verificó con el borde real 30-jun/1-jul, que es el mismo fenómeno con datos verdaderos |
-| Tarifas de ICA **por actividad** de Bogotá (incluido el 7,66‰ de profesiones liberales) y **todas** las de Cali | La sección 7.5 no trae la tabla del Decreto 352 de 2002 ni ningún número del Acuerdo 0321 de 2011, y el código municipal de Bogotá no cabe en el esquema | pendiente. **V-5: primero decide A2 el esquema, después se carga lo verificable.** Es el único hueco de datos que queda tras el desbloqueo, y no bloquea la ola (D-048) |
+| Tarifas de ICA **por actividad** de Bogotá (incluido el 7,66‰ de profesiones liberales) y **todas** las de Cali | La sección 7.5 no trae la tabla del Decreto 352 de 2002 ni ningún número del Acuerdo 0321 de 2011, y el código municipal de Bogotá no cabe en el esquema | pendiente. **V-5 sigue abierta.** D-088/A1 (2026-09-03) NO cargó Bogotá: no se pudo verificar el Acuerdo 65 de 2002 (ni Acuerdos 98/2003, 780/2020) con la norma real, y el Excel del usuario no es fuente fiable (tarifas dispersas y con ruido). Falta: `municipality_ica_rule` de Bogotá con `practica_reteica=true`, `usa_tarifa_de_actividad=true`, bases mínimas en UVT del Acuerdo, `tipo_medicion_base_minima`; y una `tax_rule` reteica por (Bogotá × CIIU) con la tarifa por mil y el flag `gravada` del Acuerdo vigente |
+| **Descripciones** de las 446 clases CIIU cargadas por D-088/A1 | Salen del Excel del usuario, pueden estar abreviadas frente al literal oficial DANE | pendiente de cotejo contra la publicación oficial CIIU Rev. 4 A.C. El código y la sección/división sí están verificados |
+| 99 **subclases CIIU de 5 dígitos** del Distrito de Bogotá (74901, 85591, 10201, 46201…) presentes en el Excel de D-088 | `ciiu_codigo_ck` de `ciiu_activity` exige 4 dígitos: son código municipal, no CIIU nacional | pendiente de **decisión de esquema** (misma raíz que V-5). Sin ellas, la carga masiva de ICA de Bogotá por subclase no resolverá esas filas |
 | ReteICA Bucaramanga (bases ~25/~50 UVT) y Cartagena | Marcados *(verificar)* en la sección 7.5 | pendiente. No hay valor que copiar |
 | Tabla completa de autorretención por CIIU | La sección 7.3 da 4 valores de ejemplo, no la tabla | pendiente, y las 4 filas cargadas llevan `requiere_verificacion_humana` |
 | Tabla progresiva de retención por salarios (art. 383 ET) | La sección 7 da el umbral y el rango, no los tramos marginales | pendiente. Ningún caso dorado la ejercita |
 | SMMLV y auxilio de transporte por año | La sección 7 no trae valores | pendiente. Ningún caso dorado los ejercita |
 | Calendario tributario (`tax_calendar`) | La sección 7.7 da las ventanas de exógena pero no el escalonamiento por dígito de NIT | pendiente. Ningún caso dorado lo ejercita |
+| **D-088 — anclaje de la ventana de acumulación de ICA por periodo** | El motor la ancla al **año calendario** (primer periodo desde el 1 de enero del año del hecho; recorte al 31-dic si `periodo_meses` no divide a 12). Ningún acuerdo municipal consultado dice desde cuándo cuenta la ventana | **decisión normativa pendiente de confirmación del cliente final, declarada por A3.** No es bug ni TODO. Alternativa no elegida: anclar a `vigente_desde` de la regla municipal. Cambiarla es tocar `ventanaPeriodoIca` y nada más |
+| **D-088 — cruce del umbral a mitad de periodo** | El motor retiene **solo hacia adelante**: la factura que cruza retiene sobre su propia base y lo ya causado antes no se ajusta | **decisión normativa pendiente de confirmación del cliente final, declarada por A3.** Es la lectura conservadora y reversible; la contraria exigiría reescribir asientos publicados (Regla de Oro 1). Consecuencia asociada: la **nota crédito no descuenta del acumulador**, también declarada |
 | Honorarios PN al 11% por acumulado anual > 3.300 UVT | Exige un acumulado por tercero y año gravable que hoy no tiene dónde vivir | **declarado por A3, no resuelto en silencio.** Ningún caso dorado lo ejercita |
 | PUC y mapeo NIIF cargados | Reconstruidos de memoria por A1, no transcritos del Decreto 2650 ni del 2420 | pendiente de cotejo antes de producción |
 | Modo y múltiplo de redondeo por defecto (`peso_half_up`) | **No es un dato normativo**: no hay decreto que citar. Es un parámetro operativo, y la tabla donde vive no puede expresar una tarifa (D-046) | **cargado y aceptado.** Cualquier firma lo sobreescribe con datos, sin tocar código — probado |
@@ -3558,6 +4614,47 @@ sin broker, tal como exige la sección 5.
 ---
 
 ## Próximo paso
+
+**2026-09-03 — D-087 pasó la compuerta ampliada de A14 (PASA con correcciones) y la verificación en
+navegador real.** Estado del árbol: `npx tsc --noEmit` limpio · `npx next build` **exit 0** (37
+rutas) · `npm test` **1177 en verde, 57 archivos** (base D-087 + A12 = 1133/56; +44 de la suite de
+A14). Sin comitear (A14 no comitea).
+
+Pendiente inmediato:
+
+1. **Comitear D-086 + D-087** con las correcciones de A14 (V-33…V-38 de D-086 y V-39…V-42 de D-087)
+   y las de A12. Las migraciones **175 y 176 ya están aplicadas a la Neon** y el seed corrido: quien
+   tenga otra base debe aplicarlas.
+2. **Verificación client-side con navegador gráfico** (lo único que A14 no pudo cerrar): abrir con el
+   ratón el modal de un badge de alerta y el de «Ver detalle», comprobar el foco atrapado con `Tab`,
+   el cierre con `Escape`, y el aspecto de `/parametros` en `data-tema="oscuro"`. A14 verificó el HTML
+   servido y el DOM estático del componente, no una sesión de teclado y ratón.
+3. **V-42-bis (A1 + A8):** decidir el criterio de «municipio que debe tener regla de ReteICA» ahora
+   que `municipality` es el catálogo nacional de 1.122 filas. A14 lo dejó **bloqueado** a propósito:
+   es una decisión normativa, no de QA.
+4. **D-088 en curso:** A2 dejó el **modelo de datos** (migración `177`). A1 (2026-09-03) dejó los
+   **datos paramétricos**: catálogo CIIU completo (`db/seeds/tanda2/110_ciiu_completo_d088.sql`, +446
+   clases). **Bogotá NO se cargó** (Acuerdo 65/2002 no verificable — ver «D-088 — DATOS PARAMÉTRICOS»
+   y «Pendiente de verificación normativa humana»). A3 (2026-09-03) dejó el **motor**: flag `gravada`,
+   medición por periodo con `reteica_periodo_acumulado`, `aplicarAcumuladosIca` enganchado a
+   `causarFactura` — con **dos asunciones normativas declaradas** que el cliente final debe confirmar
+   (anclaje de la ventana al año calendario; retención **solo hacia adelante** al cruzar el umbral a
+   mitad de periodo). Ver «D-088 — MOTOR». A8 (2026-09-03) dejó la **interfaz**
+   (`/parametros/ica-municipios`), la **carga masiva** de un municipio completo
+   (`src/services/carga-masiva/ica-municipio.ts` + `GET /api/plantillas/ica_municipio_d088`) y el
+   **permiso** propio (migración **178**, `parametro.ica.{leer,editar}`). Ver «D-088 — INTERFAZ,
+   CARGA MASIVA y PERMISOS». `npm test` **1198/60**. Falta **la compuerta de A14** y la verificación
+   en navegador. Las migraciones 177 y 178 y el seed 110 **no están aplicados a la Neon**.
+5. **Deuda del segundo modal:** `app/_ui/CargaMasiva.tsx` conserva markup propio de diálogo, sin
+   `Escape` ni foco atrapado. Se salda cuando se migre `/carga-masiva` (sigue en
+   `PREFIJOS_SIN_MIGRAR`, junto con `/reportes` y `/admin`).
+
+Después: Fase 5+ del roadmap de front (reportes y admin).
+
+---
+
+<details>
+<summary>Próximo paso de la Ola 4 (histórico)</summary>
 
 **OLA 4 ENTREGADA por A16 (2026-09-01). PENDIENTE: la compuerta de A14.** Nada de la Ola 4 está cerrado
 hasta que A14 lo verifique él mismo, sin creerle a este documento. Estado medido por A16: **993 pruebas en
@@ -3600,6 +4697,8 @@ Ficheros existentes que A16 tocó: `app/layout.tsx`, `app/page.tsx`, `app/report
 `app/api/reportes/[libro]/route.ts`, `src/services/terceros.ts`, `src/services/bandeja.ts`,
 `src/auth/permisos.ts`, `next.config.ts`, `package.json`, `tsconfig.json`, y las dos pruebas de A14
 declaradas arriba.
+
+</details>
 
 ---
 

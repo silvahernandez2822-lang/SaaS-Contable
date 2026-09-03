@@ -10,14 +10,15 @@
 import { conSesion } from '../../lib/sesion';
 import {
   listarActividadesVigentes,
+  listarGeografiaParaSelector,
   listarHistorialAtributosFiscales,
-  listarMunicipiosParaSelector,
   obtenerTercero,
   puedeEditarTerceros,
   terceroTieneMovimientos,
 } from '../../../src/services/terceros';
 import { Badge, Boton, Encabezado, EnlaceBoton, MensajeEstado, Panel } from '../../_ui/componentes';
 import { MensajeError, MensajeGuardado, Si } from '../_componentes';
+import { CampoDireccionDian, SelectorGeografia } from '../_direccion-dian';
 import { TabsTercero } from '../_ui';
 import {
   editarDatosAction,
@@ -59,11 +60,11 @@ export default async function PaginaTercero({
   const { id } = await params;
   const sp = await searchParams;
 
-  const [tercero, municipios, historialFiscal, actividades, puedeEditar, tieneMovimientos] = await conSesion(
+  const [tercero, geografia, historialFiscal, actividades, puedeEditar, tieneMovimientos] = await conSesion(
     (tx) =>
       Promise.all([
         obtenerTercero(tx, id),
-        listarMunicipiosParaSelector(tx),
+        listarGeografiaParaSelector(tx),
         listarHistorialAtributosFiscales(tx, id),
         listarActividadesVigentes(tx, id),
         puedeEditarTerceros(tx),
@@ -104,6 +105,22 @@ export default async function PaginaTercero({
 
       <MensajeError error={cadena(sp, 'error') || undefined} />
       <MensajeGuardado visible={cadena(sp, 'ok') === '1'} />
+
+      {(tercero.direccionRequiereRevision || tercero.municipioRequiereRevision) && (
+        <div className="my-3">
+          <MensajeEstado tipo="configuracion" titulo="Este tercero necesita corrección manual (migración D-086)">
+            {tercero.municipioRequiereRevision && (
+              <p>· Municipio sin mapear al catálogo DANE: elija departamento y municipio y guarde.</p>
+            )}
+            {tercero.direccionRequiereRevision && (
+              <p>
+                · Dirección heredada en texto libre («{tercero.direccion ?? '—'}»): ábrala con «Editar» y
+                recompóngala en el formato DIAN. El texto original no se ha borrado.
+              </p>
+            )}
+          </MensajeEstado>
+        </div>
+      )}
 
       <div className="flex flex-col gap-4">
         <Panel titulo="Datos generales" descripcion="Maestro de datos mutable — no versionado, no entra en el cálculo de retención.">
@@ -150,21 +167,28 @@ export default async function PaginaTercero({
                   </label>
                 </div>
               </fieldset>
-              <label className="flex flex-col gap-1.5 text-cuerpo font-medium text-texto">
-                Dirección {!tercero.esDelExterior && '*'}
-                <input name="direccion" type="text" defaultValue={tercero.direccion ?? ''} className={CTRL} />
-              </label>
-              <label className="flex flex-col gap-1.5 text-cuerpo font-medium text-texto">
-                Municipio {!tercero.esDelExterior && '*'}
-                <select name="municipalityId" defaultValue={tercero.municipalityId ?? ''} className={CTRL}>
-                  <option value="">— (obligatorio salvo exterior)</option>
-                  {municipios.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.nombre} ({m.codigo})
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {/* A14/D-086: NO se condicionan a `!esDelExterior`. Esta pantalla
+                  es un componente de servidor: marcar el radio «No» no vuelve a
+                  renderizarla, así que si los campos solo existen para el
+                  tercero nacional, un tercero mal marcado como del exterior no
+                  se puede corregir NUNCA desde la interfaz (guardar exige
+                  dirección y municipio, y no hay dónde ponerlos). Antes de
+                  D-086 los campos estaban siempre y el camino funcionaba.
+                  Cuando el tercero es del exterior el servidor los ignora y los
+                  guarda en NULL, así que mostrarlos no rompe nada. */}
+              <SelectorGeografia
+                departamentos={geografia.departamentos}
+                municipios={geografia.municipios}
+                departmentIdInicial={tercero.departmentId}
+                municipalityIdInicial={tercero.municipalityId}
+                requerido={!tercero.esDelExterior}
+              />
+              <CampoDireccionDian
+                direccionInicial={tercero.direccion}
+                estructuraInicial={tercero.direccionDian}
+                requerido={!tercero.esDelExterior}
+                requiereRevision={tercero.direccionRequiereRevision}
+              />
               <label className="flex flex-col gap-1.5 text-cuerpo font-medium text-texto">
                 País (ISO-2, si es del exterior)
                 <input name="pais" type="text" maxLength={2} defaultValue={tercero.pais} className={CTRL} />

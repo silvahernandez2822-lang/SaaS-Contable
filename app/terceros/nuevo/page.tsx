@@ -6,9 +6,15 @@
  * D-084 · TAREA 0 — migrado al kit de `app/_ui/`.
  */
 import { conSesion } from '../../lib/sesion';
-import { listarMunicipiosParaSelector, puedeEditarTerceros } from '../../../src/services/terceros';
+import { listarGeografiaParaSelector, puedeEditarTerceros } from '../../../src/services/terceros';
 import { Boton, Encabezado, EnlaceBoton, MensajeEstado, Panel } from '../../_ui/componentes';
 import { MensajeError } from '../_componentes';
+import { CampoDireccionDian, SelectorGeografia } from '../_direccion-dian';
+import {
+  normalizarDireccionDian,
+  validarDireccionDian,
+  type DireccionDian,
+} from '../../../src/domain/direccion-dian';
 import { crearAction } from './acciones';
 
 export const dynamic = 'force-dynamic';
@@ -17,6 +23,18 @@ type BusquedaParams = Record<string, string | string[] | undefined>;
 function cadena(sp: BusquedaParams, campo: string): string {
   const v = sp[campo];
   return typeof v === 'string' ? v : '';
+}
+
+/** A14/D-086: recupera el desglose que la acción devuelve tras un error, para
+ *  que el contador no pierda la dirección que ya compuso en el modal. */
+function desgloseDe(crudo: string): DireccionDian | null {
+  if (!crudo) return null;
+  try {
+    const d = JSON.parse(crudo) as DireccionDian;
+    return validarDireccionDian(d).length === 0 ? normalizarDireccionDian(d) : null;
+  } catch {
+    return null;
+  }
 }
 
 const CTRL = 'rounded-md border border-borde bg-superficie-elevada px-3 py-2 text-cuerpo text-texto';
@@ -40,8 +58,8 @@ export default async function PaginaNuevoTercero({
   searchParams: Promise<BusquedaParams>;
 }) {
   const sp = await searchParams;
-  const [municipios, puedeEditar] = await conSesion((tx) =>
-    Promise.all([listarMunicipiosParaSelector(tx), puedeEditarTerceros(tx)]),
+  const [geografia, puedeEditar] = await conSesion((tx) =>
+    Promise.all([listarGeografiaParaSelector(tx), puedeEditarTerceros(tx)]),
   );
   const esDelExterior = cadena(sp, 'esDelExterior') === 'true';
 
@@ -118,23 +136,17 @@ export default async function PaginaNuevoTercero({
 
           {!esDelExterior ? (
             <>
-              <label className="flex flex-col gap-1.5 text-cuerpo font-medium text-texto sm:col-span-2">
-                Dirección *
-                <input name="direccion" type="text" required defaultValue={cadena(sp, 'direccion')} className={CTRL} />
-              </label>
-              <label className="flex flex-col gap-1.5 text-cuerpo font-medium text-texto sm:col-span-2">
-                Municipio *
-                <select name="municipalityId" required defaultValue={cadena(sp, 'municipalityId')} className={CTRL}>
-                  <option value="" disabled>
-                    Seleccione...
-                  </option>
-                  {municipios.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.nombre} ({m.codigo})
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <SelectorGeografia
+                departamentos={geografia.departamentos}
+                municipios={geografia.municipios}
+                municipalityIdInicial={cadena(sp, 'municipalityId') || null}
+                requerido
+              />
+              <CampoDireccionDian
+                direccionInicial={cadena(sp, 'direccion') || null}
+                estructuraInicial={desgloseDe(cadena(sp, 'direccionDian'))}
+                requerido
+              />
             </>
           ) : (
             <label className="flex flex-col gap-1.5 text-cuerpo font-medium text-texto">

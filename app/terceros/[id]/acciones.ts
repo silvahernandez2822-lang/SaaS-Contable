@@ -11,12 +11,14 @@
 import { redirect } from 'next/navigation';
 import { conSesion } from '../../lib/sesion';
 import {
+  DireccionDianInvalidaError,
   editarTercero,
   eliminarTercero,
   fijarActivoTercero,
   TerceroConMovimientosError,
   TerceroInvalidoError,
   TerceroNoEncontradoError,
+  type DireccionDian,
   type TipoDocumentoTercero,
 } from '../../../src/services/terceros';
 import { isPostgresError, SQLSTATE } from '../../../src/db/types';
@@ -26,7 +28,18 @@ function leer(fd: FormData, campo: string): string {
   return typeof v === 'string' ? v.trim() : '';
 }
 
+function leerDireccionDian(fd: FormData): DireccionDian | null {
+  const crudo = leer(fd, 'direccionDian');
+  if (!crudo) return null;
+  try {
+    return JSON.parse(crudo) as DireccionDian;
+  } catch {
+    return null;
+  }
+}
+
 function mensajeDeError(e: unknown): string {
+  if (e instanceof DireccionDianInvalidaError) return `Dirección DIAN: ${e.errores.join(' · ')}`;
   if (
     e instanceof TerceroInvalidoError ||
     e instanceof TerceroNoEncontradoError ||
@@ -60,6 +73,7 @@ export async function editarDatosAction(formData: FormData): Promise<void> {
         tipoPersona: (leer(formData, 'tipoPersona') || 'juridica') as 'natural' | 'juridica',
         razonSocial: leer(formData, 'razonSocial'),
         direccion: esDelExterior ? null : leer(formData, 'direccion'),
+        direccionDian: esDelExterior ? null : leerDireccionDian(formData),
         municipalityId: esDelExterior ? null : leer(formData, 'municipalityId') || null,
         pais: esDelExterior ? leer(formData, 'pais') || 'CO' : 'CO',
         esDelExterior,

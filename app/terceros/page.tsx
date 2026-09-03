@@ -127,7 +127,15 @@ export default async function PaginaTerceros({
                     {t.digitoVerificacion != null ? `-${t.digitoVerificacion}` : ''}
                   </Td>
                   <Td>{t.razonSocial}</Td>
-                  <Td>{t.esDelExterior ? 'Exterior' : t.municipalityNombre ?? '⚠ sin municipio'}</Td>
+                  <Td>
+                    {t.esDelExterior ? 'Exterior' : t.municipalityNombre ?? '⚠ sin municipio'}
+                    {(t.municipioRequiereRevision || t.direccionRequiereRevision) && (
+                      <>
+                        {' '}
+                        <Badge tono="pendiente">Revisar dirección/municipio</Badge>
+                      </>
+                    )}
+                  </Td>
                   <Td>
                     {t.tieneAtributoFiscalVigente ? (
                       <Badge tono="exito">Vigentes</Badge>

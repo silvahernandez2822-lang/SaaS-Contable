@@ -67,6 +67,16 @@
 import type { SqlClient } from '../db/types';
 import { PERMISOS, tienePermiso } from '../auth/permisos';
 import {
+  componerDireccionDian,
+  DireccionDianInvalidaError,
+  normalizarDireccionDian,
+  validarDireccionDian,
+  type DireccionDian,
+} from '../domain/direccion-dian';
+
+export { DireccionDianInvalidaError };
+export type { DireccionDian };
+import {
   EdicionRetroactivaError,
   NormaDeRespaldoRequeridaError,
   VigenciaInvalidaError,
@@ -240,6 +250,12 @@ export interface DatosTercero {
   segundoApellido?: string | null;
   /** Obligatoria salvo `esDelExterior` (Res. 000227/2025, art. 1.3.5.2.1, Formato 1001). */
   direccion?: string | null;
+  /**
+   * D-086 · desglose DIAN de la dirección. Cuando se envía, MANDA: `direccion`
+   * se recompone a partir de este objeto (la interfaz no deja escribir texto
+   * libre) y el tercero deja de estar "pendiente de revisión de dirección".
+   */
+  direccionDian?: DireccionDian | null;
   /** Obligatorio salvo `esDelExterior`: es el que resuelve el código DANE del informado en exógena. */
   municipalityId?: string | null;
   pais?: string;
@@ -255,7 +271,8 @@ function requerirDireccionYMunicipio(input: DatosTercero): void {
     }
     return;
   }
-  if (!input.direccion || !input.direccion.trim()) {
+  const tieneDireccion = Boolean(input.direccionDian) || Boolean(input.direccion && input.direccion.trim());
+  if (!tieneDireccion) {
     throw new TerceroInvalidoError(
       'La dirección es obligatoria: el Formato 1001 de exógena (Res. 000227/2025, art. 1.3.5.2.1) ' +
         'exige la dirección del informado, y debe capturarse desde la creación del tercero, no al ' +
@@ -271,17 +288,57 @@ function requerirDireccionYMunicipio(input: DatosTercero): void {
   }
 }
 
-async function codigoDaneDe(tx: SqlClient, municipalityId: string | null | undefined): Promise<string | null> {
-  if (!municipalityId) return null;
-  const { rows } = await tx.query<{ codigo_dane: string }>(
-    'SELECT codigo_dane FROM municipality WHERE id = $1',
+interface MunicipioResuelto {
+  codigoDane: string | null;
+  departmentId: string | null;
+}
+
+async function resolverMunicipio(
+  tx: SqlClient,
+  municipalityId: string | null | undefined,
+): Promise<MunicipioResuelto> {
+  if (!municipalityId) return { codigoDane: null, departmentId: null };
+  const { rows } = await tx.query<{ codigo_dane: string; department_id: string | null }>(
+    'SELECT codigo_dane, department_id FROM municipality WHERE id = $1',
     [municipalityId],
   );
   const fila = rows[0];
   if (!fila) {
     throw new TerceroInvalidoError(`No existe (o no es visible para esta sesión) el municipio ${municipalityId}.`);
   }
-  return fila.codigo_dane;
+  return { codigoDane: fila.codigo_dane, departmentId: fila.department_id };
+}
+
+/**
+ * D-086. Resuelve qué se guarda en `direccion` (texto) y en `direccion_dian`
+ * (jsonb) a partir del input. Si viene `direccionDian`, se valida y se compone
+ * la cadena — la interfaz no deja escribir texto libre, y esto lo vuelve a
+ * exigir en el servidor. Si solo viene `direccion` de texto (carga masiva,
+ * compatibilidad), se guarda tal cual y `direccion_dian` queda NULL.
+ */
+function resolverDireccion(input: DatosTercero): {
+  direccion: string | null;
+  direccionDian: DireccionDian | null;
+  /** A14/D-086: toda dirección que NO sea desglose DIAN queda marcada. */
+  requiereRevision: boolean;
+} {
+  if (input.esDelExterior) return { direccion: null, direccionDian: null, requiereRevision: false };
+  if (input.direccionDian) {
+    const errores = validarDireccionDian(input.direccionDian);
+    if (errores.length > 0) throw new DireccionDianInvalidaError(errores);
+    // Se persiste el objeto NORMALIZADO, no el que llegó: acotado a las claves
+    // del contrato y con los valores tal como los usa `componerDireccionDian`.
+    // Así la invariante «direccion == composición de direccion_dian» se cumple
+    // por construcción, y ninguna clave inyectada entra al jsonb.
+    const normalizada = normalizarDireccionDian(input.direccionDian);
+    return {
+      direccion: componerDireccionDian(normalizada),
+      direccionDian: normalizada,
+      requiereRevision: false,
+    };
+  }
+  const texto = (input.direccion ?? '').trim();
+  return { direccion: texto || null, direccionDian: null, requiereRevision: true };
 }
 
 export async function crearTercero(tx: SqlClient, input: DatosTercero): Promise<{ id: string }> {
@@ -292,15 +349,17 @@ export async function crearTercero(tx: SqlClient, input: DatosTercero): Promise<
   requerirDireccionYMunicipio(input);
 
   const ctx = await contextoEmpresa(tx);
-  const codigoDane = await codigoDaneDe(tx, input.municipalityId);
+  const municipio = await resolverMunicipio(tx, input.municipalityId);
+  const dir = resolverDireccion(input);
 
   const { rows } = await tx.query<{ id: string }>(
     `INSERT INTO third_party (
        tenant_id, company_id, tipo_documento, numero_documento, digito_verificacion,
        tipo_persona, razon_social, nombre_comercial, primer_nombre, otros_nombres,
-       primer_apellido, segundo_apellido, direccion, municipality_id, codigo_dane,
-       pais, es_del_exterior, email, telefono
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+       primer_apellido, segundo_apellido, direccion, direccion_dian, municipality_id,
+       department_id, codigo_dane, pais, es_del_exterior, email, telefono,
+       direccion_requiere_revision
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
      RETURNING id`,
     [
       ctx.tenantId,
@@ -315,13 +374,18 @@ export async function crearTercero(tx: SqlClient, input: DatosTercero): Promise<
       input.otrosNombres ?? null,
       input.primerApellido ?? null,
       input.segundoApellido ?? null,
-      input.esDelExterior ? null : input.direccion!.trim(),
+      input.esDelExterior ? null : dir.direccion,
+      input.esDelExterior || !dir.direccionDian ? null : JSON.stringify(dir.direccionDian),
       input.esDelExterior ? null : input.municipalityId,
-      input.esDelExterior ? null : codigoDane,
+      input.esDelExterior ? null : municipio.departmentId,
+      input.esDelExterior ? null : municipio.codigoDane,
       input.pais ?? 'CO',
       input.esDelExterior ?? false,
       input.email ?? null,
       input.telefono ?? null,
+      // A14/D-086: una dirección que no viene del selector DIAN (carga masiva,
+      // POST directo, dato heredado) NO se cuela en silencio: nace marcada.
+      dir.requiereRevision,
     ],
   );
   return { id: rows[0]!.id };
@@ -333,15 +397,31 @@ export async function editarTercero(tx: SqlClient, terceroId: string, input: Dat
   }
   requerirDireccionYMunicipio(input);
 
-  const codigoDane = await codigoDaneDe(tx, input.municipalityId);
+  const municipio = await resolverMunicipio(tx, input.municipalityId);
+  const dir = resolverDireccion(input);
+
+  // D-086: al guardar por el selector, la dirección/municipio quedan
+  // normalizados -> se apagan las marcas de revisión pertinentes.
+  // A14/D-086: y al revés. Guardar texto libre sobre un tercero que YA estaba
+  // normalizado borraba su `direccion_dian` y lo dejaba SIN marca: la
+  // estructura se perdía en silencio y la exógena se llevaba texto libre sin
+  // que nadie lo viera. Ahora el estado de la marca es función de lo que se
+  // guarda, no de lo que hubiera antes.
+  const limpiaDireccion = input.esDelExterior || Boolean(dir.direccionDian);
+  const marcaDireccion = !input.esDelExterior && !dir.direccionDian;
+  const limpiaMunicipio = input.esDelExterior || Boolean(input.municipalityId);
 
   const { rows: actualizada } = await tx.query<{ id: string }>(
     `UPDATE third_party SET
        tipo_documento = $2, numero_documento = $3, digito_verificacion = $4,
        tipo_persona = $5, razon_social = $6, nombre_comercial = $7,
        primer_nombre = $8, otros_nombres = $9, primer_apellido = $10, segundo_apellido = $11,
-       direccion = $12, municipality_id = $13, codigo_dane = $14,
-       pais = $15, es_del_exterior = $16, email = $17, telefono = $18
+       direccion = $12, direccion_dian = $13, municipality_id = $14, department_id = $15,
+       codigo_dane = $16, pais = $17, es_del_exterior = $18, email = $19, telefono = $20,
+       direccion_requiere_revision = CASE WHEN $21 THEN false
+                                          WHEN $23 THEN true
+                                          ELSE direccion_requiere_revision END,
+       municipio_requiere_revision = CASE WHEN $22 THEN false ELSE municipio_requiere_revision END
      WHERE id = $1
      RETURNING id`,
     [
@@ -356,13 +436,18 @@ export async function editarTercero(tx: SqlClient, terceroId: string, input: Dat
       input.otrosNombres ?? null,
       input.primerApellido ?? null,
       input.segundoApellido ?? null,
-      input.esDelExterior ? null : input.direccion!.trim(),
+      input.esDelExterior ? null : dir.direccion,
+      input.esDelExterior || !dir.direccionDian ? null : JSON.stringify(dir.direccionDian),
       input.esDelExterior ? null : input.municipalityId,
-      input.esDelExterior ? null : codigoDane,
+      input.esDelExterior ? null : municipio.departmentId,
+      input.esDelExterior ? null : municipio.codigoDane,
       input.pais ?? 'CO',
       input.esDelExterior ?? false,
       input.email ?? null,
       input.telefono ?? null,
+      limpiaDireccion,
+      limpiaMunicipio,
+      marcaDireccion,
     ],
   );
   if (!actualizada[0]) throw new TerceroNoEncontradoError(terceroId);
@@ -377,8 +462,13 @@ export interface FilaTercero {
   razonSocial: string;
   nombreComercial: string | null;
   direccion: string | null;
+  direccionDian: DireccionDian | null;
+  direccionRequiereRevision: boolean;
+  municipioRequiereRevision: boolean;
   municipalityId: string | null;
   municipalityNombre: string | null;
+  departmentId: string | null;
+  departmentNombre: string | null;
   codigoDane: string | null;
   pais: string;
   esDelExterior: boolean;
@@ -397,8 +487,13 @@ interface FilaTerceroCruda {
   razon_social: string;
   nombre_comercial: string | null;
   direccion: string | null;
+  direccion_dian: DireccionDian | null;
+  direccion_requiere_revision: boolean;
+  municipio_requiere_revision: boolean;
   municipality_id: string | null;
   municipality_nombre: string | null;
+  department_id: string | null;
+  department_nombre: string | null;
   codigo_dane: string | null;
   pais: string;
   es_del_exterior: boolean;
@@ -418,8 +513,14 @@ function filaTerceroDe(f: FilaTerceroCruda): FilaTercero {
     razonSocial: f.razon_social,
     nombreComercial: f.nombre_comercial,
     direccion: f.direccion,
+    direccionDian:
+      typeof f.direccion_dian === 'string' ? (JSON.parse(f.direccion_dian) as DireccionDian) : f.direccion_dian,
+    direccionRequiereRevision: f.direccion_requiere_revision,
+    municipioRequiereRevision: f.municipio_requiere_revision,
     municipalityId: f.municipality_id,
     municipalityNombre: f.municipality_nombre,
+    departmentId: f.department_id,
+    departmentNombre: f.department_nombre,
     codigoDane: f.codigo_dane,
     pais: f.pais,
     esDelExterior: f.es_del_exterior,
@@ -432,8 +533,12 @@ function filaTerceroDe(f: FilaTerceroCruda): FilaTercero {
 
 const SELECT_TERCERO = `
   SELECT tp.id, tp.tipo_documento, tp.numero_documento, tp.digito_verificacion, tp.tipo_persona,
-         tp.razon_social, tp.nombre_comercial, tp.direccion, tp.municipality_id,
-         m.nombre AS municipality_nombre, tp.codigo_dane, tp.pais, tp.es_del_exterior,
+         tp.razon_social, tp.nombre_comercial, tp.direccion, tp.direccion_dian,
+         tp.direccion_requiere_revision, tp.municipio_requiere_revision,
+         tp.municipality_id, m.nombre AS municipality_nombre,
+         COALESCE(tp.department_id, m.department_id) AS department_id,
+         d.nombre AS department_nombre,
+         tp.codigo_dane, tp.pais, tp.es_del_exterior,
          tp.email, tp.telefono, tp.activo,
          EXISTS (
            SELECT 1 FROM third_party_fiscal_attribute fa
@@ -441,7 +546,8 @@ const SELECT_TERCERO = `
               AND app.esta_vigente(fa.vigente_desde, fa.vigente_hasta, CURRENT_DATE)
          ) AS tiene_atributo_fiscal_vigente
     FROM third_party tp
-    LEFT JOIN municipality m ON m.id = tp.municipality_id`;
+    LEFT JOIN municipality m ON m.id = tp.municipality_id
+    LEFT JOIN department d ON d.id = COALESCE(tp.department_id, m.department_id)`;
 
 export async function listarTerceros(
   tx: SqlClient,
@@ -591,6 +697,51 @@ export async function listarMunicipiosParaSelector(tx: SqlClient): Promise<Opcio
     `SELECT id, codigo_dane, nombre, departamento FROM municipality WHERE activo ORDER BY nombre`,
   );
   return rows.map((r) => ({ id: r.id, codigo: r.codigo_dane, nombre: `${r.nombre} (${r.departamento})` }));
+}
+
+// =============================================================================
+// D-086 — CATÁLOGO GEOGRÁFICO DANE (departamento -> municipio)
+// =============================================================================
+
+export interface OpcionMunicipio {
+  id: string;
+  codigoDane: string;
+  nombre: string;
+  departmentId: string | null;
+}
+
+/** Los 33 departamentos DANE visibles, para el primer nivel del selector. */
+export async function listarDepartamentosParaSelector(tx: SqlClient): Promise<OpcionCatalogo[]> {
+  const { rows } = await tx.query<{ id: string; codigo_dane_dpto: string; nombre: string }>(
+    `SELECT id, codigo_dane_dpto, nombre FROM department WHERE activo ORDER BY nombre`,
+  );
+  return rows.map((r) => ({ id: r.id, codigo: r.codigo_dane_dpto, nombre: r.nombre }));
+}
+
+/**
+ * Catálogo completo para el selector dependiente departamento -> municipio.
+ * Una sola consulta: la interfaz filtra los municipios por departamento en el
+ * cliente (son ~1.100 filas, ~40 KB de JSON: barato y sin ida y vuelta).
+ */
+export async function listarGeografiaParaSelector(
+  tx: SqlClient,
+): Promise<{ departamentos: OpcionCatalogo[]; municipios: OpcionMunicipio[] }> {
+  const [departamentos, municipios] = await Promise.all([
+    listarDepartamentosParaSelector(tx),
+    tx
+      .query<{ id: string; codigo_dane: string; nombre: string; department_id: string | null }>(
+        `SELECT id, codigo_dane, nombre, department_id FROM municipality WHERE activo ORDER BY nombre`,
+      )
+      .then(({ rows }) =>
+        rows.map((r) => ({
+          id: r.id,
+          codigoDane: r.codigo_dane,
+          nombre: r.nombre,
+          departmentId: r.department_id,
+        })),
+      ),
+  ]);
+  return { departamentos, municipios };
 }
 
 /**
