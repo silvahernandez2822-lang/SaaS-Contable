@@ -730,17 +730,6 @@ export async function editarTarifaTaxRule(
       'La base mínima se expresa en UVT o en pesos, nunca en las dos a la vez.',
     );
   }
-  // D-088: guard de consistencia gravada/tarifa, el mismo que impone el CHECK
-  // `tax_rule_gravada_ck`. Se rechaza aquí para no gastar un viaje a la base con
-  // una combinación que ya se sabe inválida (§6.2, y el CHECK sigue siendo la
-  // garantía real).
-  if (input.gravada === false && input.tarifa != null && Number(input.tarifa) !== 0) {
-    throw new VigenciaInvalidaError(
-      'Una actividad marcada como NO gravada de ICA no puede llevar tarifa distinta de cero: ' +
-        'ponga la tarifa en 0 o marque la actividad como gravada.',
-    );
-  }
-
   const { rows } = await tx.query<FilaTaxRuleAnterior>(
     `SELECT id, tenant_id, company_id, tax_concept_id, tipo, aplica_a, tipo_persona,
             municipality_id, ciiu_activity_id, rango_desde_uvt::text, rango_hasta_uvt::text,
@@ -751,6 +740,24 @@ export async function editarTarifaTaxRule(
   );
   const anterior = rows[0];
   if (!anterior) throw new ParametroNoEncontradoError('tax_rule', input.reglaAnteriorId);
+
+  // D-088: guard de consistencia gravada/tarifa, el mismo que impone el CHECK
+  // `tax_rule_gravada_ck`. Se comprueba contra el flag EFECTIVO de la vigencia
+  // que se va a abrir, no contra el que venga en la entrada (V-43, A14): si la
+  // llamada no trae `gravada`, la fila nueva HEREDA el de la regla anterior, y
+  // heredar `false` con una tarifa positiva es exactamente la misma
+  // combinación prohibida. Antes solo se miraba `input.gravada`, así que ese
+  // camino se colaba hasta la base y el contador recibía un error crudo de
+  // PostgreSQL en vez del motivo. El CHECK sigue siendo la garantía real.
+  // Misma expresión, literalmente, que la que va al INSERT más abajo: si el
+  // guard y la escritura no calcularan el flag igual, el guard no valdría nada.
+  const gravadaEfectiva = input.gravada ?? anterior.gravada;
+  if (gravadaEfectiva === false && input.tarifa != null && Number(input.tarifa) !== 0) {
+    throw new VigenciaInvalidaError(
+      'Una actividad marcada como NO gravada de ICA no puede llevar tarifa distinta de cero: ' +
+        'ponga la tarifa en 0 o marque la actividad como gravada.',
+    );
+  }
 
   const ctx = await resolverContextoEdicion(tx, anterior);
 
@@ -808,7 +815,7 @@ export async function editarTarifaTaxRule(
       normaRespaldo,
       input.notas ?? null,
       input.requiereVerificacionHumana ?? false,
-      input.gravada ?? anterior.gravada,
+      gravadaEfectiva,
     ],
   );
 

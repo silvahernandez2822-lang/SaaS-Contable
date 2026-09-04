@@ -141,13 +141,40 @@ function filasDeHoja(hoja: ExcelJS.Worksheet): string[][] {
   return filas;
 }
 
-/** Valor de la celda a la derecha de la primera celda cuyo texto casa `test`. */
+/**
+ * Todas las etiquetas que el parser reconoce, del bloque de encabezado y de la
+ * tabla de actividades. Sirven para lo de abajo: para saber cuándo lo que está
+ * a la derecha de una etiqueta NO es su valor sino la etiqueta siguiente.
+ */
+const ETIQUETAS: Array<(t: string) => boolean> = [
+  (t) => t === 'municipio' || t.startsWith('municipio'),
+  (t) => t.includes('base minima') && t.includes('compra'),
+  (t) => t.includes('base minima') && t.includes('servicio'),
+  (t) => t.includes('tipo de medicion') || t.includes('medicion base'),
+  (t) => t.includes('periodo') && t.includes('mes'),
+  (t) => t === 'codigo' || t.includes('descripcion') || t.includes('tarifa') || t.includes('gravada'),
+];
+
+/**
+ * Valor de la celda a la derecha de la primera celda cuyo texto casa `test`.
+ *
+ * V-46 (A14): si la celda del valor está VACÍA, el barrido hacia la derecha
+ * seguía hasta encontrar cualquier cosa — y lo primero que encontraba era la
+ * ETIQUETA SIGUIENTE del mismo bloque. Con «Municipio» en blanco devolvía
+ * «Base mínima UVT compra» como si fuera el nombre del municipio; con una base
+ * mínima en blanco podía devolver el número de la celda de al lado y cargarlo
+ * como base mínima del municipio, que es exactamente el valor inventado que
+ * prohíben la Regla de Oro 2 y la advertencia §17.5. Ahora, si lo que hay a la
+ * derecha es otra etiqueta conocida, el valor se considera AUSENTE.
+ */
 function valorTrasEtiqueta(filas: string[][], test: (t: string) => boolean): string {
   for (const celdas of filas) {
     for (let i = 0; i < celdas.length; i += 1) {
       if (celdas[i] && test(normalizar(celdas[i]!))) {
         for (let j = i + 1; j < celdas.length; j += 1) {
-          if (celdas[j] && celdas[j]!.trim() !== '') return celdas[j]!.trim();
+          const candidato = celdas[j]?.trim() ?? '';
+          if (candidato === '') continue;
+          return ETIQUETAS.some((esEtiqueta) => esEtiqueta(normalizar(candidato))) ? '' : candidato;
         }
         return '';
       }
@@ -205,8 +232,22 @@ export async function leerArchivoIca(
 
   const tipoMedicion: 'por_factura' | 'por_periodo' =
     tipoMedicionTexto.includes('periodo') ? 'por_periodo' : 'por_factura';
-  const periodoMeses =
-    tipoMedicion === 'por_periodo' && periodoTexto ? Number(periodoTexto.replace(',', '.')) : null;
+  let periodoMeses: number | null = null;
+  if (tipoMedicion === 'por_periodo') {
+    // V-44 (A14). Sin ventana, el municipio quedaría midiendo por periodo con
+    // un periodo desconocido y CADA factura suya se iría a revisión manual
+    // (MOTIVO.ICA_PERIODO_SIN_VENTANA). Ese vacío se tiene que ver AL CARGAR,
+    // no factura a factura, y no se supone (Regla de Oro 2).
+    const n = Number(periodoTexto.replace(',', '.'));
+    if (!periodoTexto || !Number.isInteger(n) || n < 1 || n > 12) {
+      throw new ArchivoIlegibleError(
+        'El archivo dice que la base mínima se mide POR PERIODO, pero la celda "Periodo en meses" ' +
+          `no trae un número entero de 1 a 12 (llegó "${periodoTexto}"). Sin la ventana de ` +
+          'acumulación el sistema no puede decidir si una factura retiene, y no la inventa.',
+      );
+    }
+    periodoMeses = n;
+  }
 
   // Tabla de actividades: fila de encabezados = la que trae "Codigo" y "Gravada".
   let filaEnc = -1;
@@ -279,8 +320,19 @@ function validarActividad(fila: FilaActividadCruda): ActividadValida {
   let gravada: boolean;
   if (gravadaNorm === 's' || gravadaNorm === 'si' || gravadaNorm === 'sí' || gravadaNorm === 'x') {
     gravada = true;
-  } else if (gravadaNorm === 'n' || gravadaNorm === 'no' || gravadaNorm === '') {
+  } else if (gravadaNorm === 'n' || gravadaNorm === 'no') {
     gravada = false;
+  } else if (gravadaNorm === '') {
+    // V-44 (A14). La celda en blanco NO se toma por "no gravada". Antes sí, y
+    // era el error silencioso más caro del parser: a una actividad SÍ gravada
+    // a la que se le olvidó la "S" se le apagaba la retención de ICA en el
+    // municipio —tarifa 0, gravada=false— sin que nadie se enterara, porque no
+    // salía en el informe de errores. Una celda que decide si se practica una
+    // retención no puede tener valor por defecto (§17.5: lo que falta se ve).
+    throw new Error(
+      '"Gravada": la celda está vacía. Escriba "S" o "N": el sistema no supone que una ' +
+        'actividad no está gravada por el hecho de que falte el dato.',
+    );
   } else {
     throw new Error(`"Gravada": "${fila.gravadaCrudo}" no es "S" ni "N".`);
   }
@@ -497,12 +549,21 @@ export function construirPlantillaIcaMunicipio(): ExcelJS.Workbook {
   wb.description = 'Plantilla D-088 — parametrización de ICA por municipio';
   const hoja = wb.addWorksheet('Hoja1');
 
+  // V-45 (A14). El bloque de encabezado va VACÍO, a propósito. Estas cuatro
+  // celdas NO son un ejemplo decorativo: son lo que el parser lee como
+  // configuración REAL del municipio. Traían el DANE de Medellín y unas bases
+  // mínimas en UVT precargadas, así que un contador que pegara su lista de
+  // actividades sobre las filas de ejemplo y subiera el archivo habría cargado
+  // el municipio y las bases mínimas del ejemplo como si fueran los suyos, sin
+  // enterarse. Además eran valores tributarios escritos en el código fuente
+  // (Regla de Oro 2). Vacías, el archivo sin llenar se RECHAZA en vez de cargar
+  // algo falso; cómo se llena cada una está en la hoja "Instrucciones".
   hoja.getCell('C5').value = 'Municipio';
-  hoja.getCell('D5').value = '05001';
+  hoja.getCell('D5').value = '';
   hoja.getCell('G5').value = 'Base mínima UVT compra';
-  hoja.getCell('H5').value = 27;
+  hoja.getCell('H5').value = '';
   hoja.getCell('G6').value = 'Base mínima UVT servicio';
-  hoja.getCell('H6').value = 4;
+  hoja.getCell('H6').value = '';
   hoja.getCell('J5').value = 'Tipo de medición base mínima';
   hoja.getCell('K5').value = 'Por factura';
   hoja.getCell('J6').value = 'Periodo en meses (solo si es "Por periodo")';
@@ -518,13 +579,12 @@ export function construirPlantillaIcaMunicipio(): ExcelJS.Workbook {
     hoja.getCell(c).font = { bold: true };
   }
   hoja.getColumn(3).numFmt = '@'; // C = Código como texto
-  hoja.getCell('C9').value = '0161';
-  hoja.getCell('D9').value = 'Actividades de apoyo a la agricultura (ejemplo — bórrelo)';
-  hoja.getCell('I9').value = 6;
-  hoja.getCell('J9').value = 'S';
-  hoja.getCell('C10').value = '9900';
-  hoja.getCell('D10').value = 'Actividad no gravada (ejemplo — la tarifa se deja vacía)';
-  hoja.getCell('J10').value = 'N';
+  // Sin tarifa de ejemplo, por lo mismo: la columna I es la tarifa REAL que se
+  // guardaría. El formato («9,66 por mil») se explica en las instrucciones.
+  hoja.getCell('C9').value = '';
+  hoja.getCell('D9').value = 'Escriba aquí la primera actividad. Una fila por CIIU de 4 dígitos.';
+  hoja.getCell('I9').value = '';
+  hoja.getCell('J9').value = '';
 
   const nota = wb.addWorksheet('Instrucciones');
   nota.getColumn(1).width = 110;
@@ -543,6 +603,11 @@ export function construirPlantillaIcaMunicipio(): ExcelJS.Workbook {
     '    Las subclases de 5 dígitos del Distrito NO se cargan: salen en el informe de errores.',
     '  • "Tarifa por mil": p. ej. 9,66 se guarda como 0,00966. Vacío si la actividad NO está gravada.',
     '  • "Gravada": "S" o "N". Con "N" el motor no retiene ICA de esa actividad, sin importar la tarifa.',
+    '    La celda NO puede quedar vacía: el sistema no supone que una actividad no está gravada.',
+    '',
+    'LA PLANTILLA VIENE VACÍA A PROPÓSITO. Ninguna celda trae un valor de ejemplo precargado:',
+    'todo lo que escriba aquí se carga tal cual como parámetro del municipio, así que un número',
+    'que se quedara de un ejemplo se convertiría en la base mínima real de sus clientes.',
     '',
     'La FECHA DE VIGENCIA, la NORMA DE RESPALDO y la PERIODICIDAD de declaración NO van en el archivo:',
     'las escribe usted en el formulario de carga, una sola vez para todo el municipio (sección 6.2).',
