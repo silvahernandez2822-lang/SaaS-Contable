@@ -23,9 +23,22 @@
  *     `v_account_efectivo` aísla.
  *   · Sin sesión: 401. Sin el permiso `parametro.puc.leer`: 403.
  *
- * TODO(A9, D-089): implementar `src/reports/puc-efectivo.ts` y reemplazar el
- * 501 de abajo por la descarga real (mismo patrón que `generarMaestroTerceros`
- * + `libroABuffer`).
+ * RASTRO EXPORT (V-54, cierre) — mismo patrón que `/api/reportes/[libro]`
+ * (`app.registrar_exportacion`, migración 140): se escribe DENTRO de la misma
+ * transacción y sesión que autorizó la lectura, después de generar el libro y
+ * antes de devolverlo. Si el rastro no se puede escribir, el archivo no se
+ * entrega — igual que en la ruta de reportes. `app.registrar_exportacion`
+ * exige además `reporte.exportar`, y esta ruta lo comprueba también en JS
+ * ANTES de generar nada (mismo patrón que cada `generarXxx` de
+ * `src/reports/libros.ts`), para fallar con un 403 legible en vez del error
+ * crudo de Postgres que la función dispararía si este paso se saltara.
+ * Descargar el PUC completo de una empresa es la misma clase de extracción en
+ * bloque que un libro, y queda sujeta al mismo permiso, sumado a
+ * `parametro.puc.leer` que ya exigía esta ruta. Antes de este cierre,
+ * `auxiliar_causacion` y `solo_lectura` podían descargar el PUC con solo
+ * `parametro.puc.leer`; ahora necesitan además `reporte.exportar` — el modelo
+ * de permisos es granular por usuario (ver D-090), así que una firma que lo
+ * necesite se lo otorga a un usuario puntual sin tocar código.
  */
 import { conSesion, SesionNoPresenteError } from '../../../../lib/sesion';
 import { SesionInvalidaError, EmpresaNoAutorizadaError } from '../../../../../src/db/tenant-context';
@@ -44,7 +57,17 @@ export async function GET(): Promise<Response> {
   try {
     const workbook = await conSesion(async (tx) => {
       await exigirPermiso(tx, PERMISOS.PARAMETRO_PUC_LEER);
-      return generarLibroPucEfectivo(tx);
+      // Mismo patrón que cada `generarXxx` de `src/reports/libros.ts`: se
+      // exige `reporte.exportar` aquí, en JS, ANTES de generar nada, para que
+      // falle con un `PermisoInsuficienteError` legible y un 403 limpio — y no
+      // con el error crudo de Postgres (SE002) que dispara internamente
+      // `app.registrar_exportacion` si este paso se saltara.
+      await exigirPermiso(tx, PERMISOS.REPORTE_EXPORTAR);
+      const resultado = await generarLibroPucEfectivo(tx);
+      // Rastro EXPORT de la 14.1 (V-54): dentro de la misma transacción, o el
+      // archivo no se entrega. Ver la nota de cabecera.
+      await tx.query('SELECT app.registrar_exportacion($1, $2::jsonb)', ['puc-efectivo', '{}']);
+      return resultado;
     });
     const buffer = await libroABuffer(workbook);
     const fecha = new Date().toISOString().slice(0, 10);

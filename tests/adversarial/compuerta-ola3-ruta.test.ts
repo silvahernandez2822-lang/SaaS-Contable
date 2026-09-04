@@ -23,13 +23,35 @@
  * contra la base de datos de pruebas.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { execSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import ExcelJS from 'exceljs';
 import { createTestDb, uuid, type TestDb } from '../helpers/db';
 import { crearEscenario, type Escenario } from '../helpers/fixtures';
 import { ROLES } from '../../src/auth/permisos';
 import type { DbHandle } from '../../src/db/types';
+
+/**
+ * Todos los archivos de código bajo `raices`, recorriendo el SISTEMA DE
+ * ARCHIVOS (no el índice de git: ver V-53 abajo). Devuelve rutas relativas con
+ * `/`, como las devolvía `git grep -l`, para que el resto de la prueba no
+ * cambie.
+ */
+function archivosFuente(raices: string[]): string[] {
+  const salida: string[] = [];
+  const recorrer = (dir: string): void => {
+    for (const entrada of readdirSync(dir, { withFileTypes: true })) {
+      const ruta = `${dir}/${entrada.name}`;
+      if (entrada.isDirectory()) {
+        if (entrada.name === 'node_modules' || entrada.name.startsWith('.')) continue;
+        recorrer(ruta);
+      } else if (/\.(ts|tsx|js|jsx|mts|cts)$/.test(entrada.name)) {
+        salida.push(ruta);
+      }
+    }
+  };
+  for (const raiz of raices) recorrer(raiz);
+  return salida.sort();
+}
 
 let cookieValores: Record<string, string> = {};
 let cabeceraValores: Record<string, string> = {};
@@ -50,6 +72,8 @@ vi.mock('../../app/lib/db', () => ({
 }));
 
 import { GET } from '../../app/api/reportes/[libro]/route';
+import { GET as GET_PUC_EXPORTAR } from '../../app/api/parametros/puc/exportar/route';
+import { GET as GET_TERCEROS_EXPORTAR } from '../../app/api/terceros/exportar/route';
 import { COOKIE_SESSION_TOKEN, COOKIE_COMPANY_ID } from '../../app/lib/sesion';
 
 let db: TestDb;
@@ -270,23 +294,58 @@ describe('A14 · V-16 de verdad cerrada: ningún libro se queda sin forma de des
    * Así que se comprueba lo que importa: fuera de la ruta, NADIE nombra un
    * `generarXxx`. Un archivo que importara `generarLibroMayor` para servirlo
    * por su cuenta seguiría haciendo fallar esta prueba.
+   *
+   * A14, compuerta de D-090, V-54 (cierre): la premisa de arriba dejó de ser
+   * cierta el día que A9 escribió `app/api/parametros/puc/exportar/route.ts`
+   * y `app/api/terceros/exportar/route.ts` — dos exportaciones LEGÍTIMAS fuera
+   * de la ruta central, cada una con su propio permiso de módulo. La
+   * invariante real nunca fue «solo la ruta nombra un generador»: es «fuera de
+   * la ruta, un generador solo vale si el mismo archivo escribe el rastro
+   * `EXPORT` (`app.registrar_exportacion`) — igual que hace la ruta central,
+   * en la misma transacción». Por eso el regex ahora también reconoce
+   * `generarMaestro*` (el agujero que dejaba pasar a `terceros-maestro` sin
+   * que esta prueba lo viera), y en vez de exigir cero coincidencias, exige
+   * que cada archivo con un generador también llame el rastro.
    */
   it('nadie fuera de la ruta invoca un generador de libros: no hay descarga sin rastro', () => {
     // La afirmación de A9 se comprueba contra el árbol, no contra su palabra.
-    const salida = execSync('git grep -l -E "src/reports|\\.\\./reports" -- app src', {
-      encoding: 'utf8',
-    }).trim();
-    const importadores = salida ? salida.split(/\r?\n/) : [];
+    //
+    // A14, compuerta de D-090 (V-53): esto usaba `git grep`, que solo mira los
+    // archivos YA RASTREADOS por git. Como ningún agente comitea —eso lo hace
+    // el usuario después de la compuerta—, el archivo nuevo que rompe la
+    // invariante era invisible para esta prueba justo cuando se corría la
+    // compuerta, y aparecía roto en el commit siguiente. Fue exactamente lo que
+    // pasó con `app/api/parametros/puc/exportar/route.ts` en D-089: compuerta
+    // «1345 en verde» y árbol rojo un commit después. Ahora se recorre el
+    // sistema de archivos, que es lo que de verdad se despliega.
+    const importadores = archivosFuente(['app', 'src']).filter((f) => {
+      const fuente = readFileSync(f, 'utf8');
+      return fuente.includes('src/reports') || fuente.includes('../reports');
+    });
     const fuera = importadores.filter(
       (f) => !f.startsWith('src/reports/') && f !== 'app/api/reportes/[libro]/route.ts',
     );
 
     const conGenerador = fuera.filter((f) =>
-      /\bgenerar(Libro|Balance|Certificado|Relacion|Movimiento|Detalle|Estado|Notas|Formato)/.test(
+      /\bgenerar(Libro|Balance|Certificado|Relacion|Movimiento|Detalle|Estado|Notas|Formato|Maestro)/.test(
         readFileSync(f, 'utf8'),
       ),
     );
-    expect(conGenerador).toEqual([]);
+    // V-54: un generador fuera de la ruta ya no es, por sí solo, una falla —
+    // lo es SOLO si el archivo no deja el mismo rastro EXPORT que la ruta
+    // central. `app.registrar_exportacion` es el nombre fijo de esa función
+    // (migración 140); un archivo que lo invoque queda auditado igual que si
+    // pasara por la ruta.
+    const sinRastro = conGenerador.filter((f) => !readFileSync(f, 'utf8').includes('registrar_exportacion'));
+    expect(sinRastro).toEqual([]);
+    // Y de paso: las dos exportaciones legítimas conocidas siguen estando ahí,
+    // para que esta prueba no pase trivialmente por no encontrar candidatos.
+    expect(conGenerador).toEqual(
+      expect.arrayContaining([
+        'app/api/parametros/puc/exportar/route.ts',
+        'app/api/terceros/exportar/route.ts',
+      ]),
+    );
   });
 
   it('los veinte generadores públicos están cableados a un slug', async () => {
@@ -429,4 +488,70 @@ describe('A14 · la ruta no escribe nada en el ledger', () => {
     }
     expect(await huellaLedger()).toBe(antes);
   }, 300_000);
+});
+
+// =============================================================================
+// 5. V-54 (cierre): las dos exportaciones fuera de la ruta central dejan el
+//    mismo rastro EXPORT, con el mismo permiso, y con la misma RLS.
+// =============================================================================
+
+async function exportsDeAuditLog(tenantId: string, entidadId: string): Promise<number> {
+  const { rows } = await db.asAdmin((tx) =>
+    tx.query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM audit_log
+        WHERE accion = 'EXPORT' AND entidad = 'reporte' AND entidad_id = $1 AND tenant_id = $2`,
+      [entidadId, tenantId],
+    ),
+  );
+  return Number(rows[0]!.n);
+}
+
+describe('A14 · V-54 — el PUC efectivo y el maestro de terceros dejan el mismo rastro EXPORT', () => {
+  it('descargar el PUC efectivo escribe una fila EXPORT con entidad_id "puc-efectivo"', async () => {
+    const antes = await exportsDeAuditLog(a.tenantId, 'puc-efectivo');
+    const res = await GET_PUC_EXPORTAR();
+    expect(res.status).toBe(200);
+    expect(await exportsDeAuditLog(a.tenantId, 'puc-efectivo')).toBe(antes + 1);
+  });
+
+  it('descargar el maestro de terceros escribe una fila EXPORT con entidad_id "terceros-maestro"', async () => {
+    const antes = await exportsDeAuditLog(a.tenantId, 'terceros-maestro');
+    const res = await GET_TERCEROS_EXPORTAR();
+    expect(res.status).toBe(200);
+    expect(await exportsDeAuditLog(a.tenantId, 'terceros-maestro')).toBe(antes + 1);
+  });
+
+  it('sin rastro, sin archivo: si `app.registrar_exportacion` no se puede ejecutar, ninguna de las dos rutas entrega el .xlsx', async () => {
+    await db.asAdmin((tx) =>
+      tx.query('REVOKE EXECUTE ON FUNCTION app.registrar_exportacion(text, jsonb) FROM app_user, PUBLIC'),
+    );
+    try {
+      const resPuc = await GET_PUC_EXPORTAR();
+      expect(resPuc.status).toBe(500);
+      expect(resPuc.headers.get('content-type')).toMatch(/json/);
+      const resTerceros = await GET_TERCEROS_EXPORTAR();
+      expect(resTerceros.status).toBe(500);
+      expect(resTerceros.headers.get('content-type')).toMatch(/json/);
+    } finally {
+      await db.asAdmin((tx) =>
+        tx.query('GRANT EXECUTE ON FUNCTION app.registrar_exportacion(text, jsonb) TO app_user'),
+      );
+    }
+  });
+
+  it('RLS: la firma B no descarga ni el PUC ni el maestro de terceros de la firma A', async () => {
+    cookieValores = { [COOKIE_SESSION_TOKEN]: tokenB, [COOKIE_COMPANY_ID]: a.companyId };
+    expect((await GET_PUC_EXPORTAR()).status).toBe(403);
+    expect((await GET_TERCEROS_EXPORTAR()).status).toBe(403);
+  });
+
+  it('apretado a propósito: `solo_lectura` deja de poder exportar (le falta `reporte.exportar`), aunque sí lee el PUC y los terceros', async () => {
+    cookieValores[COOKIE_SESSION_TOKEN] = tokenSoloLectura;
+    const resPuc = await GET_PUC_EXPORTAR();
+    expect(resPuc.status).toBe(403);
+    expect((await resPuc.json()).motivo).toBe('permiso_insuficiente');
+    const resTerceros = await GET_TERCEROS_EXPORTAR();
+    expect(resTerceros.status).toBe(403);
+    expect((await resTerceros.json()).motivo).toBe('permiso_insuficiente');
+  });
 });

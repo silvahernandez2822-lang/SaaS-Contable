@@ -5,12 +5,19 @@
  * archivo y que genera la plantilla. No hay una segunda descripción de las
  * columnas que pueda quedarse vieja: si el importador cambia, esta pantalla
  * cambia con él.
+ *
+ * D-090 (A8): migrada al kit de `app/_ui/` (`Panel`, `Tabla`, `MensajeEstado`).
+ * El acceso a `/carga-masiva` (la portada) lo filtra `carga_masiva.acceder`;
+ * esta subpágina, al entrarse por URL directa, se protege con el mismo
+ * permiso — no tendría sentido que la portada lo exigiera y la subpágina de
+ * cada catálogo no.
  */
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { conSesion } from '../../lib/sesion';
-import { tienePermiso } from '../../../src/auth/permisos';
+import { tienePermiso, PERMISOS } from '../../../src/auth/permisos';
 import { definicionPorClave } from '../../../src/services/carga-masiva/definiciones';
+import { Encabezado, MensajeEstado, Panel, Tabla, Td, Th } from '../../_ui/componentes';
 import { FormularioCarga } from './_formulario';
 
 export const dynamic = 'force-dynamic';
@@ -20,82 +27,120 @@ export default async function PaginaCargarCatalogo({ params }: { params: Promise
   const definicion = definicionPorClave(catalogo);
   if (!definicion) notFound();
 
-  const puede = await conSesion((tx) => tienePermiso(tx, definicion.permiso));
+  const { puedeAcceder, puedeCargar } = await conSesion(async (tx) => ({
+    puedeAcceder: await tienePermiso(tx, PERMISOS.CARGA_MASIVA_ACCEDER),
+    puedeCargar: await tienePermiso(tx, definicion.permiso),
+  }));
+
+  if (!puedeAcceder) {
+    return (
+      <main className="mx-auto max-w-3xl px-6 py-8">
+        <Encabezado titulo={`Cargar ${definicion.titulo}`} />
+        <MensajeEstado tipo="configuracion" titulo="Falta el permiso para entrar a este módulo">
+          Se necesita <code>{PERMISOS.CARGA_MASIVA_ACCEDER}</code>. Pídaselo al administrador de la firma.
+        </MensajeEstado>
+      </main>
+    );
+  }
 
   return (
-    <main style={{ maxWidth: 1000, margin: '0 auto', padding: '24px' }}>
-      <h1>Cargar {definicion.titulo}</h1>
-      <p>{definicion.descripcion}</p>
-      <p>
-        Tabla del sistema: <code>{definicion.tabla}</code> · Módulo:{' '}
-        <Link href={definicion.moduloRuta}>{definicion.modulo}</Link> ·{' '}
-        <a href={`/api/plantillas/${definicion.clave}`}>Descargar la plantilla .xlsx</a>
+    <main className="mx-auto max-w-4xl px-6 py-8">
+      <Encabezado
+        titulo={`Cargar ${definicion.titulo}`}
+        descripcion={definicion.descripcion}
+        acciones={
+          <Link
+            className="text-menor font-semibold text-primario underline dark:text-primario-tinta-oscura"
+            href="/carga-masiva"
+          >
+            Volver a Carga masiva
+          </Link>
+        }
+      />
+
+      <p className="mb-4 text-menor text-texto-suave">
+        Tabla del sistema: <code className="font-mono">{definicion.tabla}</code> · Módulo:{' '}
+        <Link className="font-medium text-primario underline dark:text-primario-tinta-oscura" href={definicion.moduloRuta}>
+          {definicion.modulo}
+        </Link>{' '}
+        ·{' '}
+        <a
+          className="font-medium text-primario underline dark:text-primario-tinta-oscura"
+          href={`/api/plantillas/${definicion.clave}`}
+        >
+          Descargar la plantilla .xlsx
+        </a>
       </p>
 
       {definicion.requierePrevio && definicion.requierePrevio.length > 0 && (
-        <p style={{ border: '1px solid #b45309', background: '#fffbeb', padding: '10px 14px' }}>
-          <strong>Cargue antes estos catálogos:</strong>{' '}
-          {definicion.requierePrevio.map((clave, i) => (
-            <span key={clave}>
-              {i > 0 && ', '}
-              <Link href={`/carga-masiva/${clave}`}>{clave}</Link>
-            </span>
-          ))}
-          . Sin ellos, las filas de este archivo no encuentran a qué referirse y se rechazan todas.
-        </p>
+        <div className="mb-4">
+          <MensajeEstado tipo="configuracion" titulo="Cargue antes estos catálogos">
+            {definicion.requierePrevio.map((clave, i) => (
+              <span key={clave}>
+                {i > 0 && ', '}
+                <Link className="font-semibold underline" href={`/carga-masiva/${clave}`}>
+                  {clave}
+                </Link>
+              </span>
+            ))}
+            . Sin ellos, las filas de este archivo no encuentran a qué referirse y se rechazan todas.
+          </MensajeEstado>
+        </div>
       )}
 
       {(definicion.advertencias ?? []).map((a) => (
-        <p key={a} role="note" style={{ color: '#b91c1c' }}>
-          {a}
-        </p>
+        <div key={a} className="mb-4">
+          <MensajeEstado tipo="configuracion" titulo={a} />
+        </div>
       ))}
 
-      {!puede ? (
-        <p role="alert" style={{ border: '1px solid #b91c1c', padding: '10px 14px' }}>
+      {!puedeCargar ? (
+        <MensajeEstado tipo="error" titulo="Falta el permiso para cargar este catálogo">
           Su sesión no tiene el permiso <code>{definicion.permiso}</code>, que es el que exige el motor para
-          escribir en <code>{definicion.tabla}</code>. Puede descargar la plantilla y prepararla, pero la carga
-          la tiene que hacer alguien con ese permiso. Pídaselo al administrador de la firma en{' '}
-          <Link href="/admin/usuarios">Administración</Link>.
-        </p>
+          escribir en <code>{definicion.tabla}</code>. Puede descargar la plantilla y prepararla, pero la carga la
+          tiene que hacer alguien con ese permiso. Pídaselo al administrador de la firma en{' '}
+          <Link className="font-semibold underline" href="/admin/usuarios">
+            Administración
+          </Link>
+          .
+        </MensajeEstado>
       ) : (
         <FormularioCarga clave={definicion.clave} titulo={definicion.titulo} />
       )}
 
-      <h2>Columnas que espera este archivo</h2>
-      <table style={{ borderCollapse: 'collapse', fontSize: 14 }}>
-        <thead>
-          <tr style={{ textAlign: 'left', borderBottom: '1px solid #cbd5e1' }}>
-            <th style={{ padding: 4 }}>Columna</th>
-            <th style={{ padding: 4, width: 110 }}>¿Obligatoria?</th>
-            <th style={{ padding: 4 }}>Qué espera</th>
-            <th style={{ padding: 4 }}>Valores válidos</th>
-            <th style={{ padding: 4, width: 130 }}>Ejemplo</th>
-          </tr>
-        </thead>
-        <tbody>
-          {definicion.columnas.map((c) => (
-            <tr key={c.nombre} style={{ borderBottom: '1px solid #e2e8f0', verticalAlign: 'top' }}>
-              <td style={{ padding: 4 }}>
-                <code style={{ color: c.obligatoria ? '#b91c1c' : '#1f4e79' }}>
-                  {c.nombre}
-                  {c.obligatoria ? ' *' : ''}
-                </code>
-              </td>
-              <td style={{ padding: 4, color: c.obligatoria ? '#b91c1c' : '#1f4e79' }}>
-                {c.obligatoria ? 'OBLIGATORIA' : 'opcional'}
-              </td>
-              <td style={{ padding: 4 }}>{c.descripcion}</td>
-              <td style={{ padding: 4 }}>
-                {c.valores ? `Uno de: ${c.valores.join(', ')}` : (c.origen ?? '—')}
-              </td>
-              <td style={{ padding: 4 }}>
-                <code>{c.ejemplo || '(vacío)'}</code>
-              </td>
+      <Panel titulo="Columnas que espera este archivo" className="mt-6">
+        <Tabla alturaMaxima={null}>
+          <thead>
+            <tr>
+              <Th>Columna</Th>
+              <Th>¿Obligatoria?</Th>
+              <Th>Qué espera</Th>
+              <Th>Valores válidos</Th>
+              <Th>Ejemplo</Th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {definicion.columnas.map((c) => (
+              <tr key={c.nombre} className="border-t border-borde/60 align-top">
+                <Td>
+                  <code className={c.obligatoria ? 'font-mono text-error-tinta' : 'font-mono text-primario'}>
+                    {c.nombre}
+                    {c.obligatoria ? ' *' : ''}
+                  </code>
+                </Td>
+                <Td className={c.obligatoria ? 'text-error-tinta' : 'text-primario'}>
+                  {c.obligatoria ? 'OBLIGATORIA' : 'opcional'}
+                </Td>
+                <Td>{c.descripcion}</Td>
+                <Td>{c.valores ? `Uno de: ${c.valores.join(', ')}` : (c.origen ?? '—')}</Td>
+                <Td>
+                  <code className="font-mono">{c.ejemplo || '(vacío)'}</code>
+                </Td>
+              </tr>
+            ))}
+          </tbody>
+        </Tabla>
+      </Panel>
     </main>
   );
 }

@@ -18,34 +18,40 @@
  * el archivo en el servidor entre las dos peticiones significaría escribir en
  * disco un archivo que el usuario todavía no ha aceptado cargar. Se prefiere
  * pedirle que lo vuelva a seleccionar.
+ *
+ * D-090 (A8): migrado al kit de `app/_ui/` (`Boton`, `Badge`, `MensajeEstado`,
+ * `Tabla`/`Th`/`Td`) — mismo aspecto que el informe de
+ * `app/parametros/ica-municipios/_carga-masiva.tsx` y el del modal genérico
+ * `CargaMasiva.tsx`.
  */
 import { useActionState } from 'react';
 import { cargarArchivoAction, type EstadoCarga } from '../acciones';
+import { Badge, Boton, Tabla, Td, Th } from '../../_ui/componentes';
 
 export function FormularioCarga({ clave, titulo }: { clave: string; titulo: string }) {
   const [estado, accion, enCurso] = useActionState<EstadoCarga | null, FormData>(cargarArchivoAction, null);
 
   return (
-    <>
-      <form action={accion} style={{ border: '1px solid #334155', padding: 16, marginTop: 16 }}>
+    <div className="flex flex-col gap-4">
+      <form action={accion} className="flex flex-col gap-3 rounded-[var(--radius-tarjeta)] border border-borde bg-superficie-elevada p-5">
+        <label className="flex flex-col gap-1.5">
+          <span className="text-[13px] font-medium text-texto">Archivo de {titulo}</span>
+          <input type="file" name="archivo" accept=".xlsx,.xlsm,.csv" required className="text-[12px]" />
+        </label>
         <input type="hidden" name="catalogo" value={clave} />
-        <div>
-          <label>
-            <strong>Archivo de {titulo}</strong>{' '}
-            <input type="file" name="archivo" accept=".xlsx,.xlsm,.csv" required />
-          </label>
-        </div>
-        <p style={{ fontSize: 13, color: '#475569' }}>
-          Se acepta la plantilla <code>.xlsx</code> o un <code>.csv</code> con los mismos encabezados. Máximo
-          8 MB y 5.000 filas por archivo.
+        <p className="text-metadata text-texto-suave">
+          Se acepta la plantilla <code className="font-mono">.xlsx</code> o un <code className="font-mono">.csv</code>{' '}
+          con los mismos encabezados. Máximo 8 MB y 5.000 filas por archivo.
         </p>
-        <button type="submit" disabled={enCurso}>
-          {enCurso ? 'Validando y cargando…' : 'Validar y cargar'}
-        </button>
+        <div>
+          <Boton tipo="submit" disabled={enCurso}>
+            {enCurso ? 'Validando y cargando…' : 'Validar y cargar'}
+          </Boton>
+        </div>
       </form>
 
       {estado && <Informe clave={clave} estado={estado} accion={accion} enCurso={enCurso} />}
-    </>
+    </div>
   );
 }
 
@@ -62,80 +68,73 @@ function Informe({
 }) {
   const r = estado.resultado;
   return (
-    <section
-      role="status"
-      style={{
-        border: `1px solid ${estado.ok ? '#15803d' : '#b91c1c'}`,
-        background: estado.ok ? '#f0fdf4' : '#fef2f2',
-        padding: 16,
-        marginTop: 16,
-      }}
-    >
-      <h2 style={{ marginTop: 0, color: estado.ok ? '#15803d' : '#b91c1c' }}>
-        {estado.ok ? 'Carga aplicada' : 'No se cargó nada'}
-      </h2>
-      <p>{estado.mensaje}</p>
+    <div className={`rounded-lg border p-4 ${estado.ok ? 'border-exito/40 bg-exito/8' : 'border-error/40 bg-error/8'}`} role="status">
+      <p className="text-cuerpo font-semibold text-texto">{estado.ok ? 'Carga aplicada' : 'No se cargó nada'}</p>
+      <p className="mt-1 text-menor text-texto-suave">{estado.mensaje}</p>
 
       {r && (
-        <ul>
-          <li>Archivo: {r.archivo} (hoja «{r.hoja}»)</li>
-          <li>Filas leídas: {r.filasLeidas}</li>
-          <li>Filas válidas: {r.filasValidas}</li>
-          <li>Filas con error: {r.filasConError}</li>
-          <li>Filas guardadas: {r.filasInsertadas}</li>
-          {r.columnasIgnoradas.length > 0 && (
-            <li>
-              Columnas del archivo que el importador no conoce y se ignoraron:{' '}
-              {r.columnasIgnoradas.join(', ')}
-            </li>
-          )}
-        </ul>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <span className="text-menor tabular-nums text-texto-suave">
+            {r.archivo} · hoja «{r.hoja}» · {r.filasLeidas} filas
+          </span>
+          <Badge tono="exito">{r.filasValidas} válidas</Badge>
+          <Badge tono={r.filasConError ? 'error' : 'neutro'}>{r.filasConError} con error</Badge>
+          <Badge tono="neutro">{r.filasInsertadas} guardadas</Badge>
+        </div>
+      )}
+
+      {r && r.columnasIgnoradas.length > 0 && (
+        <p className="mt-2 text-metadata text-texto-suave">
+          Columnas del archivo que el importador no conoce y se ignoraron: {r.columnasIgnoradas.join(', ')}
+        </p>
       )}
 
       {r && r.errores.length > 0 && (
         <>
-          <h3>Filas con problema</h3>
-          <div style={{ maxHeight: 360, overflowY: 'auto', border: '1px solid #fecaca', background: 'white' }}>
-            <table style={{ borderCollapse: 'collapse', fontSize: 14 }}>
+          <p className="mt-3 text-cuerpo font-semibold text-texto">Filas con problema</p>
+          <div className="mt-2 rounded-md border border-borde">
+            <Tabla alturaMaxima="24rem">
               <thead>
-                <tr style={{ textAlign: 'left', position: 'sticky', top: 0, background: '#fff1f2' }}>
-                  <th style={{ width: 90, padding: 4 }}>Fila</th>
-                  <th style={{ width: 200, padding: 4 }}>Columna</th>
-                  <th style={{ padding: 4 }}>Motivo</th>
+                <tr>
+                  <Th>Fila</Th>
+                  <Th>Columna</Th>
+                  <Th>Motivo</Th>
                 </tr>
               </thead>
               <tbody>
                 {r.errores.map((e, i) => (
-                  <tr key={`${e.numeroFila}-${i}`} style={{ borderTop: '1px solid #fee2e2' }}>
-                    <td style={{ padding: 4 }}>{e.numeroFila}</td>
-                    <td style={{ padding: 4 }}>{e.columna ?? '—'}</td>
-                    <td style={{ padding: 4 }}>{e.motivo}</td>
+                  <tr key={`${e.numeroFila}-${i}`} className="border-t border-borde/60">
+                    <Td numerico className="font-semibold text-error-tinta">{e.numeroFila}</Td>
+                    <Td className="font-mono">{e.columna ?? '—'}</Td>
+                    <Td className="text-texto-suave">{e.motivo}</Td>
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </Tabla>
           </div>
-          <p style={{ fontSize: 13, color: '#475569' }}>
-            El número de fila es el que ve en Excel: la 1 son los encabezados, así que la primera fila de datos
-            es la 2.
+          <p className="mt-2 text-metadata text-texto-suave">
+            El número de fila es el que ve en Excel: la 1 son los encabezados, así que la primera fila de datos es
+            la 2.
           </p>
 
           {!estado.ok && r.filasValidas > 0 && (
-            <form action={accion} style={{ marginTop: 12, borderTop: '1px solid #fecaca', paddingTop: 12 }}>
+            <form action={accion} className="mt-3 border-t border-borde pt-3">
               <input type="hidden" name="catalogo" value={clave} />
               <input type="hidden" name="soloValidas" value="1" />
-              <p>
-                <strong>¿Cargar solo las {r.filasValidas} filas válidas?</strong> Las {r.filasConError} con error
-                se quedarían sin cargar y tendría que subirlas después. Vuelva a elegir el mismo archivo:
+              <p className="text-menor text-texto">
+                <strong>¿Cargar solo las {r.filasValidas} filas válidas?</strong> Las {r.filasConError} con error se
+                quedarían sin cargar y tendría que subirlas después. Vuelva a elegir el mismo archivo:
               </p>
-              <input type="file" name="archivo" accept=".xlsx,.xlsm,.csv" required />{' '}
-              <button type="submit" disabled={enCurso}>
-                Cargar solo las válidas
-              </button>
+              <div className="mt-2 flex items-center gap-2">
+                <input type="file" name="archivo" accept=".xlsx,.xlsm,.csv" required className="text-[12px]" />
+                <Boton tipo="submit" variante="secundario" disabled={enCurso}>
+                  Cargar solo las válidas
+                </Boton>
+              </div>
             </form>
           )}
         </>
       )}
-    </section>
+    </div>
   );
 }

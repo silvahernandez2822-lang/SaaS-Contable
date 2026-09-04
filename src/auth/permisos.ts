@@ -67,6 +67,11 @@ export const PERMISOS = {
   USUARIO_LEER: 'usuario.leer',
   USUARIO_ADMINISTRAR: 'usuario.administrar',
   AUDITORIA_LEER: 'auditoria.leer',
+  /** D-090 (migración 182): acceso al módulo central `/carga-masiva`. Gobierna
+   * SOLO si se ve esa pantalla; los permisos de cada catálogo
+   * (`parametro.editar`, `tercero.editar`, `puc.editar`...) siguen siendo el
+   * candado real de escritura que exige el trigger de cada tabla. */
+  CARGA_MASIVA_ACCEDER: 'carga_masiva.acceder',
 } as const;
 
 export type Permiso = (typeof PERMISOS)[keyof typeof PERMISOS];

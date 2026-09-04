@@ -14,6 +14,15 @@
  *   · Sin cookie de sesión / sesión vencida: 401.
  *   · Sin el permiso `tercero.leer`: 403 — lo comprueba el servicio central de
  *     permisos (`exigirPermiso`), esta ruta solo traduce el error a HTTP.
+ *
+ * RASTRO EXPORT (V-54, cierre) — mismo patrón que `/api/reportes/[libro]`
+ * (`app.registrar_exportacion`, migración 140), ver la nota gemela en
+ * `app/api/parametros/puc/exportar/route.ts`. `app.registrar_exportacion`
+ * exige además `reporte.exportar`, y esta ruta lo comprueba también en JS
+ * antes de generar nada, para fallar con 403 y no con el error crudo de
+ * Postgres. Antes de este cierre, `auxiliar_causacion` y `solo_lectura`
+ * podían descargar el maestro de terceros con solo `tercero.leer`; ahora
+ * necesitan además `reporte.exportar`.
  */
 import { conSesion, SesionNoPresenteError } from '../../../lib/sesion';
 import { SesionInvalidaError, EmpresaNoAutorizadaError } from '../../../../src/db/tenant-context';
@@ -32,7 +41,17 @@ export async function GET(): Promise<Response> {
   try {
     const workbook = await conSesion(async (tx) => {
       await exigirPermiso(tx, PERMISOS.TERCERO_LEER);
-      return generarMaestroTerceros(tx);
+      // Mismo patrón que cada `generarXxx` de `src/reports/libros.ts`: se
+      // exige `reporte.exportar` aquí, en JS, ANTES de generar nada, para que
+      // falle con un `PermisoInsuficienteError` legible y un 403 limpio — y no
+      // con el error crudo de Postgres (SE002) que dispara internamente
+      // `app.registrar_exportacion` si este paso se saltara.
+      await exigirPermiso(tx, PERMISOS.REPORTE_EXPORTAR);
+      const resultado = await generarMaestroTerceros(tx);
+      // Rastro EXPORT de la 14.1 (V-54): dentro de la misma transacción, o el
+      // archivo no se entrega. Ver la nota de cabecera.
+      await tx.query('SELECT app.registrar_exportacion($1, $2::jsonb)', ['terceros-maestro', '{}']);
+      return resultado;
     });
     const buffer = await libroABuffer(workbook);
     const fecha = new Date().toISOString().slice(0, 10);

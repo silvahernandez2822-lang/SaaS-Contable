@@ -1,7 +1,36 @@
 # ESTADO_PROYECTO.md
 
 > Memoria única entre sesiones. Todo agente lo lee al empezar y lo actualiza al terminar.
-> Última actualización: 2026-09-04 — **A14 cierra la COMPUERTA AMPLIADA de D-089: PASA con
+> Última actualización: 2026-09-04 — **V-54 CERRADA (A9, con re-check acotado de A14).** Las dos
+> exportaciones que vivían fuera de la ruta central de reportes (`/api/parametros/puc/exportar` y
+> `/api/terceros/exportar`) ahora escriben el mismo rastro `EXPORT` (`app.registrar_exportacion`,
+> dentro del mismo `conSesion`) que `/api/reportes/[libro]`, y exigen además `reporte.exportar` en JS
+> antes de generar nada — mismo patrón que cada `generarXxx` de `src/reports/libros.ts`. El guardia
+> de `tests/adversarial/compuerta-ola3-ruta.test.ts` se reescribió como V-54 pedía: ya no exige «cero
+> generadores fuera de la ruta», exige «fuera de la ruta, un generador solo vale si el archivo llama
+> `registrar_exportacion`» (y ahora también reconoce `generarMaestro*`). Re-check de A14 acotado a
+> este cambio: rastro correcto (fila `EXPORT` por descarga, `entidad_id` `puc-efectivo`/
+> `terceros-maestro`), «sin rastro, sin archivo» verificado revocando el `EXECUTE`, RLS intacta, sin
+> regresión en el contenido de los dos `.xlsx`. Efecto colateral verificado y documentado, no
+> silenciado: `auxiliar_causacion` y `solo_lectura` ya no pueden exportar PUC/terceros con solo el
+> permiso de módulo — ahora necesitan también `reporte.exportar`, otorgable por usuario sin tocar
+> código. **El árbol de D-090 queda completamente verde**: `tsc` limpio · `next build` OK ·
+> `vitest run` **1388/1388, 74 archivos** (antes 1383/1383; +5 pruebas nuevas, 0 regresiones). Se
+> aclaró además, sin cambio de código, que `contador`/`auxiliar_causacion` sin `auditoria.leer` por
+> defecto no es una limitación del sistema (permisos granulares por usuario, D-066/D-067). Y se
+> consolidó un **«REGISTRO DE DEUDA TÉCNICA ABIERTA»** (sección nueva, permanente) con cada `V-XX` y
+> decisión pendiente de todas las fichas D-001 a D-090, clasificada en bloqueante-antes-de-primer-
+> cliente / decisión-de-producto / cosmético-infraestructura. Ver «V-54 — CIERRE» (dentro de la
+> compuerta de D-090) y «REGISTRO DE DEUDA TÉCNICA ABIERTA». Historial:
+> 2026-09-04 — **A8 entrega D-090 (Carga masiva, Fase 6): modal genérico
+> migrado a `Modal` de D-087, `/carga-masiva` y `/carga-masiva/[catalogo]` migrados al kit (fuera de
+> `PREFIJOS_SIN_MIGRAR`), historial de cargas nuevo (`/carga-masiva/historial`, reusa
+> `auditoria.leer`) y permiso `carga_masiva.acceder` (migración 182, otorgado a `admin_firma`,
+> `admin_tributario`, `contador` y `auxiliar_causacion` — no a `solo_lectura`).** `tsc` limpio ·
+> `next build` OK · `vitest run` 1344/1345 (el único rojo es preexistente de D-089/A9, ajeno a esta
+> pasada — ver el detalle en «D-090 — Carga masiva»). Sin comitear, falta la compuerta de A14. Ver
+> «D-090 — Carga masiva (A8)». Historial:
+> 2026-09-04 — **A14 cierra la COMPUERTA AMPLIADA de D-089: PASA con
 > correcciones, hechas por A14 en la misma pasada.** El módulo PUC queda verificado con arsenal
 > propio, atacando la base por SQL directo desde una sesión de negocio real: la partida contra una
 > cuenta agrupadora muere en el `INSERT` del borrador (`LG004`) y contra una inactiva con `LG009`; la
@@ -3788,6 +3817,180 @@ se movió —el caso 14— se volvió más exigente.
 
 ---
 
+## Compuerta AMPLIADA de D-090 — veredicto de A14 (2026-09-04): **PASA con correcciones, hechas por A14 en la misma pasada — y con UN ROJO AJENO que se deja rojo a propósito (V-54)**
+
+Nada se dio por bueno por el reporte de A8. Se volvió a medir todo desde cero: el diff línea a línea,
+la base por SQL directo desde una sesión de negocio real (`app_user`, RLS activa, token presentado) y
+—la novedad de esta compuerta— el **DOM montado de verdad**, con eventos de teclado reales, porque el
+frente 1 del encargo pedía comportamiento y no un snapshot.
+
+**Lo primero que se verificó fue el estado del árbol que traía el encargo, y esta vez A8 decía la
+verdad**: antes de tocar nada, `npx vitest run` salió **1344/1345**, con el único rojo en
+`tests/adversarial/compuerta-ola3-ruta.test.ts`, exactamente como reportó. Confirmado además con
+`git log -- app/api/parametros/puc/exportar/route.ts`: ese archivo entró en el commit `ee12847`
+(D-089), no en esta pasada. **Pero al confirmarlo apareció algo peor que el rojo: por qué la compuerta
+de D-089 no lo vio (V-53).**
+
+**Infraestructura de pruebas nueva.** El proyecto no tenía forma de montar un componente de React:
+`vitest` corría solo en Node, sin DOM, y `tests/**/*.test.ts` ni siquiera admite `.tsx`. Se añadió
+**`jsdom` como devDependency** (dev, sin coste de despliegue ni de runtime) y las pruebas de interfaz
+se escriben en `.ts` con `React.createElement` —sin JSX, sin tocar el glob de `vitest.config.ts` ni el
+`tsconfig`— y con `// @vitest-environment jsdom` por archivo. **No se añadió Testing Library**: con
+`react-dom/client` + `act` se monta el árbol real y corren los `useEffect` reales, que es lo único que
+hacía falta. Es el primer sitio del proyecto donde se prueba comportamiento de interfaz; queda como
+convención.
+
+**Cuatro archivos de prueba nuevos, 38 pruebas:**
+
+| Archivo | Qué ataca | Pruebas |
+|---|---|---|
+| `tests/app/carga-masiva-modal-teclado.test.ts` | **teclado real** sobre el modal montado: Escape, ciclo de Tab/Shift+Tab en los dos bordes, foco fuera del diálogo, devolución de foco al disparador, el caso «sin permiso» (pocos enfocables) | 10 |
+| `tests/app/carga-masiva-contrato-formulario.test.ts` | el contrato de `name`s con `cargarArchivoAction`, leído del propio `acciones.ts`, en el modal Y en la subpágina | 5 |
+| `tests/adversarial/a14-d090-historial-rls.test.ts` | el historial como superficie de fuga: firma contra firma, empresa contra empresa hermana, acceso revocado a mitad de sesión, `pagina`/`porPagina` forzados desde la URL, caché de página, y que el filtro lo hace la BASE y no la aplicación | 15 |
+| `tests/adversarial/a14-d090-permiso-migracion182.test.ts` | la 182: reparto exacto, `solo_lectura` fuera, reaplicable, sin `UPDATE`/`DELETE`, y que el permiso de acceso **no** vale como permiso de escritura | 8 |
+
+### Punto por punto del encargo
+
+| # | Lo que había que verificar | Veredicto |
+|---|---|---|
+| 1 | **Teclado real en el modal nuevo, no un snapshot** | **NO PASABA. Dos agujeros reales, encontrados y corregidos: V-51.** Se montó `CargaMasiva` de verdad (jsdom + `react-dom/client` + `act`), con un botón enfocable **fuera** del diálogo haciendo de navegación del AppShell, y se despacharon `keydown` reales sobre `document` —que es donde escucha el `useEffect` de `Modal`—. Lo que salió: (a) el selector de enfocables de `Modal` contaba los `<input type="hidden">`, y `CargaMasiva` tiene dos (`catalogo`, `soloValidas`): el «primer enfocable» era uno de ellos, así que el Tab del último elemento hacía `preventDefault()` y luego un `.focus()` que no hace nada en ningún navegador — **el diálogo dejaba de ciclar hacia adelante y el foco se quedaba clavado**; (b) el manejador solo reconocía los dos BORDES, así que con el foco en `body` —lo que pasa **en cuanto se pulsa «Validar y cargar»**, porque el botón se deshabilita y un elemento deshabilitado suelta el foco— el Tab se le dejaba al navegador y este lo llevaba al primer enfocable del **documento**: fuera de un diálogo `aria-modal="true"`. Corregidos los dos en `componentes.tsx`, que es el `Modal` **compartido** de D-087: el agujero (b) estaba vivo en las cuatro pantallas reales que ya lo usan. Escape, clic-fuera, foco inicial y devolución de foco al cerrar sí funcionaban y quedan con prueba. **Límite declarado**: jsdom no mueve el foco solo al pulsar Tab; lo que no simula es el paso INTERMEDIO, que en un navegador es nativo. Lo que decide si el foco se escapa son los bordes, y ahí el movimiento lo hace nuestro código, que sí corre |
+| 2 | **El historial no expone datos de otra empresa (RLS)** | **PASA**, y medido por los tres caminos que pedía el encargo. Firma A ve **solo** su archivo y firma B el suyo; el `count(*)` del total **tampoco** delata cuántas cargas hizo el vecino (si se saltara la RLS, B leería 3 en vez de 1). Dos empresas de la **misma** firma no se ven entre sí: el aislamiento es de doble nivel de verdad. Al usuario se le **revoca el acceso a mitad de sesión** con la sesión viva y el token válido: deja de ver el historial, porque `app.current_company_id()` reconsulta `acceso_usuario_empresa` en cada llamada. Y se demostró que **filtra la base y no la aplicación**: el mismo SQL como dueño devuelve las cuatro filas, el servicio no lleva ni un `tenant_id =`, ni un `company_id =`, ni recibe tenant o empresa por parámetro, y la página no lee más que `pagina` de la URL. **Se añadió también la comprobación de caché** —las tres pantallas son `force-dynamic`—: una página de App Router cacheada sirve HTML de una firma a otra sin que ninguna RLS llegue a enterarse, porque la consulta ni se repite. **Conducta declarada, no defecto**: una carga hecha **sin empresa en contexto** (`company_id IS NULL`, p. ej. municipios de la firma) la ven todas las empresas de SU firma y ninguna de otra — es el contrato de `audit_log` desde la Ola 0, y ahora está medido en vez de supuesto |
+| 2b | **¿`auditoria.leer` es demasiado permisivo para este listado?** | **Decidido: es correcto, y se documenta por qué.** Dato que A8 no menciona y cambia la pregunta: **este historial es el PRIMER consumidor de `auditoria.leer` en todo el producto** (verificado por `grep`: antes de D-090 el permiso existía en el catálogo y no lo usaba ni una pantalla). Así que no se puede apoyar en el argumento fácil de «ya ve más por `/admin/auditoria`». Aun así se acepta: lo que muestra —fecha, quién, catálogo, nombre de archivo, filas OK/error— es estrictamente lo que ese permiso dice responder («¿puede leer el registro de acciones sensibles?»), va acotado a su firma y su empresa, y **no** trae ni una fila de datos del catálogo cargado. Un rol con `auditoria.leer` y sin ningún «editar» vería que alguien cargó terceros, no qué terceros. Con los cinco roles de 014 el caso ni se da: `auditoria.leer` lo tienen solo `admin_firma` y `admin_tributario`, y los dos editan catálogos. **Sí queda una asimetría anotada, no un defecto**: `contador` y `auxiliar_causacion` **pueden cargar y no pueden ver el historial de lo que ellos mismos cargaron** (no tienen `auditoria.leer`). Es defendible —el historial es auditoría, no acuse de recibo— pero es una decisión de producto que conviene que alguien tome a propósito |
+| 3 | **Ninguna carga masiva existente cambió su comportamiento de validación** | **PASA, con la comprobación hecha por dos vías independientes.** (a) `git status`: en `src/services/carga-masiva/` **no hay un solo archivo modificado** — `historial.ts` es nuevo y `importar.ts`, `definiciones.ts`, `ica-municipio.ts` y `plantilla.ts` están intactos. No hay `validar()` ni `insertar()` que haya podido cambiar. (b) Reejecutadas las suites de D-088/D-089 de carga masiva (`ola4-carga-masiva`, `carga-masiva-ica-d088`, `a14-d088-carga-masiva`, `compuerta-ola4`, `valores-tributarios`): **127 en verde**. Y sobre el riesgo concreto que señalaba el encargo —que el refactor a `Modal` renombrara un campo o rompiera `useActionState`— se escribió prueba en vez de leer el diff: se monta el componente, se saca el `<form>` que renderiza y se comparan sus `name` contra los `formData.get('...')` **leídos de `acciones.ts`**. `catalogo` (hidden, con el valor de la prop), `archivo` (file, `accept=".xlsx,.xlsm,.csv"`, `required`) y `soloValidas="1"` siguen exactos, en el modal y en la subpágina. Sin permiso, el modal no renderiza formulario |
+| 4 | **La migración 182 y `solo_lectura`** | **PASA, y es una decisión válida, no un defecto.** Medido con `app.tiene_permiso` desde sesiones reales con cada rol: lo tienen `admin_firma`, `admin_tributario`, `contador` y `auxiliar_causacion`; `solo_lectura` **no**. Y el reparto se comprobó **contra la regla**, no contra la lista: el conjunto de roles con `carga_masiva.acceder` es **idéntico** al de roles con algún «editar» de catálogo, así que un rol de más se vería. Sobre si `solo_lectura` debería poder ENTRAR sin cargar: **no**, y por una razón concreta de esta pantalla — la portada no es informativa, es **quince formularios y quince plantillas**; a `solo_lectura` le enseñaría quince avisos de «Sin permiso» y ni una acción posible, que es peor que no ofrecer la entrada. La plantilla en blanco, único contenido que podría interesarle, la sirve `/api/plantillas/:clave`, que tiene su propio control. **Y lo importante: el permiso nuevo no escala nada.** Se fabricó un rol de firma con `carga_masiva.acceder` y solo permisos de lectura: entra al módulo (`tiene_permiso` = true) y el motor le rechaza el `INSERT` de un tercero con **`SE002`** desde la base. El candado de escritura no se movió ni un milímetro. La 182 es además reaplicable sin duplicar, no hace `UPDATE`/`DELETE`/`DROP`, y no trae ni un número en su parte ejecutable (Regla de Oro 2) |
+| 5 | **La falla preexistente de `compuerta-ola3-ruta`** | **CONFIRMADA preexistente y ajena a D-090 — y al confirmarlo salió algo peor (V-53).** `git log` sitúa `app/api/parametros/puc/exportar/route.ts` en `ee12847` (D-089/A9); nada del diff de A8 lo toca. Hasta ahí, A8 tenía razón. **Pero la pregunta que faltaba es por qué la compuerta de D-089 declaró «1345 en verde» con ese archivo ya escrito**: porque el guardia usaba `git grep`, que solo mira los archivos **ya rastreados por git**, y en este proyecto **ningún agente comitea** — el archivo era invisible para la prueba justo cuando se corría la compuerta, y aparecía roto en el commit siguiente. Un guardia ciego exactamente en el momento en que se le pregunta. **Corregido por A14** (V-53): ahora recorre el sistema de archivos. **El rojo se deja rojo** (V-54): la corrección de fondo es de A9 y no la inventa A14 |
+| 6 | **El modal sin consumidores reales: ¿deja algo peor que antes?** | **PASA. No es regresión, es deuda que ya existía, y se confirmó por `grep` en vez de por el reporte.** `app/_ui/CargaMasiva.tsx` no lo importa ni una pantalla de producción: `/parametros/puc`, `/terceros` y `/parametros` siguen enlazando por `<Link>` a `/carga-masiva/:catalogo`, y `app/diseno/**` usa su **propia** copia. Ningún módulo real quedó peor porque ninguno lo usaba. **Lo que sí cambió de verdad para los módulos reales es el arreglo de V-51**, porque vive en el `Modal` **compartido**: `/terceros` (dirección DIAN), `/parametros` (modal genérico y detalle de impacto) y `/parametros/puc` (uso de cuenta) heredan hoy un foco que ya no se escapa del diálogo. Se comprobó que ninguno de esos cuatro tiene `<input type="hidden">` dentro del `Modal`, así que la mitad (a) de V-51 estaba latente y solo `CargaMasiva` la disparaba; la mitad (b) estaba **viva** en los cuatro |
+| +1 | **Regla de Oro 2 sobre lo nuevo** | **PASA**, con barrido propio además del automático. Ni una tarifa, base, UVT, tope ni calendario en los seis archivos nuevos o tocados ni en la migración 182. Los únicos números son de paginación (25, 200), de límites de archivo y códigos de permiso. Se verificó de paso que los límites que la pantalla **promete** («máx. 8 MB y 5.000 filas») son los que el motor **aplica** (`MAXIMO_FILAS_POR_DEFECTO = 5000` en `importar.ts`, `TAMANO_MAXIMO` en `acciones.ts`): una interfaz que promete un límite distinto del real es otra forma de mentir |
+| +2 | **Los 20 casos dorados, uno por uno** | **PASA. D-090 no movió ni un centavo, y se comprobó en vez de deducirlo.** El diff no toca `src/domain/`, `src/reports/`, el motor, `importar.ts` ni `definiciones.ts`. Reejecutados igualmente los **59** casos y sub-casos: `tests/golden/` (33) y `tests/adversarial/casos-dorados.test.ts` (26), **todos verdes**. Tabla completa abajo |
+
+### Vulnerabilidades encontradas en esta compuerta
+
+| Id | Qué es | Gravedad | Estado |
+|---|---|---|---|
+| **V-51** | **El foco se escapaba del modal compartido, y en el modal de carga masiva encima se quedaba clavado.** Dos defectos en el mismo `useEffect` de `Modal` (`app/_ui/componentes.tsx`, D-087). (a) El selector de enfocables incluía `input:not([disabled])` **sin excluir `type="hidden"`**: en `CargaMasiva`, cuyo formulario tiene `catalogo` y `soloValidas` ocultos, «el primer enfocable» era un input oculto, así que el `Tab` del último elemento hacía `preventDefault()` + `.focus()` sobre algo que ningún navegador enfoca — el ciclo hacia adelante se rompía y el foco se quedaba parado en el último. (b) El manejador solo reconocía los dos bordes: con el foco en `body` el `Tab` se le dejaba al navegador, que lo llevaba al primer enfocable del **documento** — la navegación del AppShell, por debajo de un diálogo `aria-modal="true"`. Y el foco acaba en `body` de forma trivial: en cuanto se pulsa «Validar y cargar», el botón se deshabilita y suelta el foco | **Media.** No es seguridad ni contabilidad: es accesibilidad y control de teclado, en el componente que comparten **cuatro pantallas ya cerradas** (dirección DIAN de Terceros, modal genérico y detalle de impacto de Parámetros, uso de cuenta del PUC). La mitad (b) estaba viva en las cuatro; la (a), latente, solo la disparaba `CargaMasiva`. Un lector de pantalla anuncia contenido de detrás del diálogo, y un usuario de solo teclado pierde el diálogo sin haberlo cerrado | **CORREGIDA por A14** en `componentes.tsx`: se excluyen los `type="hidden"`, los `[hidden]` y los `aria-hidden="true"`, y si el foco **no está dentro** del diálogo el `Tab` lo devuelve (al primero, o al último con Shift). El estado inicial —foco en el contenedor— sigue comportándose igual que antes. **10 pruebas de teclado real** sobre el DOM montado, que fallaban antes del arreglo |
+| **V-52** | **El saneo de la paginación del historial no saneaba `NaN`.** `Math.max(1, Math.trunc(x))` devuelve `NaN` cuando `x` es `NaN` —`Math.max` propaga el `NaN`—, y ese `NaN` llegaba al `OFFSET`: `error: invalid input syntax for type bigint: "NaN"`. Un `pagina` gigantesco tenía la otra cara del mismo problema: `(pagina-1)*porPagina` deja de ser un entero exacto en JavaScript y se serializa en notación científica, otro `bigint` inválido | **Baja.** Hoy no es alcanzable desde la pantalla: `app/carga-masiva/historial/page.tsx` filtra antes con `Number.isFinite`. Pero el servicio se anuncia en su propio comentario como defensivo («tope defensivo para que un parámetro de la URL manipulado a mano no dispare un LIMIT descomunal») y no lo era: es el patrón de V-43, un resguardo que dice cubrir lo que no cubre. El día que un segundo llamador lo use sin filtro previo, es un 500 | **CORREGIDA por A14** en `src/services/carga-masiva/historial.ts`: saneo único que rechaza lo no finito y topa la página en 1.000.000 (200 millones de filas de auditoría, más de las que ninguna firma tendrá). Prueba con `0`, `-1`, `-999`, `NaN`, `1e9` y `3.7` |
+| **V-53** | **El guardia de la ruta de reportes estaba CIEGO justo cuando se le pregunta.** `tests/adversarial/compuerta-ola3-ruta.test.ts` («nadie fuera de la ruta invoca un generador de libros») buscaba con `git grep`, que solo mira los archivos **ya rastreados por git**. En este proyecto ningún agente comitea —comitea el usuario **después** de la compuerta—, así que todo archivo entregado y todavía sin comitear era **invisible** para ese guardia precisamente durante la compuerta. Efecto medido: la compuerta de D-089 declaró «1345 en verde» de buena fe con `app/api/parametros/puc/exportar/route.ts` ya escrito, y el árbol amaneció rojo en el commit siguiente | Media (infraestructura de QA; el patrón de V-43 y V-48 otra vez: un guardia que dice cubrir lo que no cubre — y este además falla en el único momento en que importa) | **CORREGIDA por A14**: el guardia recorre el **sistema de archivos** (`app`, `src`, saltando `node_modules` y los ocultos) en vez del índice de git. Las otras 34 pruebas del archivo siguen verdes, así que el cambio no sobre-reporta |
+| **V-54** | **Se sirven `.xlsx` fuera de la ruta auditada, sin rastro `EXPORT`.** `app/api/parametros/puc/exportar/route.ts` (D-089/A9) llama a `generarLibroPucEfectivo` directamente. `/api/reportes/[libro]` escribe `app.registrar_exportacion(...)` **dentro de la misma transacción** y no entrega el archivo si el rastro no se puede escribir; esta ruta no escribe nada: quién descargó el PUC completo de una empresa no queda en ningún sitio. **Y hay una segunda**, que el guardia no ve por cómo está escrito su regex: `app/api/terceros/exportar/route.ts` sirve `generarMaestroTerceros` —el maestro de terceros entero— igual de sin rastro; se salva solo porque el patrón busca `generar(Libro|Balance|Certificado|...)` y «Maestro» no está en la lista | Media (Regla de Oro 6: la trazabilidad de una extracción en bloque. La seguridad de las dos rutas sí está: sesión, permiso propio y RLS, verificados en la compuerta de D-089 — lo que falta es la huella) | **DECLARADA, NO corregida. BLOQUEA la afirmación “todo verde”, no la entrega de D-090.** Es preexistente (`ee12847`) y ajena a esta pasada. El arreglo tiene dos mitades y la segunda es criterio de arquitectura de reportería, que A14 no inventa: (1) llamar `app.registrar_exportacion` en las dos rutas, dentro del mismo `conSesion`, exactamente como `/api/reportes/[libro]`; (2) reescribir la invariante del guardia, que hoy dice «fuera de la ruta nadie nombra un generador» cuando la realidad ya son **dos** exportaciones legítimas fuera de ella — debería pasar a «fuera de la ruta, un generador solo vale si el archivo escribe el mismo rastro `EXPORT`», y de paso cubrir `generarMaestro*`. **Le corresponde a A9** (con A12 para el criterio del rastro) |
+
+### Los 20 casos dorados, uno por uno (reejecutados por A14 tras D-090 y tras sus propias correcciones)
+
+D-090 no toca el motor, la parametrización ni el ledger: el diff no roza `src/domain/`, `src/reports/`,
+`importar.ts` ni `definiciones.ts`. Aun así se reejecutaron los **59** casos y sub-casos, y ninguno
+cambió de estado respecto de la compuerta de D-089.
+
+| # | Caso | Estado tras D-090 |
+|---|---|---|
+| 1 | Servicio $1.000.000 + IVA 19%, PJ declarante, Bogotá → retefuente $40.000, ReteIVA $28.500 | ✅ pasa, sin cambio. ReteICA de Bogotá sigue sin tarifa por actividad (**V-5**, abierta) |
+| 1b | El ReteICA de Bogotá NO se inventa | ✅ pasa |
+| 2 | Mismo servicio, PN no declarante → $60.000 | ✅ pasa |
+| 3 | Servicio de $80.000 (bajo 2 UVT): no retiene y el motivo queda | ✅ pasa |
+| 4 | Compra de $500.000 (bajo 10 UVT): no retiene, con motivo | ✅ pasa |
+| 5 | Compra de $600.000 a declarante → $15.000 | ✅ pasa (crédito a `236540`) |
+| 6 | Honorarios PJ $200.000 → $22.000 desde el primer peso | ✅ pasa (crédito a `236515`) |
+| 7 | Arrendamiento de inmueble no retiene; de mueble por igual valor sí ($16.000) | ✅ pasa (crédito a `236530`) |
+| 8 | Servicio en Medellín: ReteICA 2‰ y base 15 UVT = $785.610 | ✅ pasa |
+| 9 | Mismo servicio en Cali: base de servicios 3 UVT = $157.122 | ✅ pasa |
+| 10 | Principal en Bogotá, secundaria en Cali, operación en Cali: manda la actividad de Cali | ✅ pasa |
+| 10b | Varias actividades en el mismo municipio: desempate configurable | ✅ pasa |
+| 11 | Vigilancia $5.000.000 con AIU $500.000: retiene 2% sobre el AIU = $10.000 | ✅ pasa |
+| 12 | Proveedor del exterior: ReteIVA al 100% = $190.000 | ✅ pasa |
+| 12b | Exterior sin regla parametrizada: revisión manual | ✅ pasa |
+| 13 | Régimen SIMPLE: tratamiento diferenciado según parametrización | ✅ pasa |
+| 14 | Tres líneas de conceptos distintos: retención por concepto, agregada ($77.000) en tres subcuentas | ✅ pasa |
+| 14b | Partir un concepto en dos líneas no esquiva la base mínima | ✅ pasa |
+| 15 | Nota crédito: reversa proporcional por asiento nuevo, sin mutar el original | ✅ pasa. **V-50 sigue abierta y devuelta a A3** |
+| 15b | Nota crédito por el total reversa exactamente lo retenido | ✅ pasa |
+| 16 | Factura de junio procesada en julio: manda la fecha del hecho | ✅ pasa |
+| 17 | Cambio de tarifa con vigencia futura: lo publicado no cambia | ✅ pasa |
+| 18 | Reprocesar 10 veces la misma factura: asiento idéntico las 10 | ✅ pasa |
+| 19 | Segunda factura del mismo proveedor con la misma descripción: **cero llamadas al LLM** | ✅ pasa |
+| 20 | Usuario del tenant A consulta datos del tenant B: cero filas, en la base | ✅ pasa, **y esta compuerta le añadió una superficie nueva**: el historial de cargas, atacado firma contra firma, empresa contra empresa hermana y con el acceso revocado a mitad de sesión |
+
+### Estado del árbol tras la compuerta
+
+`npx tsc --noEmit` **limpio** · `npx next build` **OK** (incluye `/carga-masiva`,
+`/carga-masiva/[catalogo]` y `/carga-masiva/historial`) · `npx vitest run` **1383 pruebas, 1382 en
+verde, 74 archivos** (base del encargo = 1345 pruebas / 70 archivos, de las que 1344 verdes;
+**+38 pruebas en 4 archivos nuevos, 0 regresiones**).
+
+**El único rojo es V-54, y se deja rojo a propósito**: es preexistente (`ee12847`), ajeno a D-090, y
+su arreglo incluye una decisión de arquitectura de reportería que le corresponde a A9. Silenciarlo
+para poder decir «todo verde» habría sido repetir, agravada, la mentira que V-53 producía sin querer.
+**Quien comitee D-090 tiene que saber que comitea con ese rojo dentro y con V-54 anotada.**
+
+Las migraciones **179**, **180**, **181** y **182** y los seeds `011`/`050`/`070` siguen **sin aplicar
+a la Neon**. **A14 no comitea.** La verificación en navegador real es un paso aparte, del usuario:
+esta compuerta ejercitó el teclado sobre el DOM montado, que es lo más cerca que se puede llegar sin
+navegador, pero no sustituye pulsar Tab con un dedo.
+
+**Lo que A14 tocó de otros agentes, y por qué:** `app/_ui/componentes.tsx` (V-51, es de **A8**/D-087),
+`src/services/carga-masiva/historial.ts` (V-52, es de **A8**),
+`tests/adversarial/compuerta-ola3-ruta.test.ts` (V-53, guardia **propio** de A14) y
+`package.json`/`package-lock.json` (`jsdom` como devDependency, para poder montar componentes).
+Ninguna aserción ajena se relajó, y la única que se reescribió —el guardia de V-53— quedó **más**
+estricta, no menos: sigue roja, ahora por el motivo correcto y desde el momento correcto.
+
+**Nota sobre `next-env.d.ts`:** aparece modificado en el `git status` y **no lo escribió nadie a
+mano** — lo regenera Next según se haya corrido `next dev` (`./.next/dev/types/...`) o `next build`
+(`./.next/types/...`). El propio archivo dice «should not be edited». Se puede comitear o descartar
+indistintamente; volverá a cambiar al siguiente `dev`.
+
+### V-54 — CIERRE (A9, con re-check de A14, 2026-09-04)
+
+**El rojo que la compuerta de D-090 dejó a propósito ya no lo está. Cerrado, no una ficha nueva.**
+
+Lo que hizo A9: `app/api/parametros/puc/exportar/route.ts` y `app/api/terceros/exportar/route.ts`
+ahora pasan por el mismo rastro `EXPORT` que `/api/reportes/[libro]` — llaman a
+`app.registrar_exportacion(entidad_id, detalle)` **dentro del mismo `conSesion`** que generó el
+libro, después de generarlo y antes de devolverlo; si el rastro no se puede escribir, el archivo no
+se entrega (mismo criterio que la ruta central). `entidad_id` es `'puc-efectivo'` y
+`'terceros-maestro'` respectivamente. Como `app.registrar_exportacion` exige además el permiso
+`reporte.exportar` (migración 140), y antes esa exigencia solo vivía dentro de la función SQL (un
+`PermisoInsuficienteError` de Postgres crudo, no el de la aplicación), las dos rutas ahora también
+llaman `exigirPermiso(tx, PERMISOS.REPORTE_EXPORTAR)` en JS **antes** de generar nada — el mismo
+patrón que cada `generarXxx` de `src/reports/libros.ts` — para fallar con un 403 legible en vez de
+un 500.
+
+El guardia de `tests/adversarial/compuerta-ola3-ruta.test.ts` (el mismo que V-53 corrigió para mirar
+el sistema de archivos) se reescribió como V-54 lo dejó pedido: ya no exige «cero generadores fuera
+de la ruta central», exige «fuera de la ruta, un generador solo vale si el mismo archivo llama
+`registrar_exportacion`» — y el regex ahora también reconoce `generarMaestro*` (el hueco por el que
+`terceros-maestro` se colaba sin que el guardia lo viera). Una aserción nueva confirma que las dos
+exportaciones conocidas siguen apareciendo como candidatas, para que la prueba no pase en vacío por
+no encontrar nada.
+
+**Re-check de A14, acotado a este cambio (no una re-compuerta completa de D-090):**
+
+- **Rastro de auditoría correcto.** Se descargó el PUC y el maestro de terceros por HTTP contra la
+  base de pruebas real (PGlite): cada descarga deja **una** fila `EXPORT` en `audit_log` con
+  `entidad = 'reporte'` y `entidad_id` = `'puc-efectivo'` / `'terceros-maestro'`. Prueba fuerte
+  gemela a la que ya protegía `/api/reportes/[libro]`: se **revocó** `EXECUTE` sobre
+  `app.registrar_exportacion` y las dos descargas devolvieron **500 sin un solo byte de archivo** —
+  «exportar sin auditar» sigue sin ser un estado alcanzable en ninguna de las tres rutas.
+- **RLS intacta en las filas nuevas.** La sesión de la firma B pidiendo la empresa de la firma A
+  recibe 403 en las dos rutas nuevas, igual que ya pasaba antes del cambio; no se tocó ninguna
+  política de `audit_log` ni de `account`/`third_party`.
+- **Sin regresión en el contenido exportado.** `generarLibroPucEfectivo` y `generarMaestroTerceros`
+  no se tocaron: las hojas, columnas y datos de los dos `.xlsx` son los mismos de antes (cubierto por
+  `tests/reports/puc-efectivo.test.ts` y `tests/services/terceros-d084.test.ts`, que no cambiaron).
+- **Efecto colateral verificado y documentado, no silenciado**: como `reporte.exportar` ahora se
+  exige además del permiso de módulo (`parametro.puc.leer` / `tercero.leer`), los roles de sistema
+  `auxiliar_causacion` y `solo_lectura` —que antes de este cierre **sí** podían descargar el PUC y el
+  maestro de terceros con solo el permiso de lectura del módulo— ya **no** pueden por defecto; se
+  confirmó con una prueba explícita (`solo_lectura` recibe 403 en las dos rutas después del cambio,
+  con `motivo: 'permiso_insuficiente'`). No es una regresión oculta: es la misma vara que ya se le
+  aplicaba a los veinte libros de `/api/reportes/[libro]` desde que existen, extendida a los dos que
+  vivían fuera. El modelo de permisos es granular por usuario (ver nota de aclaración más abajo en
+  esta misma ficha D-090): una firma que necesite que un `solo_lectura` puntual exporte se lo otorga
+  sin tocar código.
+
+**Veredicto: PASA.** 5 pruebas nuevas en `tests/adversarial/compuerta-ola3-ruta.test.ts` (que ahora
+tiene 40, no 35). `npx tsc --noEmit` limpio · `npx next build` OK · `npx vitest run` **1388 pruebas,
+1388 en verde, 74 archivos** (base antes de este cierre: 1383/1383/74; +5, 0 regresiones). **El árbol
+queda completamente verde: ya no hay ningún rojo declarado a propósito.**
+
+---
+
 ## D-089 — Módulo PUC / Plan de cuentas: MODELO DE DATOS (A2, migración 179)
 
 **Alcance de esta entrega: solo esquema.** Interfaz, servicio y compuerta los entregan otros agentes
@@ -4099,6 +4302,10 @@ revienta en el `INSERT` de la partida.
 
 | Id | Qué es | Gravedad | Estado | De quién |
 |---|---|---|---|---|
+| **V-51** | **El foco se escapaba del `Modal` compartido, y en el de carga masiva encima se quedaba clavado.** Dos defectos en el mismo `useEffect` de `app/_ui/componentes.tsx` (D-087), encontrados montando el componente de verdad y despachando teclas reales. (a) El selector de enfocables no excluía `input[type="hidden"]`: en `CargaMasiva`, con `catalogo` y `soloValidas` ocultos, «el primer enfocable» era un input oculto, así que el `Tab` del último elemento hacía `preventDefault()` + `.focus()` sobre algo que ningún navegador enfoca y el ciclo se rompía. (b) El manejador solo reconocía los dos bordes: con el foco en `body` el `Tab` se le dejaba al navegador, que lo llevaba al primer enfocable del **documento** —la navegación del AppShell, por debajo de un diálogo `aria-modal="true"`—. Y el foco cae en `body` trivialmente: al pulsar «Validar y cargar» el botón se deshabilita y lo suelta | **Media**: accesibilidad y control de teclado, no seguridad ni contabilidad. Pero vive en el componente que comparten **cuatro pantallas ya cerradas** (dirección DIAN de Terceros, modal genérico y detalle de impacto de Parámetros, uso de cuenta del PUC): la mitad (b) estaba **viva** en las cuatro; la (a), latente, solo la disparaba `CargaMasiva` | **CORREGIDA por A14**: se excluyen `type="hidden"`, `[hidden]` y `aria-hidden="true"`, y si el foco no está dentro del diálogo el `Tab` lo devuelve. **10 pruebas de teclado real sobre el DOM montado** (`tests/app/carga-masiva-modal-teclado.test.ts`), que fallaban antes del arreglo. Para poder escribirlas se añadió `jsdom` como devDependency | era de **A8** (D-087) |
+| **V-52** | **El saneo de la paginación del historial no saneaba `NaN`.** `Math.max(1, Math.trunc(x))` propaga el `NaN` hasta el `OFFSET` (`invalid input syntax for type bigint: "NaN"`), y un `pagina` gigantesco produce un `offset` que ya no es entero exacto en JavaScript y se serializa en notación científica: otro `bigint` inválido | **Baja**: hoy no es alcanzable desde la pantalla, que filtra antes con `Number.isFinite`. Pero el servicio se anuncia a sí mismo como defensivo y no lo era — el patrón de V-43: un resguardo que dice cubrir lo que no cubre | **CORREGIDA por A14** en `src/services/carga-masiva/historial.ts`: saneo único que rechaza lo no finito y topa la página en 1.000.000. Prueba con `0`, `-1`, `-999`, `NaN`, `1e9` y `3.7` | era de **A8** |
+| **V-53** | **Un guardia de QA estaba CIEGO justo en el momento en que se le pregunta.** `tests/adversarial/compuerta-ola3-ruta.test.ts` buscaba con `git grep`, que solo mira archivos **ya rastreados por git**. Como en este proyecto ningún agente comitea —comitea el usuario **después** de la compuerta—, todo archivo entregado y aún sin comitear era invisible para el guardia precisamente durante la compuerta. Efecto medido: la compuerta de D-089 declaró «1345 en verde» de buena fe con `app/api/parametros/puc/exportar/route.ts` ya escrito, y el árbol amaneció rojo en el commit siguiente | Media (infraestructura de QA; V-43 y V-48 otra vez, con el agravante de que falla en el único momento en que importa) | **CORREGIDA por A14**: el guardia recorre el sistema de archivos (`app`, `src`) en vez del índice de git. Las otras 34 pruebas del archivo siguen verdes: no sobre-reporta | era de **A14** (guardia propio) |
+| **V-54** | **Se sirven `.xlsx` fuera de la ruta auditada, sin rastro `EXPORT`.** `app/api/parametros/puc/exportar/route.ts` (D-089/A9) llama a `generarLibroPucEfectivo` directamente; `/api/reportes/[libro]` escribe `app.registrar_exportacion(...)` dentro de la misma transacción y **no entrega el archivo si el rastro no se puede escribir**, esta ruta no escribe nada. **Y hay una segunda que el guardia no ve**: `app/api/terceros/exportar/route.ts` sirve `generarMaestroTerceros` —el maestro de terceros entero— igual de sin rastro, y se salva solo porque el regex busca `generar(Libro\|Balance\|Certificado\|...)` y «Maestro» no está en la lista. Quién descargó el PUC o el maestro de terceros completos de una empresa no queda registrado en ningún sitio | Media (**Regla de Oro 6**, trazabilidad de una extracción en bloque. La seguridad de las dos rutas sí está —sesión, permiso propio y RLS, verificados en la compuerta de D-089—: lo que falta es la huella) | **DECLARADA, NO corregida. Es el único rojo del árbol y se deja rojo a propósito.** Preexistente (`ee12847`), ajena a D-090. El arreglo son dos mitades y la segunda es criterio de arquitectura de reportería, que A14 no inventa: (1) llamar `app.registrar_exportacion` en las dos rutas dentro del mismo `conSesion`; (2) reescribir la invariante, que hoy dice «fuera de la ruta nadie nombra un generador» cuando ya hay **dos** exportaciones legítimas fuera de ella — debería pasar a «fuera de la ruta, un generador solo vale si escribe el mismo rastro `EXPORT`», y cubrir también `generarMaestro*` | **A9** (con **A12** para el criterio del rastro) |
 | **V-47** | **Cualquier firma podía BORRAR el catálogo global compartido y APROPIARSE de sus filas.** Medido por A14 con SQL directo desde una sesión de negocio real (`app_user`, RLS activa, token presentado): `DELETE FROM account WHERE tenant_id IS NULL` dejó el catálogo base en **cero filas** —con el PUC de D-089, **2.506 cuentas que desaparecen para todas las firmas de la plataforma**— y `UPDATE account SET tenant_id = <el mío>` movió una fila compartida al patrimonio de una firma, quitándosela a las demás. La causa no es de D-089 ni de `account`: es la **política RLS híbrida de la Ola 0** (012), cuyo `USING` incluye las filas globales para poder **leerlas** mientras un `DELETE` no tiene `WITH CHECK` que lo detenga. **Y no era solo `account`**: por el mismo camino se borraba el valor global de la **UVT** (sin UVT el motor deja de calcular para toda la plataforma), un **municipio** o una **actividad CIIU** del catálogo nacional, una vigencia global de `tax_rule` **todavía no vigente** (`PR003` solo cubre las que ya rigen) y los **permisos de un rol del sistema** vía `role_permission` | **Alta**: escritura destructiva entre firmas sobre datos compartidos. Regla de Oro 7 en su forma literal, y la 3 por la puerta de atrás (si una vigencia global se puede borrar, «recalcular enero en julio da lo mismo» deja de ser cierto) | **CORREGIDA por A14**: migración **181** (`CT001`). Desde una sesión de negocio, una fila con `tenant_id IS NULL` es de **solo lectura** en las 18 tablas de RLS híbrida más `role_permission`; sin sesión (migraciones, seeds, plataforma) no se aplica, con prueba. El trigger va con sufijo `_zz_` para dispararse el último y no robarle el diagnóstico a `PU001`/`PR001`/`PR003`. Una prueba deriva las tablas híbridas de la **forma de su política** en `pg_policies` y exige que todas lleven el guardia: el inventario no se mantiene a mano | era de **A2** (política de la Ola 0), agravado por el volumen que **D-089/A1** dio al catálogo global |
 | **V-48** | **El barrido «`db/seeds` es dato, no código» excluía un directorio que el cargador SÍ aplica.** D-089/A1 excluyó `_fuentes/` **entero** del barrido, pero `src/db/seed.ts` recorre todos los subdirectorios de `db/seeds/` y ejecuta cualquier `.sql` que encuentre. Un seed puesto ahí habría entrado a la base sin pasar por ninguna de las cuatro comprobaciones: ni «ningún seed hace UPDATE/DELETE», ni «ningún seed define lógica», ni «toda fila normativa declara su norma de respaldo» | Media (infraestructura de QA; el patrón de V-43: un guardia que dice cubrir lo que no cubre) | **CORREGIDA por A14**: la excepción se acota a los archivos que **no** son `.sql` dentro de `_fuentes/`, y una prueba nueva exige que el conjunto auditado sea **idéntico** al que aplica el cargador | era de **A1** |
 | **V-49** | **Reaparece el patrón de V-45 en otra plantilla.** `src/services/carga-masiva/definiciones.ts` traía `base_minima_servicios_uvt` con ejemplo **`4`** y `base_minima_compras_uvt` con ejemplo **`27`**: las bases mínimas de la sección 7.5, es decir valores tributarios reales escritos en el código, y además `plantilla.ts` los escribe en la **fila 2, que es fila de DATOS**. Quien pegara su lista sobre las filas de ejemplo cargaba las bases mínimas del ejemplo como si fueran las de su municipio. Las demás celdas numéricas de esa plantilla ya eran marcadores obviamente falsos (`0,5`, `0`, `1`); estas dos eran las de verdad | Media-alta (Regla de Oro 2 y advertencia §17.5) | **CORREGIDA por A14**: las dos celdas van vacías y el formato se explica en la descripción de la columna. Las 55 pruebas de carga masiva siguen verdes | era de **A8** |
@@ -5161,6 +5368,68 @@ ISO 27001 / SOC 2, y habilitación DIAN. Están declarados como no hechos en `do
 Para que quede dicho, porque es fácil suponer lo contrario: el ledger inmutable, el aislamiento entre firmas, el motor de retenciones con sus 20 casos dorados, la parametrización sin desplegar código, la memoria de clasificación que evita llamar al LLM, la bandeja multiempresa con aprobación en lote, los libros y estados financieros en Excel, la exógena, el arranque sin SQL y los datos de ejemplo **están construidos, probados y verificados de forma adversarial**. Lo que falta arriba es casi todo **dato, contrato, despliegue o juicio humano** — no motor.
 
 
+## REGISTRO DE DEUDA TÉCNICA ABIERTA
+
+**Esta lista se revisa completa antes de dar de alta al primer cliente real en producción — ningún
+ítem de la categoría 1 puede quedar abierto en ese momento.**
+
+Sección única y permanente, consolidada el 2026-09-04 (dispatch de cierre de V-54) revisando todas
+las fichas D-001 a D-090. Reúne cada `V-XX` y cada decisión pendiente que sigue **sin cerrar** hoy —
+no repite lo que ya está `CORREGIDA`/`CERRADA` en su ficha de origen; para el detalle completo y la
+verificación de cada corrección, ver la ficha citada en la columna «Origen». Tres categorías:
+
+1. **BLOQUEANTE ANTES DE PRIMER CLIENTE REAL** — afecta cálculo o cifras normativas.
+2. **DECISIÓN DE PRODUCTO PENDIENTE** — no es un bug; se resuelve cuando aplique el caso real.
+3. **COSMÉTICO / INFRAESTRUCTURA** — sin riesgo de cálculo.
+
+### 1. Bloqueante antes de primer cliente real
+
+| Código | Descripción | Origen | Estado actual |
+|---|---|---|---|
+| V-5 | Sin tarifas de ReteICA por actividad para Bogotá (código municipal de 5 dígitos, no cabe en `ciiu_activity`) ni para Cali (Acuerdo 0321 de 2011, ni un número cargado) | Ola 1 (A1/A2), reconfirmada en D-086/D-087/D-088/D-089/D-090 | **ABIERTA.** No inventada a propósito (§17.5). Verificación normativa humana + decisión de esquema para el código municipal de 5 dígitos |
+| V-50 | La red de seguridad de D-089 (`verificarCuentasImputables`) no cubre `causarNotaCredito`: una retención de la nota puede apuntar a una cuenta no imputable y morir con `LG004` crudo en vez de ir a revisión manual con motivo legible | D-089, compuerta A14 | **DECLARADA, no corregida.** El arreglo obvio rompe la garantía de reversa de A2; necesita excepción de diseño del motor. **A3** |
+| Clase 7 del PUC sin detalle | Los grupos `71`–`74` (Costos de producción u operación) no tienen sus cuentas de 4 dígitos ni subcuentas verificadas; las 4 filas `7105/7205/7305/7405` existentes las puso tanda2 de memoria, tampoco verificadas | D-089/A1 | **PENDIENTE.** Una empresa manufacturera con costeo por órdenes no tiene el detalle en el catálogo global; debe cargar PUC propio o esperar el cotejo |
+| Cotejo humano del catálogo PUC completo | 2.506 cuentas cargadas desde una transcripción de `puc.com.co` (no el Diario Oficial); `naturaleza`, `permite_movimiento` y `requiere_tercero` derivados por regla de A1 | D-089/A1 | **PENDIENTE de cotejo humano** contra el Diario Oficial, en particular naturaleza de contra-cuentas dudosas (`1596`, `1798`) |
+| Tarifas de retefuente anteriores al 1-jul-2026 | La sección 7.2 del mega-prompt solo trae la tabla posterior al Decreto 572 de 2025 | Ola 1 (A1) | **PENDIENTE.** Afecta el caso dorado 16 en su forma literal para fechas anteriores al corte |
+| Mapeo NIIF (`niif_mapping`, 68 filas) | Reconstruido de memoria por A1, no transcrito del Decreto 2420 de 2015 | Ola 1 (A1) | **PENDIENTE de cotejo**, con `requiere_verificacion_humana = true` ya puesto |
+| Descripciones de las 447 clases CIIU (D-088) | Transcritas del Excel del usuario, pueden abreviar el literal oficial DANE | D-088/A1 | **PENDIENTE de cotejo** contra CIIU Rev. 4 A.C. (código y sección/división sí verificados) |
+| 99 subclases CIIU de 5 dígitos de Bogotá | `ciiu_codigo_ck` exige 4 dígitos; son código municipal, no CIIU nacional (misma raíz que V-5) | D-088/A1 | **PENDIENTE de decisión de esquema.** Sin ellas, la carga masiva de ICA de Bogotá por subclase no resuelve esas filas |
+| ReteICA Bucaramanga y Cartagena | Marcados *(verificar)* en la sección 7.5, sin valor que copiar | Ola 1 (A1) | **PENDIENTE.** Ningún dato que cargar hasta verificación |
+| Tabla completa de autorretención por CIIU | La sección 7.3 solo trae 4 valores de ejemplo, no la tabla completa | Ola 1 (A1) | **PENDIENTE.** Las 4 filas cargadas llevan `requiere_verificacion_humana` |
+| Tabla progresiva de retención de salarios (art. 383 ET) | La sección 7 da el umbral y el rango, no los tramos marginales | Ola 1 (A1) | **PENDIENTE.** Ningún caso dorado la ejercita hoy |
+| SMMLV y auxilio de transporte por año | La sección 7 no trae valores (`smmlv_value` en 0 filas) | Ola 1 (A1) | **PENDIENTE.** Alimenta bases de cálculo (exención de salud/pensión, auxilio) el día que se active causación de nómina |
+| Calendario tributario (`tax_calendar`) | La sección 7.7 da las ventanas de exógena, no el escalonamiento por dígito de NIT | Ola 1 (A1) | **PENDIENTE.** Ningún caso dorado lo ejercita hoy |
+| Honorarios PN al 11% por acumulado anual > 3.300 UVT | Exige un acumulado por tercero y año gravable que hoy no tiene dónde vivir en el modelo | D-088/A3 | **DECLARADO, no resuelto en silencio.** Ningún caso dorado lo ejercita; falta el acumulador |
+| Un XML real de la DIAN, extremo a extremo | Los 11 fixtures son construidos a mano; CUFE no criptográficamente auténtico; 5 puntos de A4 sin re-verificar (ubicación/`schemeName` del CUFE, códigos DIAN reales, `DianExtensions`, forma real del `AttachedDocument`) | Ola 0 (A4) | **PENDIENTE.** Ninguna captura de producción sustituida todavía |
+
+### 2. Decisión de producto pendiente
+
+| Código | Descripción | Origen | Estado actual |
+|---|---|---|---|
+| V-42-bis | Criterio de «qué municipio debe tener regla de ReteICA» ahora que `municipality` es el catálogo nacional de 1.122 filas | D-087, compuerta A14 | **BLOQUEADO a propósito.** Es decisión normativa/de producto, no de QA. **A1 + A8** |
+| `retencionesPorPeriodo` conserva borradores | Conserva a propósito las filas de asientos en **borrador** (función diagnóstica: por qué NO se retuvo). Quien lo lea como «lo practicado en el período» se equivoca por un asiento pendiente de aprobar | Lote posterior a la Ola 3 (A9) | **Decisión de A9**: si debe marcarse el estado en la columna para que no se preste a lectura equivocada |
+| Anclaje de la ventana de acumulación de ICA por periodo | El motor la ancla al año calendario (desde el 1-ene del año del hecho); ningún acuerdo municipal consultado dice desde cuándo cuenta la ventana | D-088/A3 | **Decisión normativa pendiente de confirmación del cliente final.** Alternativa no elegida: anclar a `vigente_desde` de la regla municipal |
+| Cruce del umbral de ICA a mitad de periodo | El motor retiene solo hacia adelante: lo ya causado antes del cruce no se ajusta retroactivamente; la nota crédito tampoco descuenta del acumulador | D-088/A3 | **Decisión normativa pendiente de confirmación del cliente final.** Es la lectura conservadora y reversible; la contraria exige reescribir asientos publicados (Regla de Oro 1) |
+| `CargaMasiva.tsx` sin consumidores reales | El modal compartido sigue sin un solo consumidor de producción; `/parametros/puc`, `/terceros` y `/parametros` enlazan a `/carga-masiva/:catalogo` en vez de engancharlo como acción secundaria in situ | D-090 | **Decisión de diseño pendiente**, sin dueño asignado, para cualquier agente que reabra esas tres pantallas |
+| `contador`/`auxiliar_causacion` sin `auditoria.leer` por defecto | La plantilla base de roles no les da acceso al historial de carga masiva | D-090 | **ACLARADA (2026-09-04): no requiere fix.** El modelo de permisos es granular por usuario (D-066/D-067); una firma lo otorga sin tocar código. Ver «Pendiente inmediato de D-090», punto 4 |
+| Pantallas de administración que faltan (B-4) | PUC/mapeo NIIF, alta de municipios y CIIU, matriz de agentes ReteIVA, calendario tributario, formatos de exógena y conceptos de causación no son editables desde la interfaz (el modelo de datos sí los soporta) | «Qué le falta al sistema…», A0 | **Pendiente de priorización de producto.** A8 |
+| Causación de ventas fuera de alcance | El producto solo procesa facturas de compra por diseño; los formatos 1003/1006 de exógena quedan incompletos sin causar ventas por otra vía | «Qué le falta al sistema…», A0 | **Decisión de alcance del mega-prompt**, no deuda a saldar dentro de este proyecto |
+
+### 3. Cosmético / infraestructura
+
+| Código | Descripción | Origen | Estado actual |
+|---|---|---|---|
+| Aviso de build de `dns-fix.ts` | `src/db/dns-fix.ts` importa `node:dns`; el Edge Runtime lo rechaza con un warning. El build termina en exit 0 igual | Lote posterior a la Ola 3 (A15/infra) | **ABIERTO, sin riesgo.** Es de quien lo introdujo (A15/infra) |
+| V-30, residual acotado | El filtro de las consultas de retenciones deja pasar filas con `journal_entry_id IS NULL` para no romper fixtures de A9/A11 que insertan `retention_applied` sin asiento. Con V-29 corregido el motor ya no produce esas filas: el residuo es solo de pruebas | Lote posterior a la Ola 3 (A14) | **ABIERTO, sin riesgo real.** Correcto a futuro: exigir `EXISTS(... posted)` a secas y realistar los fixtures. **A9/A11** |
+| Etiqueta del commit `40fc658` | El commit está rotulado «D-087: Fase 4…» pero también contiene la base de D-088 (migración `177`, modelo de datos de A2) — el historial de git no refleja el corte real entre fichas | Observación del usuario, 2026-09-04 | **ABIERTO, cosmético.** No afecta el árbol ni el contenido, solo la trazabilidad del historial de commits |
+| Dependencia de una Neon real para `npm run dev` local | PGlite es en memoria y por proceso: `migrar`/`sembrar`/`dev` corridos como procesos Node separados sin `DATABASE_URL` no comparten datos entre sí (documentado en el README como comportamiento esperado). Para navegar la app localmente sin apuntar a una Neon real haría falta persistir/compartir una única instancia de PGlite entre procesos | Decisión D-003, señalado por el usuario 2026-09-04 | **ABIERTO, sin dueño.** No es un defecto: es la consecuencia conocida de D-003 (PGlite solo para pruebas). Cambiarlo es infraestructura no trivial (PGlite a archivo + servidor único), no una corrección puntual |
+| V-11 — la aprobación revienta con error crudo si el despliegue no reenvía la IP del cliente | `approval.ip` es `inet NOT NULL`; sin `x-forwarded-for`/`x-real-ip` el `INSERT` falla con el error crudo de Postgres | Ola 2, reconfirmada en cada compuerta posterior | **ABIERTA, declarada y medida.** No hay fuga ni corrupción (el ledger no queda a medias); es configuración de despliegue. **A7** (mensaje accionable si falta la cabecera) + **A15** (garantizarla en el proxy) |
+
+**Confirmación de cobertura:** los `V-XX` que no aparecen en esta lista (V-1 a V-4, V-6 a V-10,
+V-12 a V-16, V-19 a V-49, V-51 a V-54) están **cerrados** — `CORREGIDA`/`CERRADA` en su ficha de
+origen, verificados por A14 de forma adversarial, sin reabrir. V-54 se cerró en esta misma pasada
+(ver «V-54 — CIERRE» en la compuerta de D-090).
+
 ## D-089 — DATOS PARAMÉTRICOS (A1, 2026-09-04) — PUC completo Decreto 2650 cargado
 
 **Alcance: TAREA 1 de D-089 — catálogo COMPLETO del PUC como catálogo global de `account`
@@ -5280,7 +5549,161 @@ sin broker, tal como exige la sección 5.
 
 ---
 
+## D-090 — Carga masiva, Fase 6 (A8, 2026-09-04)
+
+**Alcance: el modal genérico `app/_ui/CargaMasiva.tsx`, la pantalla central `/carga-masiva` y sus dos
+subpáginas, el historial de cargas (nuevo), y un permiso propio de acceso al módulo
+(migración 182).** No se tocó `src/domain/motor.ts`, `src/services/carga-masiva/importar.ts` ni
+`definiciones.ts` (solo se leyeron). **Sin comitear.**
+
+### TAREA 1 — `CargaMasiva.tsx`: modal propio → `Modal` genérico de D-087
+
+`app/_ui/CargaMasiva.tsx` renderiza ahora su contenido DENTRO del `Modal` genérico de
+`app/_ui/componentes.tsx` (Escape, clic-fuera, foco atrapado, devolución de foco al cerrar) en vez de
+su propio `role="dialog"` a mano. Toda la lógica se conservó intacta: `useActionState` contra
+`cargarArchivoAction`, el informe fila/columna/motivo, «cargar solo las válidas» y el aviso de permiso
+faltante. El informe de errores pasa de una `<table>` cruda a `Tabla`/`Th`/`Td` del kit — mismo
+aspecto que `app/parametros/ica-municipios/_carga-masiva.tsx`, que ya lo usaba.
+
+**Decisión documentada — el modal sigue SIN engancharse en ningún módulo real todavía.** Verificado:
+hoy solo lo importan las páginas de `app/diseno/(app)/**` (el prototipo), y desde su PROPIA copia
+(`app/diseno/_ui/CargaMasiva.tsx`), no desde `app/_ui/CargaMasiva.tsx` — es decir, el componente real
+que se acaba de migrar sigue sin un solo consumidor en producción. `app/parametros/puc/page.tsx`,
+`app/terceros/page.tsx` y `app/parametros/page.tsx` siguen enlazando por `<Link>` a
+`/carga-masiva/:catalogo` (verificado por `grep`), no abren el modal. Se decidió NO cambiar eso en
+esta pasada: engancharlo ahí es una decisión de UX de cada módulo (¿modal secundario o subpágina
+dedicada?) que no pedía esta tarea con urgencia, y tocar tres pantallas ya cerradas y verificadas por
+A14 (D-087/D-088/D-089) para una mejora puramente estética no entraba en el alcance mínimo. Queda
+pendiente para cuando alguno de esos tres módulos vuelva a abrirse por otro motivo.
+
+### TAREA 2 — pantalla central `/carga-masiva` y `/carga-masiva/[catalogo]`: migradas al kit
+
+Las tres piezas (`app/carga-masiva/page.tsx`, `app/carga-masiva/[catalogo]/page.tsx`,
+`app/carga-masiva/[catalogo]/_formulario.tsx`) pasaron del `<table>`/`style` inline original al kit
+de `app/_ui/` (`Encabezado`, `Panel`, `Tabla`/`Th`/`Td`, `MensajeEstado`, `Badge`, `EnlaceBoton`,
+tokens de color). Se quitó `/carga-masiva` de `PREFIJOS_SIN_MIGRAR` en `app/_ui/AppShell.tsx`
+(quedan `/reportes` y `/admin`; `app/diseno/**` no se toca hasta que esos dos también migren).
+
+La portada (`/carga-masiva/page.tsx`) YA agrupaba los quince catálogos por módulo en el orden de
+dependencia desde `DEFINICIONES` — la Tarea 2 sobre eso fue sobre todo visual. **Decisión de UX
+documentada:** se mantiene el patrón «portada con la lista → subpágina con el formulario» en vez de
+poner el selector de archivo directamente en la portada: quince formularios (uno por catálogo) más su
+tabla de columnas esperadas no caben en una sola vista sin scroll-dentro-de-scroll o un acordeón de
+quince paneles. La portada gana, eso sí, el botón «Ver historial de cargas» (Tarea 3) y ahora enseña,
+fila por fila, un badge «Sin permiso `<código>`» cuando falta el permiso del catálogo — antes era un
+párrafo de texto rojo suelto.
+
+### TAREA 3 — Historial de cargas masivas (nuevo)
+
+- **`src/services/carga-masiva/historial.ts`** — `listarHistorialCargaMasiva(tx, { pagina,
+  porPagina })`: lee `audit_log WHERE accion = 'CARGA_MASIVA'` (la cabecera que escribe
+  `app.registrar_carga_masiva`, migración 170) con `LEFT JOIN "user"` para nombre/correo, paginado con
+  `LIMIT`/`OFFSET` (tope defensivo de 200 por página). **Sin filtro de aplicación**: corre dentro de
+  `conSesion` y la RLS de `audit_log` (`012_rls.sql`, `audit_log_rls`) ya exige
+  `tenant_id = app.current_tenant_id()` y `company_id IS NULL OR company_id = app.current_company_id()`
+  — verificado leyendo la política, no solo el comentario que la describe.
+- **Hallazgo documentado sobre `entidad` vs. `catalogo`:** `app.registrar_carga_masiva` guarda en
+  `entidad` la TABLA física (`definicion.tabla`, p. ej. `third_party`), NO la clave de `DEFINICIONES`.
+  La clave (p. ej. `third_party_fiscal_attribute`, que también apunta a su propia tabla) viaja dentro
+  de `valor_nuevo->>'catalogo'`. El título legible del historial se resuelve desde ahí
+  (`definicionPorClave(catalogo)`), nunca desde `entidad` — si en el futuro una definición cambiara su
+  `tabla` sin cambiar su `clave`, el historial seguiría resolviendo el título correcto.
+- **`app/carga-masiva/historial/page.tsx`** (pantalla nueva, no una sección embebida en la portada):
+  tabla paginada (fecha, quién, catálogo, archivo, filas OK, filas con error) con `Panel`/`Tabla` y
+  enlaces «Anterior»/«Siguiente» por `searchParams.pagina`. Se decidió una pantalla propia y no un
+  acordeón dentro de `/carga-masiva` porque ninguna pantalla migrada del kit mezcla hoy un listado
+  paginado con una lista de acciones en la misma vista (`/admin/correcciones` y `/reportes` tampoco lo
+  hacen, y ninguna de las dos tenía ya un patrón de paginación que copiar — este es el primero).
+- **Permiso: se reutilizó `PERMISOS.AUDITORIA_LEER` ('auditoria.leer'), ya existente.** No se creó un
+  permiso nuevo: es exactamente la pregunta que ese permiso ya responde («¿puede leer el registro de
+  acciones sensibles?»). `carga_masiva.acceder` (Tarea 5) es una pregunta distinta («¿puede subir
+  archivos?») y no gobierna este historial.
+
+### TAREA 5 — permiso de acceso al módulo central (migración 182)
+
+`db/migrations/182_a8_d090_permiso_carga_masiva.sql`: código nuevo `carga_masiva.acceder` en
+`permission`, repartido por `INSERT ... SELECT` (nunca `UPDATE`) a los roles que hoy tienen
+CUALQUIERA de los cuatro permisos "editar" de catálogo (`parametro.editar`, `puc.editar`,
+`tercero.editar`, `concepto.editar`): con los cinco roles de 014 eso es `admin_firma`,
+`admin_tributario`, `contador` y `auxiliar_causacion` — **`solo_lectura` NO lo recibe** (no tiene
+ningún permiso de edición de catálogo; abrirle la puerta solo le mostraría quince avisos de «sin
+permiso» sin una sola acción posible). Añadido a `PERMISOS` en `src/auth/permisos.ts`
+(`CARGA_MASIVA_ACCEDER`). Gobierna SOLO si se ve `/carga-masiva` y `/carga-masiva/:catalogo`; los
+permisos específicos por catálogo siguen siendo el candado real de escritura (trigger de 016) —
+no se retargeteó ni un trigger.
+
+### Verificación
+
+- `npx tsc --noEmit`: limpio.
+- `npx next build`: OK, incluye `/carga-masiva`, `/carga-masiva/[catalogo]` y
+  `/carga-masiva/historial`.
+- `npx vitest run`: **1344 en verde de 1345, 70 archivos** (0 regresiones nuevas). El único rojo,
+  `tests/adversarial/compuerta-ola3-ruta.test.ts` («nadie fuera de la ruta invoca un generador de
+  libros»), es **preexistente y ajeno a esta pasada**: señala
+  `app/api/parametros/puc/exportar/route.ts` invocando `generarLibroPucEfectivo` fuera de
+  `/api/reportes/[libro]`. Verificado con `git log`/`git diff`: ese archivo ya estaba en el commit
+  `ee12847` («D-089: Fase 5 PUC completo...») antes de que este agente tocara nada, y no aparece en el
+  `git status` de esta pasada. Es del alcance de A9/D-089, no de D-090 — se deja anotado para quien
+  retome ese hilo.
+- Se encontró y corrigió un falso positivo del barrido de Regla de Oro 2
+  (`tests/adversarial/valores-tributarios.test.ts`, regla «fracción decimal con pinta de tarifa»): la
+  clase Tailwind `mt-0.5` en `app/carga-masiva/page.tsx` coincidía con el regex `0\.\d+`. Se cambió a
+  `mt-[2px]` (la misma convención de valor arbitrario que ya usa `componentes.tsx` en vez de la escala
+  fraccionaria de Tailwind) — no es una excepción al detector, es evitar la clase que lo dispara.
+
+### Lo que este módulo NO toca
+
+Ningún valor tributario (Regla de Oro 2): la migración 182 solo inserta un código de permiso. No se
+tocó el motor de importación (`importar.ts`), la validación por fila (`definiciones.ts`) ni el
+esquema de `audit_log`.
+
+---
+
 ## Próximo paso
+
+**2026-09-04 — D-090 (Carga masiva, Fase 6) pasó la compuerta AMPLIADA de A14: «PASA con correcciones,
+hechas por A14 en la misma pasada» (V-51 y V-52 corregidas; V-53 corregida en el guardia propio de
+A14; **V-54 declarada y devuelta a A9**).** Estado del árbol: `npx tsc --noEmit` limpio ·
+`npx next build` OK · `npx vitest run` **1383 pruebas, 1382 en verde, 74 archivos**. Sin comitear
+(A14 no comitea). Ver «Compuerta AMPLIADA de D-090 — veredicto de A14».
+
+**2026-09-04 — V-54 CERRADA (A9, re-check acotado de A14).** Ver «V-54 — CIERRE» al final de la
+compuerta AMPLIADA de D-090. El árbol ya está **completamente verde**: `npx tsc --noEmit` limpio ·
+`npx next build` OK · `npx vitest run` **1388 pruebas, 1388 en verde, 74 archivos**. Ya no queda
+ningún rojo declarado a propósito en D-090. Sin comitear (A14 no comitea).
+
+Pendiente inmediato de D-090:
+
+1. ~~**V-54 (A9, con A12):**~~ **CERRADA** — ver «V-54 — CIERRE» arriba.
+2. **Aplicar la migración `182` a la Neon** junto con las pendientes de D-089 (`179`, `180`, `181`).
+   **Ojo con el orden**: `/carga-masiva` exige ahora `carga_masiva.acceder`, y si el código se
+   despliega antes que la 182 el módulo se le cierra a `contador`, `admin_tributario` y
+   `auxiliar_causacion` (a `admin_firma` no, porque es `es_todopoderoso`). Migración primero.
+3. **Verificación en navegador real** (usuario): `/carga-masiva`, `/carga-masiva/:catalogo` con un
+   archivo de verdad, y `/carga-masiva/historial` con esa carga ya dentro. A14 ejercitó el teclado
+   sobre el DOM montado (Tab/Shift+Tab/Escape con eventos reales), que es lo más cerca que se llega
+   sin navegador, pero no sustituye pulsar Tab con un dedo. **Conviene probar el teclado en los
+   modales YA cerrados** (dirección DIAN de Terceros, `/parametros`, uso de cuenta del PUC): heredan
+   el arreglo de V-51.
+4. ~~**Decisión de producto**~~ **ACLARADA (2026-09-04), no requiere fix.** `contador` y
+   `auxiliar_causacion` **pueden cargar archivos y no pueden ver el historial de lo que ellos mismos
+   cargaron** (el historial pide `auditoria.leer`, que en la plantilla base de roles solo tienen
+   `admin_firma` y `admin_tributario`). Eso no es una limitación del sistema: el modelo de permisos es
+   **granular por usuario**, no atado al rol (D-066/D-067) — cualquier firma puede otorgarle
+   `auditoria.leer` a un contador puntual sin tocar código ni esperar un release. Lo que describe el
+   punto 4 original es el reparto de la **plantilla base** de los cinco roles de sistema (migración
+   `014`), no un techo del producto.
+5. **Decisión pendiente (cualquier agente futuro que reabra PUC/Terceros/Parámetros):** si engancha el
+   modal `CargaMasiva.tsx` como acción secundaria dentro de esas pantallas, en vez de solo enlazar a
+   `/carga-masiva/:catalogo`. Hoy sigue sin un solo consumidor real (verificado por `grep`, no por
+   reporte): no es regresión, es deuda de antes de D-090.
+6. **Convención nueva que deja esta compuerta:** ya se pueden probar componentes de React. `jsdom`
+   está en `devDependencies`; las pruebas de interfaz van en `.ts` (no `.tsx`, para no tocar el glob
+   de `vitest.config.ts`) con `// @vitest-environment jsdom`, `React.createElement` y
+   `react-dom/client` + `act`. Sin Testing Library: no hizo falta. Ejemplos en
+   `tests/app/carga-masiva-modal-teclado.test.ts` y `tests/app/carga-masiva-contrato-formulario.test.ts`.
+
+Anterior (D-089, ya cerrado salvo despliegue y navegador):
 
 **2026-09-04 — D-089 pasó la compuerta AMPLIADA de A14: «PASA con correcciones, hechas por A14 en la
 misma pasada» (V-47, V-48, V-49 corregidas; V-50 declarada y devuelta a A3).** Estado del árbol:

@@ -428,11 +428,21 @@ export function Modal({
     const nodo = dialogRef.current;
     nodo?.focus();
 
+    /* A14, compuerta de D-090 (V-51): `input:not([disabled])` incluía los
+     * `<input type="hidden">`, que NO son enfocables. En el primer modal del
+     * producto que tiene campos ocultos (`CargaMasiva`, con `catalogo` y
+     * `soloValidas`) el «primer enfocable» salía siendo uno de ellos, así que
+     * el Tab del último elemento hacía `preventDefault()` y luego un `.focus()`
+     * que no hace nada: el foco se quedaba clavado en el último y el diálogo
+     * dejaba de ciclar. Se excluyen también los `[hidden]` y los
+     * `aria-hidden="true"` por el mismo motivo. */
+    const SELECTOR_ENFOCABLE =
+      'a[href],button:not([disabled]),input:not([disabled]):not([type="hidden"]),' +
+      'select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+
     const enfocables = () =>
-      Array.from(
-        nodo?.querySelectorAll<HTMLElement>(
-          'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
-        ) ?? [],
+      Array.from(nodo?.querySelectorAll<HTMLElement>(SELECTOR_ENFOCABLE) ?? []).filter(
+        (el) => !el.hasAttribute('hidden') && el.getAttribute('aria-hidden') !== 'true',
       );
 
     const onKey = (e: KeyboardEvent) => {
@@ -450,7 +460,22 @@ export function Modal({
       const primero = items[0]!;
       const ultimo = items[items.length - 1]!;
       const activo = document.activeElement;
-      if (e.shiftKey && (activo === primero || activo === nodo)) {
+      /* A14, compuerta de D-090 (V-51): el manejador solo reconocía los dos
+       * BORDES. Si el foco no estaba en ninguno —porque estaba en el propio
+       * contenedor, en `body` (le pasa a cualquier modal cuando el botón que
+       * tenía el foco se deshabilita al enviar, que es justo lo que hace
+       * «Validar y cargar»), o directamente fuera del diálogo— el Tab se le
+       * dejaba al navegador, y el navegador lo llevaba al primer enfocable del
+       * DOCUMENTO: la navegación del AppShell, por debajo del modal. El foco se
+       * escapaba de un diálogo `aria-modal="true"`. Ahora, si el foco no está
+       * dentro, el Tab lo devuelve al diálogo. */
+      const dentro = activo instanceof Node && activo !== nodo && !!nodo?.contains(activo);
+      if (!dentro) {
+        e.preventDefault();
+        (e.shiftKey ? ultimo : primero).focus();
+        return;
+      }
+      if (e.shiftKey && activo === primero) {
         e.preventDefault();
         ultimo.focus();
       } else if (!e.shiftKey && activo === ultimo) {
