@@ -108,6 +108,7 @@ function casosDeLibro(esc: Escenario): CasoLibro[] {
     { slug: 'certificado-retenciones', query: { ...r, terceroId: esc.thirdPartyId } },
     { slug: 'relacion-retenciones', query: r },
     { slug: 'detalle-iva', query: r },
+    { slug: 'ica-municipio', query: r },
     { slug: 'estado-situacion-financiera', query: { fechaCorte: r.hasta } },
     { slug: 'estado-resultado-integral', query: r },
     { slug: 'estado-cambios-patrimonio', query: r },
@@ -230,9 +231,9 @@ beforeEach(() => {
 // =============================================================================
 
 describe('A14 · criterio 1 — los VEINTE libros se descargan de verdad por HTTP', () => {
-  it('son veinte, no una muestra', () => {
-    expect(SLUGS.length).toBe(20);
-    expect(new Set(SLUGS).size).toBe(20);
+  it('son veintiuno, no una muestra (D-091 añade ica-municipio)', () => {
+    expect(SLUGS.length).toBe(21);
+    expect(new Set(SLUGS).size).toBe(21);
   });
 
   it.each(SLUGS)(
@@ -327,7 +328,7 @@ describe('A14 · V-16 de verdad cerrada: ningún libro se queda sin forma de des
     );
 
     const conGenerador = fuera.filter((f) =>
-      /\bgenerar(Libro|Balance|Certificado|Relacion|Movimiento|Detalle|Estado|Notas|Formato|Maestro)/.test(
+      /\bgenerar(Libro|Balance|Certificado|Relacion|Movimiento|Detalle|Ica|Estado|Notas|Formato|Maestro)/.test(
         readFileSync(f, 'utf8'),
       ),
     );
@@ -353,9 +354,9 @@ describe('A14 · V-16 de verdad cerrada: ningún libro se queda sin forma de des
     const generadores = Object.keys(modulo).filter(
       (n) =>
         typeof modulo[n] === 'function' &&
-        /^generar(Libro|Balance|Certificado|Relacion|Movimiento|Detalle|Estado|Notas|Formato)/.test(n),
+        /^generar(Libro|Balance|Certificado|Relacion|Movimiento|Detalle|Ica|Estado|Notas|Formato)/.test(n),
     );
-    expect(generadores.length).toBe(20);
+    expect(generadores.length).toBe(21);
     const huerfanos = generadores.filter((n) => !fuenteRuta.includes(n));
     expect(huerfanos).toEqual([]);
   });
@@ -407,6 +408,16 @@ describe('A14 · ataques a la ruta (caso dorado 20 sobre la superficie nueva)', 
     cookieValores[COOKIE_COMPANY_ID] = companyIdSinAcceso;
     const res = await llamar('libro-diario', RANGO);
     expect(res.status).toBe(403);
+  });
+
+  it('D-091 — no existe un POST a esta ruta: ningún cliente puede mandar la empresa en el cuerpo', async () => {
+    // La ruta solo exporta GET. Un `route.ts` de App Router sin `export
+    // async function POST` responde 405 por el propio framework — no hay
+    // superficie para "empresa por POST" porque el verbo no existe aquí.
+    const modulo = (await import('../../app/api/reportes/[libro]/route')) as Record<string, unknown>;
+    expect(typeof modulo.POST).toBe('undefined');
+    expect(typeof modulo.PUT).toBe('undefined');
+    expect(typeof modulo.PATCH).toBe('undefined');
   });
 
   it('`companyId` en la QUERY STRING no se lee: la firma B no obtiene los datos de A', async () => {

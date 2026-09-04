@@ -18,6 +18,7 @@ import type { ColumnaDatos, FilaTrazabilidad, LibroExcelSpec } from './tipos';
 import {
   balanceDePrueba,
   detalleIva,
+  icaPorMunicipio,
   libroAuxiliar,
   libroDiario,
   libroMayor,
@@ -326,6 +327,62 @@ export async function generarRelacionRetenciones(
     filasDatos: retenciones,
     resumenPapelDeTrabajo: { columnas: COLUMNAS_RESUMEN_TIPO, filas: resumenPorTipo(retenciones) },
     trazabilidad: trazabilidadDeRetenciones(retenciones),
+    parametros,
+  };
+  return construirLibroExcel(spec);
+}
+
+// =============================================================================
+// 9. ICA por municipio (D-091) — reteica APLICADA, agrupada por municipio
+// =============================================================================
+
+/** Suma por municipio, para la tabla de resumen de "Papel de trabajo". */
+function resumenPorMunicipio(retenciones: readonly FilaRetencionAplicada[]): Array<Record<string, unknown>> {
+  const acumulado = new Map<string, { municipio: string; base: bigint; valor: bigint; conteo: number }>();
+  for (const r of retenciones) {
+    const clave = r.municipioNombre ?? 'Sin municipio en la regla aplicada';
+    const previo = acumulado.get(clave) ?? { municipio: clave, base: 0n, valor: 0n, conteo: 0 };
+    previo.base += BigInt(r.base);
+    previo.valor += BigInt(r.valor);
+    previo.conteo += 1;
+    acumulado.set(clave, previo);
+  }
+  return [...acumulado.values()].map((a) => ({
+    municipio: a.municipio,
+    base: a.base.toString(),
+    valor: a.valor.toString(),
+    conteo: a.conteo,
+  }));
+}
+
+const COLUMNAS_RESUMEN_MUNICIPIO: ColumnaDatos[] = [
+  { header: 'Municipio', key: 'municipio', width: 24 },
+  { header: 'Base total', key: 'base', width: 16, tipo: 'moneda' },
+  { header: 'ReteICA total', key: 'valor', width: 18, tipo: 'moneda' },
+  { header: 'N° de operaciones', key: 'conteo', width: 16 },
+];
+
+export async function generarIcaPorMunicipio(tx: SqlClient, rango: RangoFechas): Promise<ExcelJS.Workbook> {
+  await exigirPermiso(tx, PERMISOS.REPORTE_EXPORTAR);
+  const retenciones = await icaPorMunicipio(tx, rango);
+  const encabezado = await obtenerEncabezado(tx, {
+    tituloReporte: 'ICA retenido por municipio',
+    periodo: `${rango.desde} a ${rango.hasta}`,
+  });
+  const parametros = [
+    ...parametrosDesdeRetenciones(retenciones),
+    ...(await parametrosDeRedondeoVigente(tx, { hasta: rango.hasta })),
+  ];
+  const spec: LibroExcelSpec = {
+    encabezado,
+    columnasDatos: COLUMNAS_RETENCION,
+    filasDatos: retenciones,
+    resumenPapelDeTrabajo: { columnas: COLUMNAS_RESUMEN_MUNICIPIO, filas: resumenPorMunicipio(retenciones) },
+    trazabilidad: trazabilidadDeRetenciones(retenciones),
+    trazabilidadNota:
+      retenciones.length === 0
+        ? 'No hay retenciones de ReteICA aplicadas en el período. Verifique la parametrización de ICA por municipio (municipality_ica_rule) si esperaba movimiento.'
+        : undefined,
     parametros,
   };
   return construirLibroExcel(spec);

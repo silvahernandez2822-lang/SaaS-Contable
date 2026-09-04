@@ -21,6 +21,7 @@ import {
   generarBalanceDePrueba,
   generarCertificadoRetenciones,
   generarDetalleIva,
+  generarIcaPorMunicipio,
   generarLibroAuxiliar,
   generarLibroDiario,
   generarLibroMayor,
@@ -224,6 +225,15 @@ describe('las cuatro hojas obligatorias, en los ocho reportes', () => {
     expect(wb.worksheets.map((w) => w.name)).toEqual(HOJAS_OBLIGATORIAS);
     const datos = wb.getWorksheet('Datos')!;
     expect(datos.rowCount).toBe(2); // encabezado + la línea de IVA descontable del 15 de junio
+  });
+
+  it('ICA retenido por municipio (D-091) — sin fixture de reteica, cuatro hojas y aviso explícito', async () => {
+    const wb = await db.asTenant(e.tenantId, e.companyId, (tx) => generarIcaPorMunicipio(tx, RANGO_REPORTE));
+    expect(wb.worksheets.map((w) => w.name)).toEqual(HOJAS_OBLIGATORIAS);
+    const trazabilidad = wb.getWorksheet('Trazabilidad')!;
+    // No hay retención de reteica en el escenario base: la hoja explica por qué está vacía,
+    // en vez de dejar al contador adivinando si el reporte se rompió (sección 17).
+    expect(trazabilidad.getRow(1).getCell(1).value).toContain('ReteICA');
   });
 });
 

@@ -4259,7 +4259,9 @@ permiso o sin empresa, 500 con detalle solo al log.
 Libro auxiliar por cuenta y tercero · Libro diario · Libro mayor · Balance de prueba (cualquier nivel
 del PUC) · Certificado de retenciones por tercero · Relación de retenciones por período y tipo ·
 Movimiento de terceros · Detalle de IVA generado y descontable · **PUC efectivo (D-089 TAREA 5, nuevo)**.
-Estados financieros (A10) y formatos de exógena (A11) tienen su propia reportería.
+Estados financieros (A10) y formatos de exógena (A11) tienen su propia reportería. **D-091 añade ICA
+retenido por municipio** (ver ficha D-091 más abajo) — veintiún libros en total por
+`/api/reportes/[libro]`, más los dos maestros (PUC efectivo, terceros) por su propia ruta auditada.
 
 ---
 
@@ -5424,9 +5426,11 @@ verificación de cada corrección, ver la ficha citada en la columna «Origen».
 | Etiqueta del commit `40fc658` | El commit está rotulado «D-087: Fase 4…» pero también contiene la base de D-088 (migración `177`, modelo de datos de A2) — el historial de git no refleja el corte real entre fichas | Observación del usuario, 2026-09-04 | **ABIERTO, cosmético.** No afecta el árbol ni el contenido, solo la trazabilidad del historial de commits |
 | Dependencia de una Neon real para `npm run dev` local | PGlite es en memoria y por proceso: `migrar`/`sembrar`/`dev` corridos como procesos Node separados sin `DATABASE_URL` no comparten datos entre sí (documentado en el README como comportamiento esperado). Para navegar la app localmente sin apuntar a una Neon real haría falta persistir/compartir una única instancia de PGlite entre procesos | Decisión D-003, señalado por el usuario 2026-09-04 | **ABIERTO, sin dueño.** No es un defecto: es la consecuencia conocida de D-003 (PGlite solo para pruebas). Cambiarlo es infraestructura no trivial (PGlite a archivo + servidor único), no una corrección puntual |
 | V-11 — la aprobación revienta con error crudo si el despliegue no reenvía la IP del cliente | `approval.ip` es `inet NOT NULL`; sin `x-forwarded-for`/`x-real-ip` el `INSERT` falla con el error crudo de Postgres | Ola 2, reconfirmada en cada compuerta posterior | **ABIERTA, declarada y medida.** No hay fuga ni corrupción (el ledger no queda a medias); es configuración de despliegue. **A7** (mensaje accionable si falta la cabecera) + **A15** (garantizarla en el proxy) |
+| ~~D-091 sin re-check independiente de A14~~ | Se implementó y se auto-verificó en la misma sesión (sin acceso a despacho de subagentes); ninguna compuerta anterior se cerró así | D-091 | **CERRADA (2026-09-04).** A14 corrió la compuerta AMPLIADA de forma independiente en dos pasadas (`tests/adversarial/a14-d091-compuerta-independiente.test.ts`, 24 pruebas): **PASA CON CORRECCIONES**. Ver «Compuerta AMPLIADA de D-091 — veredicto de A14» |
+| ~~D-091 sin verificación en navegador real~~ | Ni la sesión que implementó D-091 ni la de A14 tuvieron herramienta de navegador; toda la verificación previa fue por HTTP simulado contra PGlite | D-091 | **CERRADA (2026-09-04).** La sesión orquestadora corrió la verificación contra `npm run dev` real (Neon): login, dos reportes de punta a punta (`libro-diario`, `ica-municipio`), historial confirmado, y ataque directo por URL con `companyId`/`empresaId` falsos ignorado. Ver «Verificación en navegador real» en la ficha D-091 |
 
 **Confirmación de cobertura:** los `V-XX` que no aparecen en esta lista (V-1 a V-4, V-6 a V-10,
-V-12 a V-16, V-19 a V-49, V-51 a V-54) están **cerrados** — `CORREGIDA`/`CERRADA` en su ficha de
+V-12 a V-16, V-19 a V-49, V-51 a V-56) están **cerrados** — `CORREGIDA`/`CERRADA` en su ficha de
 origen, verificados por A14 de forma adversarial, sin reabrir. V-54 se cerró en esta misma pasada
 (ver «V-54 — CIERRE» en la compuerta de D-090).
 
@@ -5659,7 +5663,328 @@ esquema de `audit_log`.
 
 ---
 
+## D-091 — Módulo de Reportes, Fase 7 (A9, 2026-09-04)
+
+**Alcance: `app/reportes/page.tsx` (reescrita), `app/reportes/historial/page.tsx` (nuevo),
+`src/reports/historial.ts` (nuevo), `src/reports/consulta.ts` + `src/reports/libros.ts` (ICA por
+municipio, nuevo reporte #21), `app/api/reportes/[libro]/route.ts` (una entrada nueva: `ica-municipio`),
+`app/_ui/AppShell.tsx` (`/reportes` sale de `PREFIJOS_SIN_MIGRAR`).** No se tocó ningún generador
+existente (`generarLibroDiario`, `generarFormato1001`...), ni `src/domain/motor.ts`, ni ninguna
+migración de esquema — no hizo falta ninguna. **Sin comitear.**
+
+### TAREA 0 — investigación (antes de escribir nada)
+
+- **`/api/reportes/[libro]` ya generaba VEINTE libros** (los ocho obligatorios de la 11.3, cinco
+  estados financieros de A10, siete formatos de exógena de A11), cada uno con el rastro EXPORT
+  (`app.registrar_exportacion`, migración 140) escrito DENTRO de la misma transacción que autorizó la
+  lectura, `reporte.exportar` exigido por la base, y la empresa tomada exclusivamente de la sesión
+  (D-021/D-022) — nunca de un parámetro de la petición. Ver `tests/adversarial/compuerta-ola3-ruta.test.ts`,
+  ya muy exigente (V-16 y sus ataques).
+- **Dos maestros vivían fuera de esa ruta, con su propia auditoría**: `app/api/parametros/puc/exportar`
+  y `app/api/terceros/exportar` (D-089 A9, cerrado por V-54) — mismo patrón `registrar_exportacion`,
+  mismo permiso de módulo exigido antes de generar. Se centralizó el ACCESO a los dos desde `/reportes`
+  (sección «Maestros de catálogo»), sin tocar su generación.
+- **`/reportes` (la pantalla) seguía en `PREFIJOS_SIN_MIGRAR`** (`app/_ui/AppShell.tsx`), con estilos
+  `style={{}}` inline de la Ola 3 (A9, cierre de V-16) — un formulario plano de solo los ocho
+  reportes obligatorios, sin agrupar por categoría, sin los otros doce (estados financieros y
+  exógena, solo documentados en texto), sin ICA por municipio y sin historial.
+- **ICA por municipio NO existía en ningún reporte.** D-088 (A2) dejó el MODELO de datos
+  (`municipality_ica_rule`, `tax_rule` con `tipo='reteica'`, `reteica_periodo_acumulado`) y el motor lo
+  causaba con `retention_applied.tipo = 'reteica'` y `municipality_id` resuelto — pero ningún reporte
+  filtraba ni agrupaba por esa columna. Confirmado con `grep` sobre `src/reports/`: cero coincidencias
+  de `ica_municipio`/`IcaPorMunicipio` antes de esta ficha.
+- **El historial de D-090 (carga masiva) es el patrón a reutilizar**: `audit_log` bajo RLS, sin tabla
+  ni pantalla propia de auditoría, paginado con `LIMIT/OFFSET` saneado, permiso `auditoria.leer`
+  reutilizado (no uno nuevo). Se replica igual para reportes, leyendo `accion = 'EXPORT' AND entidad =
+  'reporte'` en vez de `accion = 'CARGA_MASIVA'`.
+
+### TAREA 2 — catálogo central de reportes
+
+`app/reportes/page.tsx` reescrita: cinco categorías (Libros contables · Terceros, retenciones e IVA ·
+Estados financieros NIIF · Información exógena DIAN · Maestros de catálogo), veintiún formularios
+(`<form method="get" action="/api/reportes/<slug>">`, ningún JS, ninguna lógica de generación
+duplicada) más los dos maestros como enlace directo a su propia ruta ya auditada. Cada formulario
+lleva los campos mínimos del reporte (rango de fechas, año gravable, corte, cuenta o tercero según
+aplique — sección 11.2/TAREA 4) y NUNCA un campo de empresa: la descripción del encabezado lo deja
+explícito y `tests/adversarial/a14-d091-historial-reportes-rls.test.ts` lo verifica leyendo el propio
+archivo fuente (ninguna coincidencia de `companyId`/`empresaId`, todas las `action` apuntan a
+`/api/reportes/`).
+
+### TAREA 2/9 — ICA retenido por municipio (reporte nuevo, #21)
+
+- `src/reports/consulta.ts` — `icaPorMunicipio(tx, rango)`: reutiliza `SELECT_RETENCION` (la misma
+  consulta base del certificado y la relación de retenciones) filtrando `tipo = 'reteica'`, `aplicada =
+  true` y el mismo filtro de asiento publicado que el certificado (V-30: una retención de un asiento
+  anulado o en borrador no es una retención practicada), ordenado por municipio.
+- `src/reports/libros.ts` — `generarIcaPorMunicipio`: mismas cuatro hojas + un resumen de «Papel de
+  trabajo» agrupado por municipio (base total, ReteICA total, N° de operaciones). Cuando no hay ninguna
+  retención de ICA en el rango, la hoja «Trazabilidad» lo dice explícitamente («No hay retenciones de
+  ReteICA aplicadas... verifique `municipality_ica_rule`») en vez de quedar en blanco sin explicación
+  (sección 17: un dato faltante se ve).
+- Cableado a `/api/reportes/ica-municipio` en la ruta central — mismo contrato que los otros veinte
+  (rango de fechas obligatorio), mismo rastro EXPORT, misma RLS.
+- **Efecto colateral en las pruebas de A14 heredadas**: `tests/adversarial/compuerta-ola3-ruta.test.ts`
+  tenía DOS aserciones que contaban «veinte» a mano (`SLUGS.length` y los generadores públicos de
+  `src/reports/index`) y un regex de nombre de generador (`generar(Libro|Balance|...)`) que no
+  reconocía el prefijo `Ica`. Las tres se actualizaron (veintiuno, y el regex ahora incluye `Ica`) — es
+  la misma clase de mantenimiento que D-090 ya le hizo a esa prueba con V-54, no una relajación del
+  criterio: sigue siendo «todos, no una muestra».
+
+### TAREA 3 — trazabilidad uniforme (EXPORT sin excepción)
+
+Ya estaba cerrada para las tres rutas existentes (veinte libros + PUC + terceros, cierre de V-54). El
+reporte #21 (`ica-municipio`) nace DENTRO de la ruta central, así que hereda el rastro EXPORT sin
+código nuevo. **No queda ningún reporte del catálogo sin rastro EXPORT.**
+
+### TAREA 4 — filtros, período y aislamiento (verificado con ataque directo, no solo desde la UI)
+
+- La empresa nunca es un parámetro: sale de la cookie de sesión verificada, la autoriza la base
+  (`app.current_company_id()`), y un `companyId` en la query string se ignora (ya cubierto por
+  `compuerta-ola3-ruta.test.ts`, reverificado en esta pasada — sigue en verde).
+- **Se atacó con POST directo**, como pide el encargo: `app/api/reportes/[libro]/route.ts` **solo
+  exporta `GET`** (verificado importando el módulo y comprobando `typeof modulo.POST === 'undefined'`,
+  igual para `PUT`/`PATCH` — prueba nueva en `compuerta-ola3-ruta.test.ts`). Un `route.ts` de App
+  Router sin `export async function POST` responde 405 por el propio framework: no hay superficie de
+  «empresa por el cuerpo del POST» porque el verbo no existe en esta ruta.
+- Período: cada formulario pide el rango, año gravable o corte que su reporte necesita (igual que la
+  Ola 3); no se inventó un selector de período genérico que no aplicara a todos los reportes por igual
+  (un balance de prueba y un Formato 1008 no comparten forma de período).
+
+### TAREA 5 — historial de reportes generados (reutiliza el patrón de D-090, no crea nada distinto)
+
+- `src/reports/historial.ts` — `listarHistorialReportes(tx, {pagina, porPagina})`: lee `audit_log
+  WHERE accion = 'EXPORT' AND entidad = 'reporte'` con `LEFT JOIN "user"`, mismo saneo defensivo de
+  `pagina`/`porPagina` que `listarHistorialCargaMasiva` (D-090, V-52: `Number.isFinite` antes de
+  acotar). **Sin filtro de aplicación**: corre dentro de `conSesion`, la RLS de `audit_log`
+  (`audit_log_rls`, 012) aísla por `tenant_id`/`company_id` sola.
+- `app/reportes/historial/page.tsx` — mismo componente `Panel`/`Tabla` y mismo patrón de paginación por
+  `searchParams.pagina` que `/carga-masiva/historial` (no se creó un componente de tabla paginada
+  nuevo: se copió la estructura, porque no hay un componente de paginación genérico factorizado
+  todavía — la misma situación que D-090 declaró al crear el primero).
+- Permiso: **se reutilizó `PERMISOS.AUDITORIA_LEER`**, no uno nuevo — exactamente la misma decisión y
+  la misma justificación que D-090 TAREA 3 («¿puede leer el registro de acciones sensibles?» es la
+  pregunta correcta, y ya tiene permiso).
+
+### TAREA 6 — permisos: NO se creó uno nuevo, y esta es la decisión de fondo de esta ficha
+
+`reporte.leer` **ya existe** desde la migración `014` (`db/migrations/014_roles_permisos_base.sql`),
+con el comentario original: «Consultar libros, balances y relaciones de retenciones» / «queda libre
+para una futura vista en pantalla que no produzca archivo» (`docs/reportes/ola3-a9.md`, línea 139) —
+es literalmente esta pantalla. Crear `reportes.acceder` habría sido el duplicado que la propia TAREA 6
+pedía evitar. Relación con `reporte.exportar`, verificada y sin conflicto:
+
+- `reporte.leer` gobierna **ver** `/reportes` (el catálogo y sus avisos de configuración).
+- `reporte.exportar` sigue gobernando, catálogo por catálogo, **cada descarga real** — lo impone la
+  base dentro de cada `generarXxx` y dentro de `app.registrar_exportacion`, no esta pantalla.
+- Un usuario con `reporte.leer` pero sin `reporte.exportar` ve el catálogo completo con cada fila
+  marcada `Badge tono="error"` «Sin permiso reporte.exportar», sin botón de descarga — informativo, no
+  roto. Mismo patrón que `/carga-masiva` (D-090) con sus permisos por catálogo.
+- Los cinco roles de sistema (migración 014) tienen TODOS `reporte.leer`: cualquiera puede al menos ver
+  el catálogo. Solo `auxiliar_causacion` y `solo_lectura` no tienen `reporte.exportar` — verán las
+  filas marcadas, no rotas.
+- Los dos maestros (PUC, terceros) llevan además su propio permiso de módulo
+  (`parametro.puc.leer`/`tercero.leer`), ya exigido por sus rutas — la pantalla oculta el botón de
+  descarga si falta cualquiera de los dos, para no ofrecer un enlace que la ruta rechazaría con 403.
+
+### Verificación
+
+- `npx tsc --noEmit`: limpio.
+- `npx next build`: OK. `/reportes` y `/reportes/historial` aparecen como rutas dinámicas
+  (`force-dynamic`, igual que el resto del módulo de reportería y que `/carga-masiva`).
+- `npx vitest run`: **1400 pruebas, 1400 en verde, 75 archivos** (base antes de esta ficha: 1388/1388/74
+  tras el cierre de V-54; +12: 9 de aislamiento nuevas en
+  `tests/adversarial/a14-d091-historial-reportes-rls.test.ts`, 1 de ICA por municipio en
+  `tests/reports/reportes.test.ts`, 1 de «no existe POST» en `compuerta-ola3-ruta.test.ts`, y el ajuste
+  de «veinte» → «veintiuno» no resta pruebas, las mismas se reescribieron). **0 regresiones**: se
+  encontró y corrigió una prueba de D-087 que fallaba en falso
+  (`tests/adversarial/a14-d087-ampliada.test.ts`, «/parametros salió de PREFIJOS_SIN_MIGRAR») porque
+  afirmaba que `/reportes` SEGUÍA sin migrar — cierto cuando D-087 la escribió, falso después de esta
+  ficha; se corrigió la aserción para que compruebe lo que hoy es verdad (`/reportes` también fuera de
+  la lista), no se relajó ningún criterio de D-087.
+- Barrido de Regla de Oro 2 (`tests/adversarial/valores-tributarios.test.ts`): verde, sin hallazgos
+  nuevos — ningún literal tributario en `app/reportes/**` ni en `src/reports/historial.ts`.
+
+### Verificación de A14 — hecha por este mismo agente, con la limitación declarada abajo
+
+> **Superada el 2026-09-04**: la compuerta AMPLIADA la reejecutó después un A14 independiente, que
+> encontró y corrigió un defecto real que esta auto-verificación no vio (V-55, fecha imposible ⇒ 500).
+> Léase junto con «Compuerta AMPLIADA de D-091 — veredicto de A14», al final de esta ficha; lo de
+> abajo se conserva como registro de lo que A9 sí midió, no como el veredicto de QA.
+
+**No hubo mecanismo de subagente independiente disponible en esta sesión** (sin herramienta de
+despacho de subagentes tipo `Task`): la compuerta AMPLIADA que pedía el encargo se ejecutó con el
+mismo rigor adversarial de A14 (ataques reales contra la base de pruebas PGlite, no confianza en el
+reporte propio), pero por el mismo agente que implementó, no por un segundo agente independiente.
+Queda declarado explícitamente como deuda de proceso — no de producto — para quien retome: **esta
+ficha necesita un re-check independiente de A14 antes de comitear**, igual que toda entrega de este
+proyecto.
+
+Lo que SÍ se verificó con ataque real, no por reporte:
+
+- **Ningún reporte se genera para una empresa fuera del alcance del usuario, ni por POST.** La ruta
+  central solo expone `GET` (verificado importando el módulo, no leyendo el código). Los ataques ya
+  existentes de `compuerta-ola3-ruta.test.ts` (cookie de otra firma, `companyId` en la query, sesión
+  cerrada, token inventado, sin permiso) se corrieron de nuevo tras los cambios y siguen en 200/401/403
+  según corresponde — el reporte #21 se sometió a la MISMA batería (añadido a `casosDeLibro`).
+- **Los veintiún reportes de la ruta central dejan rastro EXPORT sin excepción** (contado por código:
+  21 `generarXxx` públicos, todos cableados a un slug, todos con `registrar_exportacion` en la única
+  ruta que los sirve). Los dos maestros ya lo tenían desde el cierre de V-54, reverificado sin tocar su
+  código.
+- **El historial reutilizado no filtra entre firmas ni entre empresas.** Nueve pruebas nuevas
+  (`tests/adversarial/a14-d091-historial-reportes-rls.test.ts`), mismo esqueleto que
+  `a14-d090-historial-rls.test.ts`: firma A no ve el período de la firma B; dos empresas de la MISMA
+  firma no se ven entre sí; sesión de A con `companyId` de B en la mano sigue sin ver nada de B; el
+  aislamiento lo impone la RLS (medido comparando el conteo con `asAdmin` sin RLS contra el conteo con
+  RLS de B); `pagina`/`porPagina` absurdos no rompen ni devuelven de más; el servicio no lleva un solo
+  filtro de aplicación por tenant/empresa (grep sobre el propio archivo fuente); las dos pantallas son
+  `force-dynamic`; la página exige el permiso ANTES de consultar (verificado por posición del código,
+  no solo por presencia).
+
+### Deuda técnica que esta ficha deja declarada, no oculta
+
+1. ~~**Re-check independiente de A14 pendiente**~~ — **HECHO el 2026-09-04**, en dos pasadas de A14
+   (la primera se cortó por límite de sesión a mitad de la corrección del defecto de fechas; la
+   segunda la terminó). Ver «Compuerta AMPLIADA de D-091 — veredicto de A14» justo debajo.
+2. **Los formularios de `/reportes` no validan en el cliente** más allá de `required`/`type` nativos de
+   HTML — la ruta central ya valida y devuelve 400 legible, así que no es un agujero de seguridad, pero
+   un contador que pide `nivel=99` en el balance de prueba ve el mensaje de error de la ruta en vez de
+   una validación instantánea. Cosmético, no bloqueante, mismo estándar que la versión mínima de la
+   Ola 3 ya aceptaba.
+3. **No se agregó un selector de período con atajos** (mes/bimestre/año con botones «este mes», «año
+   actual»...). Cada formulario pide fechas crudas `type="date"`, igual que la Ola 3. Es una mejora de
+   UX legítima para una fase futura, no un incumplimiento del encargo (que pedía «permitir filtrar por
+   período», no un componente de atajos).
+
+---
+
+## Compuerta AMPLIADA de D-091 — veredicto de A14 (independiente, 2026-09-04)
+
+**Veredicto: PASA CON CORRECCIONES.** Las correcciones las hizo A14 en la misma pasada; no quedó
+nada devuelto a otro agente. Corrida en dos sesiones (la primera se cortó por cupo justo mientras
+corregía V-55; la segunda terminó la corrección, amplió la prueba y cerró la compuerta). **No se
+confió en ninguna afirmación de la ficha de A9: todo se volvió a medir con ataque real contra
+PGlite.** Archivo de la compuerta: `tests/adversarial/a14-d091-compuerta-independiente.test.ts`
+(**24 pruebas**), más `tests/adversarial/a14-d091-historial-reportes-rls.test.ts` reejecutado.
+
+### V-55 — fecha sintácticamente válida pero inexistente ⇒ 500 técnico. **CORREGIDA por A14**
+
+Único defecto REAL de producto encontrado en esta compuerta. `RE_FECHA` (`/^\d{4}-\d{2}-\d{2}$/`)
+en `app/api/reportes/[libro]/route.ts` validaba **sintaxis y nada más**: `2026-02-30`, `2026-13-01`,
+`2026-00-10`, `2026-06-32` pasaban el filtro, llegaban como parámetro a PostgreSQL, el motor
+reventaba al castear a `date` y el usuario recibía el **500 genérico del CASO 3 de D-073** («un
+problema técnico del sistema. No es un dato que le falte a usted») — exactamente al revés de la
+verdad: sí es su dato, y él puede corregirlo. Con `type="date"` del navegador es difícil de
+provocar, pero una URL editada a mano, un marcador guardado o un cliente HTTP lo provocan.
+
+Corrección (acotada a la capa de validación de entrada de reportes; no se tocó el ledger, ni el
+motor tributario, ni ningún generador): `esFechaDelCalendario()` en la ruta, que además del formato
+comprueba que la fecha **exista en el calendario** (round-trip por `Date.UTC`), aplicada tanto en
+`fechaRequerida` como en `fechaOpcional`. Ahora sale por el mismo 400 con el nombre del campo que el
+resto de los parámetros. Prueba de candado, ampliada en la segunda pasada — **7 pruebas**: día
+imposible (`2026-02-30`, `2026-04-31`), mes imposible (`2026-13-01`, `2026-00-10`), día cero,
+bisiesto falso (`2025-02-29`), formato basura (`ayer`, `30/06/2026`, `2026-6-1`, ISO con hora,
+inyección `' OR '1'='1`, `99999-01-01`, espacio); en `desde` y en `hasta`; en campos **opcionales**
+(`fechaCorteComparativa` del ESF); que el mensaje **nombre el campo** y no diga «problema técnico»;
+que se rechace **antes de tocar la base** (no deja fila EXPORT); y que el camino feliz siga vivo
+(`2024-02-29` bisiesto real, `2026-01-31`, `2026-12-31` ⇒ 200).
+
+### V-56 — el guardia de Regla de Oro 2 de la propia compuerta se disparaba con un comentario. **CORREGIDA por A14**
+
+Al documentar V-55 en el código, el ejemplo `2026-02-30` del comentario hacía fallar la aserción «los
+únicos números de 4+ cifras de la ruta son cotas de formulario y números de formato DIAN». La Regla
+de Oro 2 prohíbe valores tributarios en el **código ejecutable**: un año dentro de un comentario no
+compila, no se ejecuta y no puede acabar en un asiento. El barrido de 4+ cifras ahora quita
+comentarios antes de mirar. **No se relajó el criterio**: la otra aserción del mismo bloque (tarifas
+`0.0X`, porcentajes `X%`, montos con separador de miles) sigue barriendo el archivo **completo,
+comentarios incluidos**, y sigue en cero.
+
+### Lo demás que se verificó con ataque real, no por reporte (todo en verde)
+
+- **Rastro EXPORT de los 21 reportes, MEDIDO en `audit_log`.** A9 lo había *contado por código* (que
+  ningún generador quedara huérfano de slug). A14 descargó los veintiuno uno por uno y contó las
+  filas `accion='EXPORT' AND entidad='reporte'` resultantes: 21 de 21. Ninguno exporta sin rastro.
+- **Paridad catálogo ↔ ruta.** Cada slug pintado en `app/reportes/page.tsx` se extrae del propio
+  archivo fuente y se invoca con **solo** los campos que el formulario marca obligatorios: los 21 dan
+  200, ninguno 400. Un slug mal escrito o un campo obligatorio olvidado en la pantalla sería un botón
+  roto en producción; no lo hay.
+- **`ica-municipio` (reporte #21) con datos de VERDAD.** La única prueba que dejó A9 lo ejercía con
+  cero retenciones: ni el SQL de `icaPorMunicipio` ni `resumenPorMunicipio` habían tocado nunca una
+  fila. A14 sembró ReteICA real en dos municipios y verificó agrupación, suma por municipio, **V-30**
+  (borrador y anulado no cuentan como retención practicada), **Regla 5** (centavos enteros como
+  texto, ningún float) y aislamiento entre firmas — incluido bajando el `.xlsx` de la firma B y
+  comprobando que no contiene ningún municipio de A.
+- **Aislamiento (Regla 7).** Firma A no ve nada de la firma B; dos empresas de la misma firma no se
+  ven entre sí; sesión de A con el `companyId` de B en la mano sigue sin ver nada de B; el historial
+  atacado **por la ruta real**, no solo por el servicio; `porPagina` gigante no se convierte en fuga.
+  Cero filas cruzadas en todos los casos, impuesto por RLS (medido contra el conteo `asAdmin`).
+- **Superficie de escritura.** La ruta central **solo exporta `GET`** (verificado importando el
+  módulo: `POST`/`PUT`/`PATCH` son `undefined`), así que no existe la vía «empresa por el cuerpo del
+  POST». La empresa sale siempre de la sesión, nunca de la petición.
+- **Los 20 casos dorados de la sección 12, completos, no una muestra**: A14 reejecutó aparte
+  `tests/golden/` + `tests/adversarial/{casos-dorados,valores-tributarios,evasion}` — **5 archivos,
+  148 pruebas, todas verdes**, y leyó el listado caso por caso (1 a 20, con sus variantes 1b, 10b,
+  12b, 14b, 15b), no un resumen agregado. Con los casos que esta compuerta tenía obligación de mirar de frente: **17** (cambiar una tarifa
+  con vigencia nueva no altera lo ya publicado y sí aplica a los hechos posteriores), **18**
+  (reprocesar 10 veces la misma factura ⇒ asiento idéntico las 10), **19** (el motor no llama a
+  ningún LLM: no tiene con qué; memoria proveedor+descripción en `caso19-memoria.test.ts`), **20**
+  (usuario del tenant B resolviendo contra el tenant A ⇒ cero filas), **15/15b** (nota crédito por
+  documento nuevo, sin mutar el original) y **16** (manda la fecha del hecho económico).
+- **Reglas de Oro 1 y 5 sobre el ledger**, reejecutadas sin tocarlas: `UPDATE`/`DELETE` sobre asiento
+  publicado y asiento desbalanceado siguen fallando **en la base** (`compuerta-ola0/1`, `evasion`),
+  y `valores-tributarios.test.ts` (barrido de literales de tarifa/UVT en todo el código fuente)
+  sigue en **cero hallazgos**, incluidos los archivos nuevos de D-091.
+
+### Estado real del árbol tras la compuerta (medido por A14, no heredado)
+
+- `npx tsc --noEmit`: **limpio** (exit 0, sin salida).
+- `npx next build`: **OK**. `/reportes` y `/reportes/historial` como rutas dinámicas. El único aviso
+  es el ya conocido de `src/db/dns-fix.ts` (`node:dns` en Edge Runtime), **preexistente y ajeno a
+  D-091**, ya registrado en la tabla de deuda técnica.
+- `npx vitest run`: **1424 pruebas, 1424 en verde, 76 archivos** (base de la ficha de A9:
+  1400/1400/75; +24 del archivo de compuerta de A14). **0 regresiones**, 0 rojos declarados.
+- **Sin comitear** — A14 no comitea.
+
+### Verificación en navegador real (hecha después, sesión orquestadora, 2026-09-04)
+
+**CERRADA.** Ni la sesión que implementó ni la de A14 tuvieron herramienta de navegador; la sesión
+que orquestó ambas sí la tenía y la corrió contra `npm run dev` real (Neon, no PGlite) tras el
+veredicto de A14:
+
+- Login real (`prueba@contable.co`) → empresa activa "Mi Empresa Cliente SAS" seleccionada desde el
+  selector de empresa del shell.
+- `/reportes` carga con las cinco categorías (Libros contables, Terceros/retenciones/IVA, Estados
+  financieros, Información exógena DIAN, Maestros de catálogo).
+- **Dos reportes de punta a punta**: `GET /api/reportes/libro-diario?desde=2026-01-01&hasta=2026-09-04`
+  → `200`, y `GET /api/reportes/ica-municipio?desde=2026-01-01&hasta=2026-09-04` → `200` (el reporte
+  nuevo de esta fase), ambos devolviendo `application/vnd...spreadsheetml.sheet`.
+- **Historial** (`/reportes/historial`): ambas descargas aparecen de inmediato con usuario, fecha y
+  nombre de reporte, junto a filas de una sesión anterior distinta (`David Silva`) — confirma que lee
+  `audit_log` real bajo RLS, no una tabla ni un mock nuevo.
+- **Ataque directo por URL**: `fetch` con `companyId=00000000-...` y `empresaId=00000000-...`
+  agregados al query string de `/api/reportes/libro-diario` con la cookie de sesión real — ambos
+  devuelven `200` con el reporte de la empresa de la sesión, **ignorando por completo el parámetro**;
+  no existe forma de pedir el reporte de otra empresa manipulando la URL, confirmado contra el motor
+  real, no solo contra PGlite.
+
+No quedan pendientes de verificación para D-091.
+
+---
+
 ## Próximo paso
+
+**2026-09-04 — D-091 (Reportes, Fase 7) CERRADA por completo**: PASÓ la compuerta AMPLIADA de A14,
+corrida de forma independiente: «PASA CON CORRECCIONES, hechas por A14 en la misma pasada» (V-55 y
+V-56 corregidas; nada devuelto a otro agente), **y** la verificación en navegador real contra Neon
+(login, dos reportes de punta a punta incluido `ica-municipio`, historial, ataque directo por URL —
+todo verificado, ver «Verificación en navegador real» en la ficha D-091). Estado del árbol **medido
+por A14**: `npx tsc --noEmit` limpio · `npx next build` OK (solo el aviso preexistente de
+`dns-fix.ts`) · `npx vitest run` **1424 pruebas, 1424 en verde, 76 archivos**. Sin comitear (A14 no
+comitea).
+
+D-091 no tiene pendientes propios. Ninguna migración de esquema ni de datos que aplicar a la Neon:
+D-091 no tocó `db/migrations/`. Queda por decidir con el usuario cuándo comitear D-091.
+
+---
 
 **2026-09-04 — D-090 (Carga masiva, Fase 6) pasó la compuerta AMPLIADA de A14: «PASA con correcciones,
 hechas por A14 en la misma pasada» (V-51 y V-52 corregidas; V-53 corregida en el guardia propio de

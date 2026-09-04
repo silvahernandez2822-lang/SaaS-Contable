@@ -57,6 +57,7 @@ import {
   generarCertificadoRetenciones,
   generarRelacionRetenciones,
   generarDetalleIva,
+  generarIcaPorMunicipio,
   generarEstadoSituacionFinanciera,
   generarEstadoResultadoIntegral,
   generarEstadoCambiosPatrimonio,
@@ -85,11 +86,31 @@ class ParametroReporteInvalidoError extends Error {}
 
 const RE_FECHA = /^\d{4}-\d{2}-\d{2}$/;
 
+/**
+ * A14 (compuerta independiente de D-091): el formato NO basta.
+ *
+ * `RE_FECHA` sola dejaba pasar `2026-13-01` y `2026-02-31` —sintaxis correcta,
+ * fecha inexistente—, que llegaban tal cual como parámetro a PostgreSQL, el
+ * motor reventaba al castear y el usuario recibía el CASO 3 de D-073: «un
+ * problema técnico del sistema. No es un dato que le falte a usted». Era
+ * exactamente al revés: sí es un dato suyo, y él puede arreglarlo. Aquí se
+ * comprueba que la fecha EXISTA en el calendario, para que ese error salga por
+ * el CASO 400 con el nombre del campo, como el resto de los parámetros.
+ */
+function esFechaDelCalendario(v: string): boolean {
+  if (!RE_FECHA.test(v)) return false;
+  const [anio, mes, dia] = v.split('-').map(Number) as [number, number, number];
+  const d = new Date(Date.UTC(anio, mes - 1, dia));
+  return (
+    d.getUTCFullYear() === anio && d.getUTCMonth() === mes - 1 && d.getUTCDate() === dia
+  );
+}
+
 function fechaRequerida(sp: URLSearchParams, campo: string): string {
   const v = sp.get(campo);
-  if (!v || !RE_FECHA.test(v)) {
+  if (!v || !esFechaDelCalendario(v)) {
     throw new ParametroReporteInvalidoError(
-      `El parámetro "${campo}" es obligatorio y debe tener el formato AAAA-MM-DD.`,
+      `El parámetro "${campo}" es obligatorio y debe ser una fecha real en formato AAAA-MM-DD.`,
     );
   }
   return v;
@@ -98,8 +119,10 @@ function fechaRequerida(sp: URLSearchParams, campo: string): string {
 function fechaOpcional(sp: URLSearchParams, campo: string): string | null {
   const v = sp.get(campo);
   if (v === null || v === '') return null;
-  if (!RE_FECHA.test(v)) {
-    throw new ParametroReporteInvalidoError(`El parámetro "${campo}" debe tener el formato AAAA-MM-DD.`);
+  if (!esFechaDelCalendario(v)) {
+    throw new ParametroReporteInvalidoError(
+      `El parámetro "${campo}" debe ser una fecha real en formato AAAA-MM-DD.`,
+    );
   }
   return v;
 }
@@ -196,6 +219,10 @@ const REPORTES: Record<string, GeneradorReporte> = {
   'detalle-iva': async (tx, sp) => {
     const rango = rangoFechas(sp);
     return { workbook: await generarDetalleIva(tx, rango), periodo: `${rango.desde}_a_${rango.hasta}` };
+  },
+  'ica-municipio': async (tx, sp) => {
+    const rango = rangoFechas(sp);
+    return { workbook: await generarIcaPorMunicipio(tx, rango), periodo: `${rango.desde}_a_${rango.hasta}` };
   },
 
   // ---- Estados financieros NIIF para las PYMES (A10) ----

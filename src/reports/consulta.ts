@@ -412,6 +412,29 @@ export async function retencionesPorPeriodo(
   return rows;
 }
 
+/**
+ * ICA por municipio: solo retenciones de tipo `reteica` APLICADAS, agrupables
+ * por municipio en la hoja de resumen (`libros.ts`). Mismo filtro de asiento
+ * publicado que el certificado (V-30): una retención de ICA de un asiento
+ * anulado o todavía en borrador no es una retención practicada ante el
+ * municipio.
+ */
+export async function icaPorMunicipio(
+  tx: SqlClient,
+  rango: RangoFechas,
+): Promise<FilaRetencionAplicada[]> {
+  const { rows } = await tx.query<FilaRetencionAplicada>(
+    `${SELECT_RETENCION}
+     WHERE ra.tipo = 'reteica'
+       AND ra.fecha_hecho_economico BETWEEN $1 AND $2
+       AND ra.aplicada = true
+       AND ${SOLO_RESPALDADA_POR_ASIENTO_PUBLICADO}
+     ORDER BY m.nombre NULLS LAST, tp.razon_social, ra.fecha_hecho_economico`,
+    [rango.desde, rango.hasta],
+  );
+  return rows;
+}
+
 // =============================================================================
 // 8. Detalle de IVA generado y descontable
 // =============================================================================

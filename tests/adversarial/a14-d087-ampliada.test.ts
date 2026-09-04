@@ -1068,7 +1068,10 @@ describe('A14 · D-087 (6) — /parametros migrado de verdad', () => {
     const linea = /const PREFIJOS_SIN_MIGRAR = \[([^\]]*)\]/.exec(src);
     expect(linea).not.toBeNull();
     expect(linea![1]).not.toContain('/parametros');
-    expect(linea![1]).toContain('/reportes');
+    // D-091 (A9): /reportes también salió de la lista — migrado al kit. Esta
+    // aserción, al momento de D-087, comprobaba lo contrario (que SEGUÍA sin
+    // migrar); se actualiza para no fallar en falso contra un progreso real.
+    expect(linea![1]).not.toContain('/reportes');
   });
 
   it('las pantallas usan el kit (Panel/Tabla/Encabezado), no markup suelto', () => {
