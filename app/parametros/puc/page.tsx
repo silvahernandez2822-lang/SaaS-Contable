@@ -17,8 +17,19 @@
  */
 import Link from 'next/link';
 import { conSesion } from '../../lib/sesion';
-import { listarPucEfectivo, obtenerModoPuc, resumenPuc } from '../../../src/services/puc';
+import {
+  conceptosQueUsanCuentas,
+  listarPucEfectivo,
+  obtenerModoPuc,
+  resolverCuentaPorCodigo,
+  resumenPuc,
+  simularImpactoCambioCuenta,
+  usoDeCuentas,
+  type CambioPropuestoCuenta,
+  type ImpactoCambioCuenta,
+} from '../../../src/services/puc';
 import { puedeEditarParametros } from '../../../src/services/parametrizacion';
+import { BotonUsoCuenta, IndicadorUso } from './_uso-cuenta';
 import {
   Boton,
   Campo,
@@ -45,25 +56,88 @@ function cadena(sp: BusquedaParams, campo: string): string {
 
 const CLASE_ENLACE = 'font-semibold text-primario underline dark:text-primario-tinta-oscura';
 
+/** Nombre de la ruta acordado con A9 (D-089 TAREA 5). Stub 501 hasta que A9 la implemente. */
+const RUTA_EXPORTAR_PUC = '/api/parametros/puc/exportar';
+
+const CAMPOS_SIMULAR = [
+  'codigo',
+  'nombre',
+  'naturaleza',
+  'alcance',
+  'permiteMovimiento',
+  'requiereTercero',
+  'requiereCentroCosto',
+  'requiereBaseGravable',
+  'activo',
+] as const;
+type CamposSimular = Record<(typeof CAMPOS_SIMULAR)[number], string>;
+
+function leerCamposSimular(sp: BusquedaParams): CamposSimular {
+  const out = {} as CamposSimular;
+  for (const c of CAMPOS_SIMULAR) out[c] = cadena(sp, c);
+  return out;
+}
+
 export default async function PaginaPuc({ searchParams }: { searchParams: Promise<BusquedaParams> }) {
   const sp = await searchParams;
   const busqueda = cadena(sp, 'q');
+  const simularCodigo = cadena(sp, 'simular');
 
-  const [cuentas, resumen, modo, puedeEditar] = await conSesion((tx) =>
-    Promise.all([
-      listarPucEfectivo(tx, { busqueda: busqueda || undefined, limite: 400 }),
-      resumenPuc(tx),
-      obtenerModoPuc(tx),
-      puedeEditarParametros(tx, 'puc'),
-    ]),
-  );
+  const { cuentas, resumen, modo, puedeEditar, uso, conceptosPorCuenta, simulacion } =
+    await conSesion(async (tx) => {
+      const [cuentasR, resumenR, modoR, puedeEditarR] = await Promise.all([
+        listarPucEfectivo(tx, { busqueda: busqueda || undefined, limite: 400 }),
+        resumenPuc(tx),
+        obtenerModoPuc(tx),
+        puedeEditarParametros(tx, 'puc'),
+      ]);
+
+      const ids = cuentasR.map((c) => c.id);
+      const usoR = await usoDeCuentas(tx, ids);
+      const enUsoIds = cuentasR.filter((c) => usoR.get(c.id)?.enUso).map((c) => c.id);
+      const conceptosR = await conceptosQueUsanCuentas(tx, enUsoIds);
+
+      // Paso 2 del simulador de impacto (D-089 TAREA 4): se recalcula el impacto
+      // AQUÍ, contra la base, en la misma lectura (nunca desde el query string).
+      let simulacionR: { impacto: ImpactoCambioCuenta; campos: CamposSimular } | null = null;
+      if (simularCodigo && puedeEditarR) {
+        const actual = await resolverCuentaPorCodigo(tx, simularCodigo);
+        if (actual) {
+          const campos = leerCamposSimular(sp);
+          const propuesta: CambioPropuestoCuenta = {
+            codigo: campos.codigo || actual.codigo,
+            naturaleza: campos.naturaleza === 'credito' ? 'credito' : 'debito',
+            permiteMovimiento: campos.permiteMovimiento === 'si',
+            activo: campos.activo !== 'no',
+          };
+          simulacionR = { impacto: await simularImpactoCambioCuenta(tx, actual, propuesta), campos };
+        }
+      }
+
+      return {
+        cuentas: cuentasR,
+        resumen: resumenR,
+        modo: modoR,
+        puedeEditar: puedeEditarR,
+        uso: usoR,
+        conceptosPorCuenta: conceptosR,
+        simulacion: simulacionR,
+      };
+    });
 
   return (
     <div className="mx-auto max-w-5xl p-5">
       <Encabezado
         titulo="Plan de cuentas (PUC)"
         descripcion="Para cada código gana la fila del alcance más específico que exista: empresa > firma > genérico (Decreto 2650)."
-        acciones={<EnlaceBoton href="/parametros" variante="fantasma">« Parametrización</EnlaceBoton>}
+        acciones={
+          <>
+            <a className={CLASE_ENLACE} href={RUTA_EXPORTAR_PUC}>
+              Exportar PUC a Excel
+            </a>
+            <EnlaceBoton href="/parametros" variante="fantasma">« Parametrización</EnlaceBoton>
+          </>
+        }
       />
 
       <MensajeError error={cadena(sp, 'error') || undefined} />
@@ -154,6 +228,7 @@ export default async function PaginaPuc({ searchParams }: { searchParams: Promis
                 <Th>Imputable</Th>
                 <Th>Estado</Th>
                 <Th>Alcance</Th>
+                <Th>En uso</Th>
                 {puedeEditar && <Th />}
               </tr>
             </thead>
@@ -173,6 +248,19 @@ export default async function PaginaPuc({ searchParams }: { searchParams: Promis
                         ? 'De la firma'
                         : 'Genérica (Decreto 2650)'}
                   </Td>
+                  <Td>
+                    <span className="inline-flex items-center gap-2">
+                      <IndicadorUso uso={uso.get(c.id)} />
+                      {uso.get(c.id)?.enUso && (
+                        <BotonUsoCuenta
+                          codigo={c.codigo}
+                          nombre={c.nombre}
+                          uso={uso.get(c.id)!}
+                          conceptos={conceptosPorCuenta.get(c.id) ?? []}
+                        />
+                      )}
+                    </span>
+                  </Td>
                   {puedeEditar && (
                     <Td alineado="right">
                       {c.alcance !== 'empresa' && c.activo && (
@@ -189,6 +277,70 @@ export default async function PaginaPuc({ searchParams }: { searchParams: Promis
           </Tabla>
         )}
       </Panel>
+
+      {simulacion && (
+        <Panel
+          titulo={`Simulador de impacto — cuenta ${simulacion.impacto.codigo}`}
+          className="mt-6"
+        >
+          <div className="space-y-3 p-5">
+            <MensajeEstado
+              tipo={simulacion.impacto.bloqueadoPorMotor ? 'error' : 'configuracion'}
+              titulo={`Este cambio afecta ${simulacion.impacto.conceptosActivos} concepto(s) de causación y ${simulacion.impacto.partidasLedger} partida(s) del ledger (sección 6.2, punto 6).`}
+            >
+              {simulacion.impacto.conceptos.length > 0 && (
+                <ul className="mt-1 list-disc pl-5">
+                  {simulacion.impacto.conceptos.map((cc) => (
+                    <li key={cc.conceptoId}>
+                      {cc.codigo} — {cc.nombre} ({cc.roles.join(', ')})
+                      {cc.activo ? '' : ' — inactivo'}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </MensajeEstado>
+
+            {simulacion.impacto.rechazos.length > 0 && (
+              <div className="rounded-lg border border-error/40 bg-error/8 p-4">
+                <p className="text-cuerpo font-semibold text-texto">
+                  El motor va a rechazar este cambio. No hay «forzar»: es la garantía de la migración
+                  179.
+                </p>
+                <ul className="mt-1 list-disc pl-5 text-menor text-texto-suave">
+                  {simulacion.impacto.rechazos.map((r) => (
+                    <li key={r.codigo}>
+                      <strong>{r.codigo}</strong> — {r.motivo}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {simulacion.impacto.advertencias.length > 0 && (
+              <ul className="list-disc pl-5 text-cuerpo text-texto">
+                {simulacion.impacto.advertencias.map((w, i) => (
+                  <li key={i}>{w}</li>
+                ))}
+              </ul>
+            )}
+
+            <div className="flex items-center gap-3">
+              {!simulacion.impacto.bloqueadoPorMotor && (
+                <form action={guardarCuentaAction}>
+                  {CAMPOS_SIMULAR.map((campo) => (
+                    <input key={campo} type="hidden" name={campo} value={simulacion.campos[campo]} />
+                  ))}
+                  <input type="hidden" name="confirmado" value="1" />
+                  <Boton tipo="submit">Confirmar y guardar el cambio</Boton>
+                </form>
+              )}
+              <Link className={CLASE_ENLACE} href="/parametros/puc">
+                Cancelar
+              </Link>
+            </div>
+          </div>
+        </Panel>
+      )}
 
       {puedeEditar && (
         <Panel titulo="Crear o editar una cuenta" className="mt-6">

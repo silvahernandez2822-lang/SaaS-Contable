@@ -55,10 +55,17 @@ SELECT NULL, NULL, '2205', 'NACIONALES', 3,
        'credito', true, true
 WHERE NOT EXISTS (SELECT 1 FROM account WHERE tenant_id IS NULL AND company_id IS NULL AND codigo = '2205');
 
+-- D-089 (A3). `2365` es una cuenta de nivel 3 CON subcuentas en el Decreto 2650
+-- (236505 salarios, 236515 honorarios, 236520 comisiones, 236525 servicios,
+-- 236530 arrendamientos, 236535 rendimientos financieros, 236540 compras…).
+-- Nace por tanto como AGRUPADORA (`permite_movimiento = false`): imputar la
+-- retención sobre ella dejaría el saldo sin decir por qué concepto se retuvo,
+-- que es justo lo que el certificado del art. 381 ET y el Formato 1001 exigen
+-- desagregado. Las reglas de retefuente apuntan a la subcuenta 236x, nunca aquí.
 INSERT INTO account (tenant_id, company_id, codigo, nombre, nivel, parent_id, naturaleza, permite_movimiento, requiere_tercero)
 SELECT NULL, NULL, '2365', 'RETENCIÓN EN LA FUENTE', 3,
        (SELECT id FROM account WHERE tenant_id IS NULL AND company_id IS NULL AND codigo = '23'),
-       'credito', true, true
+       'credito', false, true
 WHERE NOT EXISTS (SELECT 1 FROM account WHERE tenant_id IS NULL AND company_id IS NULL AND codigo = '2365');
 
 INSERT INTO account (tenant_id, company_id, codigo, nombre, nivel, parent_id, naturaleza, permite_movimiento, requiere_tercero)
@@ -72,6 +79,34 @@ SELECT NULL, NULL, '2368', 'IMPUESTO DE INDUSTRIA Y COMERCIO RETENIDO', 3,
        (SELECT id FROM account WHERE tenant_id IS NULL AND company_id IS NULL AND codigo = '23'),
        'credito', true, true
 WHERE NOT EXISTS (SELECT 1 FROM account WHERE tenant_id IS NULL AND company_id IS NULL AND codigo = '2368');
+
+-- -----------------------------------------------------------------------------
+-- Subcuentas (nivel 4, 6 dígitos) de 2365 — D-089 (A3).
+--
+-- Son las HOJAS sobre las que se imputa de verdad la retefuente. El seed del
+-- PUC completo (tanda2/011) trae estas mismas seis y otras nueve más; se
+-- adelantan aquí porque las reglas de la tanda 1 (050_tax_rules_retefuente.sql)
+-- se cargan ANTES que la tanda 2 y necesitan poder resolver su `account_id`.
+-- Ambos archivos usan WHERE NOT EXISTS por código, así que no se duplican.
+--
+-- Nombres y naturaleza: Decreto 2650 de 1993 (mismo origen que el resto del
+-- archivo, misma advertencia de cotejo humano).
+-- -----------------------------------------------------------------------------
+INSERT INTO account (tenant_id, company_id, codigo, nombre, nivel, parent_id, naturaleza, permite_movimiento, requiere_tercero)
+SELECT NULL, NULL, v.codigo, v.nombre, 4,
+       (SELECT id FROM account WHERE tenant_id IS NULL AND company_id IS NULL AND codigo = '2365'),
+       'credito', true, true
+FROM (VALUES
+  ('236515', 'HONORARIOS'),
+  ('236520', 'COMISIONES'),
+  ('236525', 'SERVICIOS'),
+  ('236530', 'ARRENDAMIENTOS'),
+  ('236535', 'RENDIMIENTOS FINANCIEROS'),
+  ('236540', 'COMPRAS')
+) AS v(codigo, nombre)
+WHERE NOT EXISTS (
+  SELECT 1 FROM account WHERE tenant_id IS NULL AND company_id IS NULL AND codigo = v.codigo
+);
 
 COMMENT ON TABLE account IS
   'Global (tenant_id IS NULL) poblado parcialmente por A1 (seeds/tanda1 y tanda2), Decreto 2650 de 1993. Ver docs/reportes/ola1-a1.md para el subconjunto cargado y lo pendiente.';

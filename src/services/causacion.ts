@@ -320,6 +320,72 @@ export function construirPartidasCausacion(
   return { partidas, contrapartidaAmbigua, motivos: [] };
 }
 
+/**
+ * D-089. ¿Toda cuenta de la propuesta admite partidas?
+ *
+ * Devuelve un motivo POR CUENTA defectuosa (no por partida: repetir el mismo
+ * problema cuatro veces porque cuatro líneas usan la misma cuenta no le añade
+ * nada al contador). Lista vacía = todo en orden.
+ *
+ * Se consulta `account` directamente por id, y NO `v_account_efectivo` por
+ * código: la propuesta ya trae ids resueltos por el motor, y es exactamente
+ * esa fila —no la que hoy ganaría la precedencia por código— la que el trigger
+ * `journal_line_valida_cuenta` va a mirar en el `INSERT`. Preguntar por otra
+ * cosa que la que impone el motor haría de este filtro un adorno.
+ */
+async function verificarCuentasImputables(
+  tx: SqlClient,
+  partidas: readonly PartidaBorrador[],
+): Promise<MotivoLocal[]> {
+  const ids = [...new Set(partidas.map((p) => p.accountId))];
+  if (ids.length === 0) return [];
+
+  const { rows } = await tx.query<{
+    id: string;
+    codigo: string;
+    nombre: string;
+    permite_movimiento: boolean;
+    activo: boolean;
+  }>(
+    `SELECT id, codigo, nombre, permite_movimiento, activo
+       FROM account WHERE id = ANY($1::uuid[])`,
+    [ids],
+  );
+  const porId = new Map(rows.map((r) => [r.id, r]));
+
+  const motivos: MotivoLocal[] = [];
+  for (const id of ids) {
+    const c = porId.get(id);
+    if (!c) {
+      // No es visible desde esta sesión: es alcance (la FK y el trigger
+      // `journal_line_alcance` lo dirán), no plan de cuentas. No se inventa un
+      // diagnóstico de PUC para un problema que no lo es.
+      continue;
+    }
+    if (!c.permite_movimiento) {
+      motivos.push({
+        codigo: 'cuenta_no_imputable',
+        detalle:
+          `La cuenta PUC ${c.codigo} "${c.nombre}" es una cuenta de agrupación y no admite ` +
+          'partidas: la propuesta tendría que imputar sobre una de sus subcuentas. Revise el ' +
+          'concepto de causación o la regla de retención que la trajo (Parámetros › Plan de ' +
+          'cuentas y Parámetros › Tarifas).',
+      });
+      continue;
+    }
+    if (!c.activo) {
+      motivos.push({
+        codigo: 'cuenta_inactiva',
+        detalle:
+          `La cuenta PUC ${c.codigo} "${c.nombre}" está inactiva en el plan de cuentas y no ` +
+          'admite partidas nuevas. Reactívela o reapunte a la cuenta que la sustituyó el ' +
+          'concepto de causación o la regla de retención que la trajo.',
+      });
+    }
+  }
+  return motivos;
+}
+
 /** Inserta el asiento borrador y sus partidas. No lo publica: eso exige aprobación humana (`aprobarAsiento`). */
 async function insertarAsientoBorrador(
   tx: SqlClient,
@@ -631,6 +697,25 @@ async function causarFactura(
     await tx.exec('ROLLBACK TO SAVEPOINT causacion_asiento');
     await completarJob(tx, jobId, { requiereRevisionManual: true, motivos: motivosPartidas });
     return { estado: 'revision_manual', motivos: motivosPartidas };
+  }
+
+  // D-089. ÚLTIMA COMPROBACIÓN ANTES DE ESCRIBIR: toda cuenta de la propuesta
+  // tiene que admitir partidas. Desde la migración 179 el ledger rechaza en el
+  // propio `INSERT` la partida contra una cuenta de agrupación (LG004) o
+  // inactiva (LG009); sin este filtro, el documento no acabaría en revisión
+  // manual sino en una EXCEPCIÓN de base de datos que aborta el trabajo del
+  // worker y no le dice al contador ni qué cuenta ni qué concepto la trajo.
+  //
+  // Cubre las dos procedencias a la vez, que es la razón de hacerlo aquí y no
+  // en el motor: las cuentas del `concepto_causacion` (gasto, IVA descontable,
+  // contrapartida) y las de las reglas de retención. El motor ya rechaza la
+  // regla con cuenta no imputable con su propio motivo; esto es la red que
+  // cubre lo que el motor no ve.
+  const motivosCuentas = await verificarCuentasImputables(tx, partidas);
+  if (motivosCuentas.length > 0) {
+    await tx.exec('ROLLBACK TO SAVEPOINT causacion_asiento');
+    await completarJob(tx, jobId, { requiereRevisionManual: true, motivos: motivosCuentas });
+    return { estado: 'revision_manual', motivos: motivosCuentas };
   }
 
   const fiscalPeriodId = await abrirPeriodoFiscal(tx, doc.company_id, doc.fecha_hecho_economico);

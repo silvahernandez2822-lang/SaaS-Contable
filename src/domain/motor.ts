@@ -1192,6 +1192,26 @@ async function liquidar(
     );
     return;
   }
+  // D-089. La regla tiene cuenta, pero la cuenta no admite partidas: es de
+  // agrupación en el PUC (`permite_movimiento = false`) o está inactiva. Sin
+  // esto, el motor calcularía la retención y el documento moriría más tarde, en
+  // el `INSERT` de la partida, con el LG004/LG009 crudo de la migración 179 —
+  // un error de base de datos, en la cara del contador, sin decir qué regla lo
+  // provocó. Aquí se convierte en un motivo de revisión manual que nombra la
+  // regla, la cuenta y qué hacer.
+  if (regla.cuenta_imputable === false) {
+    ctx.motivos.push(
+      motivo(
+        MOTIVO.REGLA_CUENTA_NO_IMPUTABLE,
+        `La regla de ${tipo} ${regla.id} apunta a la cuenta PUC ` +
+          `${regla.cuenta_codigo ?? '(sin código)'} ${regla.cuenta_nombre ?? ''}`.trimEnd() +
+          ', que no admite partidas: es una cuenta de agrupación o está inactiva. ' +
+          'Reapunte la regla a la subcuenta que cuelga de ella en Parámetros › Tarifas. ' +
+          'El motor no elige la subcuenta por su cuenta: eso es plan de cuentas, no cálculo.',
+      ),
+    );
+    return;
+  }
 
   const base = baseSegunRegla(ctx, regla);
   if (base === null) {

@@ -576,12 +576,39 @@ describe('A14 · db/seeds es DATO, no código: la exclusión del barrido no es u
     return acc;
   }
 
-  const ARCHIVOS = archivosDeSeeds(SEEDS);
+  const TODOS = archivosDeSeeds(SEEDS);
+
+  /**
+   * `db/seeds/_fuentes/` guarda los catálogos normativos de referencia en texto
+   * plano (D-089/A1: la transcripción del PUC del Decreto 2650 desde la que se
+   * GENERA el `.sql`). Eso no es un seed y no tiene por qué ser `.sql`.
+   *
+   * A14 (V-48): la exclusión original saltaba el DIRECTORIO ENTERO, y eso sí
+   * era una puerta trasera. `src/db/seed.ts` recorre TODOS los subdirectorios
+   * de `db/seeds/` y aplica CUALQUIER `.sql` que encuentre, `_fuentes/`
+   * incluido: un archivo puesto ahí se habría ejecutado contra la base sin
+   * pasar por ninguna de las cuatro comprobaciones de abajo — ni la de «ningún
+   * seed hace UPDATE/DELETE», ni la de «ningún seed define lógica». La
+   * excepción se acota a lo que la justifica: en `_fuentes/` se toleran los
+   * archivos que NO son `.sql`; un `.sql` allí se audita como el seed que sería.
+   */
+  const esFuenteNoSql = (a: string) =>
+    relative(SEEDS, a).replace(/\\/g, '/').startsWith('_fuentes/') && !a.endsWith('.sql');
+
+  const ARCHIVOS = TODOS.filter((a) => !esFuenteNoSql(a));
 
   it('hay seeds que auditar y todos son .sql — ni un archivo ejecutable', () => {
     expect(ARCHIVOS.length).toBeGreaterThan(10);
     const noSql = ARCHIVOS.filter((a) => !a.endsWith('.sql')).map((a) => relative(RAIZ, a));
     expect(noSql).toEqual([]);
+  });
+
+  it('V-48 · lo que el cargador de seeds aplica es EXACTAMENTE lo que este barrido audita', () => {
+    // Si el cargador y el barrido dejaran de mirar el mismo conjunto, esta
+    // suite estaría certificando un universo distinto del que llega a la base.
+    const aplicables = TODOS.filter((a) => a.endsWith('.sql')).map((a) => relative(RAIZ, a)).sort();
+    const auditados = ARCHIVOS.filter((a) => a.endsWith('.sql')).map((a) => relative(RAIZ, a)).sort();
+    expect(auditados).toEqual(aplicables);
   });
 
   it('ningún seed define lógica: nada de CREATE FUNCTION, DO $$ ni triggers', () => {

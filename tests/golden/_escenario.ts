@@ -70,7 +70,20 @@ export interface EscenarioDorado {
   /** Segunda actividad, de alcance de la firma, para el caso 10. */
   ciiuSecundaria: string;
   conceptos: ConceptosEscenario;
-  cuentas: { retefuente: string; reteiva: string; reteica: string };
+  /**
+   * D-089: las retenciones en la fuente ya NO caen todas en `2365` (que es una
+   * cuenta de AGRUPACIÓN del Decreto 2650, con subcuentas). Cada concepto
+   * acredita su subcuenta 236x. Se exponen las cuatro que usan los escenarios
+   * dorados para que las aserciones digan el destino real, no uno genérico.
+   */
+  cuentas: {
+    retefuenteServicios: string;
+    retefuenteCompras: string;
+    retefuenteHonorarios: string;
+    retefuenteArrendamientos: string;
+    reteiva: string;
+    reteica: string;
+  };
   roundingRuleId: string;
   /** Regla de ReteICA materializada para Medellín (tarifa copiada de A1). */
   reglaIcaMedellin: string;
@@ -215,7 +228,10 @@ export async function montarEscenario(): Promise<EscenarioDorado> {
     await seed(tx, { dir: SEEDS_DIR });
 
     const cuentas = {
-      retefuente: await idCuenta(tx, '2365'),
+      retefuenteServicios: await idCuenta(tx, '236525'),
+      retefuenteCompras: await idCuenta(tx, '236540'),
+      retefuenteHonorarios: await idCuenta(tx, '236515'),
+      retefuenteArrendamientos: await idCuenta(tx, '236530'),
       reteiva: await idCuenta(tx, '2367'),
       reteica: await idCuenta(tx, '2368'),
     };

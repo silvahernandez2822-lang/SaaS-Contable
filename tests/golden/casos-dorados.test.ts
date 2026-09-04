@@ -109,7 +109,8 @@ describe('A3 · casos dorados de la sección 12', () => {
     expect(retefuente.aplicada).toBe(true);
     expect(retefuente.valor).toBe(pesos(40_000));
     expect(retefuente.base).toBe(pesos(1_000_000));
-    expect(retefuente.accountId).toBe(e.cuentas.retefuente);
+    // D-089: servicios acredita 236525 SERVICIOS, no la agrupadora 2365.
+    expect(retefuente.accountId).toBe(e.cuentas.retefuenteServicios);
     expect(retefuente.normaRespaldo).toContain('Decreto 572');
 
     // ReteIVA va sobre el IVA, no sobre la base.
@@ -493,9 +494,18 @@ describe('A3 · casos dorados de la sección 12', () => {
     const valores = r.retenciones.map((x) => x.valor).sort((a, b) => a - b);
     expect(valores).toEqual([pesos(15_000), pesos(22_000), pesos(40_000)]);
 
-    // Tres reglas distintas, una misma cuenta: tres agregados, no uno solo.
+    // Tres reglas distintas y —desde D-089— tres subcuentas distintas del PUC:
+    // servicios a 236525, compras a 236540, honorarios a 236515. Antes las tres
+    // caían en la agrupadora 2365 y el saldo no decía por qué concepto se
+    // retuvo, que es justo lo que el certificado del art. 381 ET desagrega.
     expect(r.agregados).toHaveLength(3);
-    expect(r.agregados.every((a) => a.accountId === e.cuentas.retefuente)).toBe(true);
+    expect(new Set(r.agregados.map((a) => a.accountId))).toEqual(
+      new Set([
+        e.cuentas.retefuenteServicios,
+        e.cuentas.retefuenteCompras,
+        e.cuentas.retefuenteHonorarios,
+      ]),
+    );
     expect(r.agregados.reduce((s, a) => s + a.valor, 0)).toBe(pesos(77_000));
   });
 

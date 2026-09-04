@@ -502,3 +502,288 @@ export async function ocultarCuentaGenerica(tx: SqlClient, codigo: string): Prom
     alcance: 'empresa',
   });
 }
+
+// =============================================================================
+// D-089 · TAREA 4 — USO INVERSO DE UNA CUENTA Y SIMULADOR DE IMPACTO
+//
+// El motor (migración 179) impone cinco reglas sobre `account`: una cuenta en
+// uso no se borra (PU001), y con movimientos no cambia de naturaleza (PU002),
+// no se vuelve agrupadora (PU003) ni se renumera (PU004); con un
+// `concepto_causacion` activo apuntándola no se retira ni se desimputa (PU005).
+// La interfaz no puede ofrecer una acción que el motor va a negar sin avisar
+// antes: estas consultas dan el MISMO criterio (`app.cuenta_uso`, SECURITY
+// DEFINER — ve el histórico de todas las empresas de la firma, no solo el de la
+// empresa en contexto, porque una cuenta global/de firma puede tener partidas
+// en varias) y el listado detallado de qué conceptos la usan, bajo RLS.
+// =============================================================================
+
+export type RolCuentaEnConcepto = 'gasto' | 'iva_descontable' | 'contrapartida';
+
+export interface ConceptoQueUsaCuenta {
+  conceptoId: string;
+  codigo: string;
+  nombre: string;
+  activo: boolean;
+  /** En qué campo(s) del concepto aparece esta cuenta. */
+  roles: RolCuentaEnConcepto[];
+}
+
+export interface UsoCuenta {
+  partidasLedger: number;
+  conceptosActivos: number;
+  cuentasHijas: number;
+  niifMappings: number;
+  exogenaMappings: number;
+  tieneMovimientos: boolean;
+  /** En uso con el criterio que bloquea el motor: partidas o conceptos activos. */
+  enUso: boolean;
+}
+
+function usoDeFila(f: {
+  partidas_ledger: string | number | null;
+  conceptos_activos: string | number | null;
+  cuentas_hijas?: string | number | null;
+  niif_mappings?: string | number | null;
+  exogena_mappings?: string | number | null;
+}): UsoCuenta {
+  const partidasLedger = Number(f.partidas_ledger ?? 0);
+  const conceptosActivos = Number(f.conceptos_activos ?? 0);
+  return {
+    partidasLedger,
+    conceptosActivos,
+    cuentasHijas: Number(f.cuentas_hijas ?? 0),
+    niifMappings: Number(f.niif_mappings ?? 0),
+    exogenaMappings: Number(f.exogena_mappings ?? 0),
+    tieneMovimientos: partidasLedger > 0,
+    enUso: partidasLedger > 0 || conceptosActivos > 0,
+  };
+}
+
+/** Conteos de uso de UNA cuenta, con el criterio exacto del motor. */
+export async function usoDeCuenta(tx: SqlClient, accountId: string): Promise<UsoCuenta> {
+  const { rows } = await tx.query<{
+    partidas_ledger: string;
+    conceptos_activos: string;
+    cuentas_hijas: string;
+    niif_mappings: string;
+    exogena_mappings: string;
+  }>('SELECT * FROM app.cuenta_uso($1)', [accountId]);
+  return usoDeFila(
+    rows[0] ?? {
+      partidas_ledger: 0,
+      conceptos_activos: 0,
+      cuentas_hijas: 0,
+      niif_mappings: 0,
+      exogena_mappings: 0,
+    },
+  );
+}
+
+/**
+ * Uso de un lote de cuentas en un solo round-trip, para los badges de la tabla
+ * del PUC. Cada `app.cuenta_uso` es un puñado de EXISTS baratos y el lote está
+ * acotado por el LIMIT de la pantalla. NO se creó una vista sobre todo
+ * `account` a propósito (migración 179): la consulta real es siempre por unas
+ * pocas cuentas visibles.
+ */
+export async function usoDeCuentas(
+  tx: SqlClient,
+  accountIds: string[],
+): Promise<Map<string, UsoCuenta>> {
+  const salida = new Map<string, UsoCuenta>();
+  if (accountIds.length === 0) return salida;
+  const { rows } = await tx.query<{
+    id: string;
+    partidas_ledger: string;
+    conceptos_activos: string;
+    cuentas_hijas: string;
+    niif_mappings: string;
+    exogena_mappings: string;
+  }>(
+    `SELECT ids.id, u.*
+       FROM unnest($1::uuid[]) AS ids(id)
+       CROSS JOIN LATERAL app.cuenta_uso(ids.id) AS u`,
+    [accountIds],
+  );
+  for (const r of rows) salida.set(r.id, usoDeFila(r));
+  return salida;
+}
+
+function conceptosDeFilas(
+  filas: Array<{
+    id: string;
+    codigo: string;
+    nombre: string;
+    activo: boolean;
+    rol_gasto: boolean;
+    rol_iva: boolean;
+    rol_contrapartida: boolean;
+  }>,
+): ConceptoQueUsaCuenta[] {
+  return filas.map((r) => {
+    const roles: RolCuentaEnConcepto[] = [];
+    if (r.rol_gasto) roles.push('gasto');
+    if (r.rol_iva) roles.push('iva_descontable');
+    if (r.rol_contrapartida) roles.push('contrapartida');
+    return { conceptoId: r.id, codigo: r.codigo, nombre: r.nombre, activo: r.activo, roles };
+  });
+}
+
+/**
+ * Qué `concepto_causacion` usan una cuenta y en qué rol. Consulta normal bajo
+ * la RLS de `concepto_causacion` (doble nivel tenant/company): el nombre de un
+ * concepto de otra firma no sale nunca. Se mira cada una de las tres FKs
+ * (`cuenta_gasto_id`, `cuenta_iva_descontable_id`, `cuenta_contrapartida_id`).
+ */
+export async function conceptosQueUsanCuenta(
+  tx: SqlClient,
+  accountId: string,
+): Promise<ConceptoQueUsaCuenta[]> {
+  const { rows } = await tx.query<{
+    id: string;
+    codigo: string;
+    nombre: string;
+    activo: boolean;
+    rol_gasto: boolean;
+    rol_iva: boolean;
+    rol_contrapartida: boolean;
+  }>(
+    `SELECT c.id, c.codigo, c.nombre, c.activo,
+            c.cuenta_gasto_id           IS NOT DISTINCT FROM $1 AS rol_gasto,
+            c.cuenta_iva_descontable_id IS NOT DISTINCT FROM $1 AS rol_iva,
+            c.cuenta_contrapartida_id   IS NOT DISTINCT FROM $1 AS rol_contrapartida
+       FROM concepto_causacion c
+      WHERE $1 IN (c.cuenta_gasto_id, c.cuenta_iva_descontable_id, c.cuenta_contrapartida_id)
+      ORDER BY c.activo DESC, c.codigo`,
+    [accountId],
+  );
+  return conceptosDeFilas(rows);
+}
+
+/** Igual que `conceptosQueUsanCuenta` pero para un lote de cuentas. */
+export async function conceptosQueUsanCuentas(
+  tx: SqlClient,
+  accountIds: string[],
+): Promise<Map<string, ConceptoQueUsaCuenta[]>> {
+  const salida = new Map<string, ConceptoQueUsaCuenta[]>();
+  if (accountIds.length === 0) return salida;
+  const { rows } = await tx.query<{
+    account_id: string;
+    id: string;
+    codigo: string;
+    nombre: string;
+    activo: boolean;
+    rol_gasto: boolean;
+    rol_iva: boolean;
+    rol_contrapartida: boolean;
+  }>(
+    `SELECT ids.id AS account_id, c.id, c.codigo, c.nombre, c.activo,
+            c.cuenta_gasto_id           IS NOT DISTINCT FROM ids.id AS rol_gasto,
+            c.cuenta_iva_descontable_id IS NOT DISTINCT FROM ids.id AS rol_iva,
+            c.cuenta_contrapartida_id   IS NOT DISTINCT FROM ids.id AS rol_contrapartida
+       FROM unnest($1::uuid[]) AS ids(id)
+       JOIN concepto_causacion c
+         ON ids.id IN (c.cuenta_gasto_id, c.cuenta_iva_descontable_id, c.cuenta_contrapartida_id)
+      ORDER BY c.activo DESC, c.codigo`,
+    [accountIds],
+  );
+  for (const r of rows) {
+    const previas = salida.get(r.account_id) ?? [];
+    previas.push(...conceptosDeFilas([r]));
+    salida.set(r.account_id, previas);
+  }
+  return salida;
+}
+
+// -----------------------------------------------------------------------------
+// SIMULADOR DE IMPACTO — se corre ANTES de guardar una edición de cuenta en uso
+// -----------------------------------------------------------------------------
+
+export type CodigoRechazoCuenta = 'PU002' | 'PU003' | 'PU004' | 'PU005';
+
+export interface ImpactoCambioCuenta {
+  codigo: string;
+  nombre: string;
+  enUso: boolean;
+  partidasLedger: number;
+  conceptosActivos: number;
+  conceptos: ConceptoQueUsaCuenta[];
+  /** Cambios pedidos que el motor (migración 179) va a RECHAZAR. */
+  rechazos: Array<{ codigo: CodigoRechazoCuenta; motivo: string }>;
+  /** Cambios permitidos pero con impacto: exigen confirmación explícita. */
+  advertencias: string[];
+  /** Hay algo que confirmar y NADA que el motor rechace. */
+  requiereConfirmacion: boolean;
+  /** El motor va a rechazar: la UI no debe ofrecer "guardar". */
+  bloqueadoPorMotor: boolean;
+}
+
+export type CambioPropuestoCuenta = Pick<
+  DatosCuenta,
+  'codigo' | 'naturaleza' | 'permiteMovimiento' | 'activo'
+>;
+
+/**
+ * Predice, con el mismo criterio que el trigger `account_restrict_uso`, qué le
+ * pasa a una cuenta EN USO si se guarda `propuesta`. No escribe nada.
+ */
+export async function simularImpactoCambioCuenta(
+  tx: SqlClient,
+  actual: FilaCuenta,
+  propuesta: CambioPropuestoCuenta,
+): Promise<ImpactoCambioCuenta> {
+  const uso = await usoDeCuenta(tx, actual.id);
+  const conceptos = uso.enUso ? await conceptosQueUsanCuenta(tx, actual.id) : [];
+
+  const cambiaNaturaleza = propuesta.naturaleza !== actual.naturaleza;
+  const desimputa = actual.permiteMovimiento && propuesta.permiteMovimiento === false;
+  const cambiaCodigo = propuesta.codigo.trim() !== actual.codigo;
+  const inactiva = actual.activo && propuesta.activo === false;
+
+  const rechazos: ImpactoCambioCuenta['rechazos'] = [];
+  if (uso.tieneMovimientos && cambiaNaturaleza) {
+    rechazos.push({
+      codigo: 'PU002',
+      motivo: `La cuenta ${actual.codigo} ya tiene ${uso.partidasLedger} partida(s) en el ledger; cambiarle la naturaleza de "${actual.naturaleza}" a "${propuesta.naturaleza}" invertiría el signo de todos los reportes del pasado. Cree una cuenta nueva y traslade el saldo con un asiento.`,
+    });
+  }
+  if (uso.tieneMovimientos && desimputa) {
+    rechazos.push({
+      codigo: 'PU003',
+      motivo: `La cuenta ${actual.codigo} ya tiene ${uso.partidasLedger} partida(s) y no se puede convertir en cuenta de agrupación: el histórico quedaría imputado sobre algo que no admite imputación. Si no quiere seguir usándola, inactívela.`,
+    });
+  }
+  if (uso.tieneMovimientos && cambiaCodigo) {
+    rechazos.push({
+      codigo: 'PU004',
+      motivo: `La cuenta ${actual.codigo} ya tiene ${uso.partidasLedger} partida(s); renumerarla a ${propuesta.codigo.trim()} reclasificaría en silencio los reportes, la exógena y los papeles de trabajo ya emitidos. Cree la cuenta nueva y traslade el saldo con un asiento.`,
+    });
+  }
+  if (uso.conceptosActivos > 0 && (inactiva || desimputa || cambiaNaturaleza)) {
+    rechazos.push({
+      codigo: 'PU005',
+      motivo: `${uso.conceptosActivos} concepto(s) de causación o memoria(s) de clasificación activos apuntan a la cuenta ${actual.codigo}. Retirarla o cambiarla rompería la causación automática en la siguiente factura. Reasigne primero esos conceptos a otra cuenta.`,
+    });
+  }
+
+  const advertencias: string[] = [];
+  if (uso.tieneMovimientos && inactiva && uso.conceptosActivos === 0) {
+    advertencias.push(
+      `Inactivar la cuenta ${actual.codigo} la retira de los selectores. Sus ${uso.partidasLedger} partida(s) y su saldo histórico se conservan y los reportes del pasado la siguen resolviendo por su id.`,
+    );
+  }
+
+  const bloqueadoPorMotor = rechazos.length > 0;
+  return {
+    codigo: actual.codigo,
+    nombre: actual.nombre,
+    enUso: uso.enUso,
+    partidasLedger: uso.partidasLedger,
+    conceptosActivos: uso.conceptosActivos,
+    conceptos,
+    rechazos,
+    advertencias,
+    requiereConfirmacion: advertencias.length > 0 && !bloqueadoPorMotor,
+    bloqueadoPorMotor,
+  };
+}

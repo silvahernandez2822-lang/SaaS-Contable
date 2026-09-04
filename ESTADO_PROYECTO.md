@@ -1,7 +1,86 @@
 # ESTADO_PROYECTO.md
 
 > Memoria única entre sesiones. Todo agente lo lee al empezar y lo actualiza al terminar.
-> Última actualización: 2026-09-03 — **COMPUERTA AMPLIADA DE D-088: A14 verifica con arsenal propio
+> Última actualización: 2026-09-04 — **A14 cierra la COMPUERTA AMPLIADA de D-089: PASA con
+> correcciones, hechas por A14 en la misma pasada.** El módulo PUC queda verificado con arsenal
+> propio, atacando la base por SQL directo desde una sesión de negocio real: la partida contra una
+> cuenta agrupadora muere en el `INSERT` del borrador (`LG004`) y contra una inactiva con `LG009`; la
+> puerta de la reversa **no** deja colar una agrupadora que el original no tenía; `PU001..PU005` se
+> sostienen incluso desde el superusuario; el catálogo del PUC no tiene huérfanos y `2365` quedó
+> consistente entre seed y migración 180; y **los 20 casos dorados no movieron ni un centavo** — solo
+> cambia el `account_id` del crédito de retefuente (`2365` → `236x`), y la aserción del caso 14 se
+> volvió **más** exigente. **Cuatro vulnerabilidades**, tres corregidas por A14: **V-47 (alta)** —
+> cualquier firma podía **borrar el catálogo global** (`DELETE FROM account WHERE tenant_id IS NULL`
+> dejaba el PUC compartido en **cero filas**) y **apropiarse** de sus filas, por un hueco de la
+> política RLS híbrida de la Ola 0 que alcanzaba también a UVT, municipios, CIIU, `tax_rule` futuras y
+> `role_permission`; cerrada con la migración **181** (`CT001`) sobre las 18 tablas híbridas —,
+> **V-48** (el barrido de seeds excluía un directorio que el cargador sí aplica), **V-49** (bases
+> mínimas de 4 y 27 UVT quemadas en la plantilla de carga masiva de ICA, el patrón de V-45) y
+> **V-50** (declarada, de **A3**: la red de D-089 no cubre la nota crédito). Además se corrigió una
+> **prueba intermitente** de D-089 que hacía fallar la suite ~4 de cada 10 veces (el encargo decía
+> 1293/1293; A14 midió 1292/1293). Estado: **`tsc` limpio · `npx vitest run` 1345/1345 en verde, 70
+> archivos**. Migraciones **179/180/181** y seeds sin aplicar a la Neon. **Sin comitear** (A14 no
+> comitea). Falta la verificación en navegador real. Ver «Compuerta AMPLIADA de D-089 — veredicto de
+> A14». Historial:
+> 2026-09-04 — **A3 cierra el MOTOR de D-089: las 18 reglas de retefuente dejan
+> de apuntar a la agrupadora `2365` y apuntan a su subcuenta 236x por concepto** (seeds `tanda1/050` y
+> `tanda2/070` corregidos; migración **180** repara la base ya sembrada cerrando vigencia vieja y
+> abriendo la gemela — nunca `UPDATE` de `account_id`, lo prohíbe `PR001`; el pasado se sigue
+> resolviendo contra `2365`, sección 9.2). El motor manda a revisión manual con motivo legible
+> (`regla_con_cuenta_no_imputable`) toda regla/concepto cuya cuenta destino no sea imputable, antes de
+> escribir. Prueba diferencial: reapuntar **no mueve ni un centavo**. A3 se cortó por cupo antes de la
+> suite completa y de escribir su ficha; el orquestador corrió la suite: **`tsc` limpio · `npx vitest
+> run` 1293/1293 en verde, 68 archivos**. Sin comitear. **Falta la compuerta de A14 (ampliada) y la
+> verificación en navegador real.** Ver «D-089 — MOTOR / REGLAS (A3)». Historial:
+> 2026-09-04 — **A9 entrega la REPORTERÍA de D-089 (TAREA 5): exportación del
+> PUC efectivo a Excel.** `src/reports/puc-efectivo.ts` → `generarLibroPucEfectivo(tx)`: libro con las
+> cuatro hojas de la sección 11.2 — **Datos** (una fila por cuenta de `v_account_efectivo`: código,
+> nombre, nivel, naturaleza, imputable, estado, alcance genérica/firma/propia, ¿en uso?, nº conceptos
+> que la usan, partidas en el ledger, clasificación NIIF vigente + sección/rubros/norma/vigencia),
+> **Papel de trabajo** (encabezado empresa/NIT/responsable + totales del `resumenPuc` + modo del PUC),
+> **Trazabilidad** (mapeo NIIF y su vigencia por cuenta, «cuando aplique»), **Parámetros** (modo del
+> PUC, fecha de resolución de la precedencia, desglose del resumen). `GET /api/parametros/puc/exportar`
+> deja de ser 501: descarga `puc_<AAAA-MM-DD>.xlsx`, seguridad idéntica a `/api/terceros/exportar`
+> (empresa solo de `conSesion`, 401 sin sesión, 403 sin `parametro.puc.leer`). Reusa `resumenPuc` /
+> `obtenerModoPuc` de `src/services/puc.ts`; consulta `v_account_efectivo` directo (el LIMIT 2000 de
+> `listarPucEfectivo` no cubre un PUC completo). Sin valores tributarios (RO 2). `tsc` sin errores
+> nuevos (el de `a14-d088-ampliada` es de A3 en paralelo). **5 pruebas nuevas** en
+> `tests/reports/puc-efectivo.test.ts` (4 hojas, encabezado, filas = `v_account_efectivo`, aislamiento
+> A↔B, 403 sin permiso); 0 regresiones (`tests/reports/` 90 + `puc-d089` 8, verdes). Sin comitear. Ver
+> «D-089 — REPORTERÍA (A9)». Historial:
+> 2026-09-04 — **A8 entrega la INTERFAZ de D-089 (Módulo PUC), TAREAS 4 y 5.**
+> `src/services/puc.ts`: `usoDeCuenta`/`usoDeCuentas` (envuelven `app.cuenta_uso`),
+> `conceptosQueUsanCuenta`/`conceptosQueUsanCuentas` (qué `concepto_causacion` usan una cuenta y en
+> qué rol — gasto / IVA descontable / contrapartida —, consulta bajo RLS), y `simularImpactoCambioCuenta`
+> (predice PU002..PU005 con el mismo criterio que el trigger, ANTES de escribir). `/parametros/puc`:
+> columna «En uso» con badge (nº conceptos + partidas) por fila y modal genérico D-087 «Ver uso» con
+> el listado de conceptos; **simulador de impacto bloqueante** al editar una cuenta en uso — si el
+> motor va a rechazar (PU00x) se muestra el impacto y **no hay botón de guardar** (sin «forzar»), si
+> el cambio es permitido pero sensible (inactivar cuenta con movimientos) exige confirmación
+> explícita. `acciones.ts` traduce `PU001..PU005` y `LG009` a mensajes claros. **TAREA 5**: botón
+> «Exportar PUC a Excel» → `GET /api/parametros/puc/exportar` (stub **501**, seguridad igual a
+> `/api/terceros/exportar`: empresa solo de `conSesion`, 401/403; generador pendiente de **A9**).
+> `tsc` sin errores nuevos (los 3 de `golden/`+`adversarial/` son de A1/A3 en paralelo, no de A8).
+> **8 pruebas nuevas** en `tests/services/puc-d089.test.ts`; 0 regresiones (parametrización 29,
+> gate PUC 21, carga masiva 42, todas verdes). Sin comitear. Ver «D-089 — INTERFAZ (A8)». Historial:
+> 2026-09-04 — **A2 entrega el MODELO DE DATOS de D-089 (Módulo PUC):
+> migración 179, tres agujeros de integridad cerrados EN EL MOTOR.** No se creó ni una tabla ni una
+> columna: `account` y `v_account_efectivo` ya estaban. (1) **`LG004` pasa de la publicación al
+> `INSERT` de `journal_line`**: una partida contra una cuenta agrupadora ya no llega a la bandeja
+> para que un humano la apruebe, muere al crearse el borrador; y **`LG009` nuevo** para la cuenta
+> inactiva. La **reversa** conserva puerta acotada (puede reproducir una cuenta del asiento que
+> corrige, para que un error del pasado no quede incorregible — RO 1). (2) **`account_restrict_uso`**
+> (patrón `TP001` de D-084): con movimientos no se borra (`PU001`), no cambia de naturaleza
+> (`PU002`), no se vuelve agrupadora (`PU003`) y no se renumera (`PU004`); con conceptos de causación
+> activos no se retira ni se desimputa (`PU005`). **Inactivarla sí se permite**: es el camino
+> previsto. (3) **`app.cuenta_uso`/`cuenta_tiene_movimientos`/`cuenta_conceptos_activos`** para que
+> la interfaz use el **mismo criterio exacto** que el motor; **no** se creó `v_account_uso` y el
+> listado «qué conceptos usan esta cuenta» queda como consulta bajo RLS para **A8**. **Destapó un
+> defecto de DATOS real** (no de A2): las 12 `tax_rule` de retefuente apuntan a `2365`, que el seed
+> nuevo del PUC completo vuelve —correctamente— no imputable; arreglo de **A1/A3**. `tsc` limpio ·
+> **21 pruebas nuevas en verde**, 0 regresiones atribuibles a 179. Sin comitear, 179 sin aplicar a la
+> Neon. Ver «D-089 — Módulo PUC / Plan de cuentas: MODELO DE DATOS». Historial:
+> 2026-09-03 — **COMPUERTA AMPLIADA DE D-088: A14 verifica con arsenal propio
 > y el veredicto es PASA con correcciones, hechas por A14 en la misma pasada.** Tres archivos de
 > prueba nuevos (`a14-d088-ampliada.test.ts` 26, `a14-d088-carga-masiva.test.ts` 13,
 > `a14-d088-flujo-bloqueante.test.ts` 5 = **44 pruebas**). Cuatro defectos encontrados y **corregidos
@@ -3615,10 +3694,415 @@ modificada). Las migraciones **177** y **178** y el seed **110** siguen **sin ap
 
 ---
 
+## Compuerta AMPLIADA de D-089 — veredicto de A14 (2026-09-04): **PASA con correcciones, hechas por A14 en la misma pasada**
+
+Nada se dio por bueno por reporte ajeno. A2, A8, A9, A3 y A1 reportaron su propio trabajo; aquí se
+volvió a medir desde cero, con **arsenal propio**, atacando la base **por SQL directo desde una sesión
+de negocio real** (`app_user`, RLS activa, token presentado) y saltándose la interfaz y los servicios,
+que es el único sitio donde un PASS significa algo (D-004).
+
+**Lo primero que se cayó fue el estado del árbol que traía el encargo.** El encargo afirmaba «`npx
+vitest run` 1293/1293 verde». A14 corrió la suite completa antes de tocar nada y salió **1292/1293:
+`tests/services/puc-d089.test.ts` falló** con `duplicate key value violates unique constraint
+"account_codigo_uq"`. No era una regresión: es que el archivo (y su gemelo `tests/gates/
+puc-d089-integridad.test.ts`) sorteaba el código de cuenta con `5195${Math.random()*90+10}` —**90
+valores** para la decena larga de cuentas que crea— y por la paradoja del cumpleaños choca en una
+fracción alta de las ejecuciones. Una prueba de integridad que falla al azar se acaba silenciando.
+**Corregido por A14**: contador, no sorteo, en los dos archivos.
+
+**Dos archivos de prueba nuevos, 51 pruebas, más una en `valores-tributarios`:**
+
+| Archivo | Qué ataca | Pruebas |
+|---|---|---|
+| `tests/adversarial/a14-d089-ampliada.test.ts` | bloqueo real del ledger e inserción directa · puerta de la reversa y sus abusos · catálogo base global inmutable · aislamiento de cuentas propias · `app.cuenta_uso` como posible canal de fuga · PU001..PU005 por SQL crudo · **barrido V-47 de las 18 tablas de catálogo híbrido** | 34 |
+| `tests/adversarial/a14-d089-catalogo.test.ts` | integridad interna del PUC cargado por A1 (huérfanos, jerarquía, contra-cuentas, agrupadoras imputables, idempotencia) · coherencia de `2365` entre seed y migración 180 · **la 180 corrida contra una base YA SEMBRADA**, que es el caso de la Neon y el único donde su bloque A hace algo · Reglas de Oro 3/5/6 | 17 |
+
+### Punto por punto del encargo
+
+| # | Lo que había que verificar | Veredicto |
+|---|---|---|
+| 1 | **Ningún asiento usa una cuenta agrupadora — bloqueo REAL en el motor** | **PASA.** Con `INSERT` crudo de `journal_line`, saltándose la UI y el servicio: contra una cuenta con `permite_movimiento = false` muere con **`LG004` en el BORRADOR**, no al publicar; contra una `activo = false`, con **`LG009`**; y un `UPDATE` que reapunta una partida de borrador a una agrupadora, también con `LG004`. **El camino de la publicación queda cerrado por el otro extremo y se comprobó**: la única forma que quedaba era imputar cuando la cuenta era hoja y degradarla después, y eso lo rechaza `PU003`. **La puerta de la reversa no se puede abusar**: una reversa **sí** reproduce una cuenta inactivada después (RO 1 — un error del pasado no puede quedar incorregible) pero **no** puede colar una agrupadora que el asiento original no tenía (`LG004`); y el intento de usar el histórico de **otra empresa** como llave muere un paso antes, en la FK compuesta `journal_entry_reversa_fk` (`23503`), porque un asiento de A no puede declararse reversa de uno de B |
+| 2 | **La personalización por empresa no edita el catálogo base** | **NO PASABA. Agujero real encontrado y corregido: V-47.** Renombrar la fila global ya moría, pero **`DELETE FROM account WHERE tenant_id IS NULL` PROSPERABA**: medido, el catálogo base quedó en **cero filas** desde la sesión de una firma cualquiera —con el PUC de D-089 eso son **2.506 cuentas que desaparecen para todas las firmas de la plataforma**—, y `UPDATE account SET tenant_id = <el mío>` también prosperaba: una firma se **apropiaba** de una fila del catálogo compartido. La causa es la política RLS híbrida de la Ola 0 (012): su `USING` incluye las filas globales para poder **leerlas**, y un `DELETE` no tiene `WITH CHECK` que lo detenga. **Corregido por A14** (migración **181**, `CT001`). Tras la corrección: `guardarCuenta` con el código de una cuenta global crea la **propia** y deja la global intacta; `ocultarCuentaGenerica` tampoco la toca; crear una cuenta con el `tenant_id` de otra firma o con `tenant_id NULL` sigue muriendo con `42501` |
+| 3 | **Aislamiento RLS de las cuentas personalizadas** | **PASA.** La empresa B no ve la cuenta propia de A (cero filas) y su `UPDATE`/`DELETE` no alcanza ninguna. El reverse-lookup `conceptosQueUsanCuenta`/`conceptosQueUsanCuentas` devuelve **el concepto desde A y nada desde B**: el nombre de un concepto de otra firma no sale. Sobre el `SECURITY DEFINER` de `app.cuenta_uso`: se atacó desde la firma ajena y **devuelve exactamente cinco columnas, todas numéricas** — ni un nombre, ni un código, ni un monto: con una partida de $12.345 en la cuenta, ninguna columna vale 1234500, solo el **conteo**. Con un uuid inventado devuelve todo a cero y no lanza: tampoco es oráculo de existencia. El `SECURITY DEFINER` es correcto y está declarado en el inventario de `evasion.test.ts` y `compuerta-ola1.test.ts` |
+| 4 | **PU001..PU005 igual que Terceros (D-084/TP001)** | **PASA**, todo por inserción directa. `PU001`: no se borra una cuenta con partidas —**ni desde el superusuario**, porque el guardia está en la base— ni una con hijas. `PU002`: una cuenta con movimientos no cambia de naturaleza. `PU004`: no se renumera. `PU005`: con un `concepto_causacion` activo apuntándola no se inactiva **ni** se desimputa. Inactivar **sí** se permite con movimientos y sin conceptos (es el camino previsto), y reguardar la misma fila con los mismos valores no dispara nada |
+| 5 | **Las 7 Reglas de Oro sobre el código nuevo** | **PASA.** *RO 1*: arriba. *RO 2*: el barrido de `valores-tributarios` (que cubre `src`, `app` y `db/migrations`) sigue verde sobre las migraciones 179, 180 y 181, y sobre `puc-efectivo.ts`, `puc.ts` y la plantilla de carga masiva de `account` —cuyos únicos números son códigos PUC, que no son valores tributarios—. **Pero el barrido tenía un agujero (V-48) y la plantilla de ICA un valor tributario quemado (V-49)**, ambos corregidos abajo. *RO 3 y RO 6*: la 180 se corrió contra una base **ya sembrada** fabricada a mano; cierra la vigencia vieja, abre la gemela **idéntica en tarifa, base mínima, comparador, discriminadores, norma y bandera de verificación humana** y solo distinta en la cuenta, sin hueco ni solape (el cierre y la apertura son días contiguos), la nota de la nueva **dice por qué se abrió** y un hecho económico de 2025 se sigue resolviendo contra la vigencia vieja, que sigue acreditando `2365`; y `2365` **no** se desimputa mientras una vigencia —aunque esté cerrada— la cite, que es lo que evita que reprocesar esa factura vieja muera con `LG004` por un cambio posterior al hecho. Correrla dos veces no abre una tercera vigencia. En base limpia es un no-op comprobado (cero vigencias de retefuente cerradas). *RO 4*: D-089 no toca el LLM; el motor sigue decidiendo, y su novedad (`regla_con_cuenta_no_imputable`) es un rechazo, no un cálculo. *RO 5*: ni una columna `real`/`double precision` en todo el esquema; `journal_line.monto` sigue siendo `bigint`. *RO 7*: V-47 |
+| 6 | **Catálogo del PUC (A1)** | **PASA**, con dos correcciones de cifra. **Cero huérfanos** y, además, el padre de cada cuenta **es su prefijo** y es de nivel exactamente uno menos y del mismo alcance. Ninguna clase ni grupo admite imputación. Las contra-cuentas `(DB)`/`(CR)` invierten **todas** la naturaleza de su padre, y las acumuladas/provisiones de clase 1 son crédito. El seed es idempotente **medido por huella**: reaplicarlo no cambia el conteo ni el `md5` de `(código, naturaleza, imputable, activo)` de las 2.506 filas; y no tiene un solo `UPDATE`, `DELETE`, `TRUNCATE` ni `DO $$`. **`2365` quedó consistente**: agrupadora, con subcuentas imputables, y **cero** vigencias de `tax_rule` apuntándole en una base nueva. **Corrección de cifra**: las cuentas que a la vez agrupan y admiten imputación no son «~40» como dice la ficha de A1, son **52**, todas de nivel 3; quedan clavadas en una lista cerrada, y si aparece una cincuenta y tres la prueba lo dice. Y **el invariante que D-089 existe para imponer se comprobó de frente**: **ninguna** `tax_rule` y **ninguna** cuenta de un `concepto_causacion` activo apuntan a algo que el trigger de la 179 vaya a rechazar |
+| 7 | **Los 20 casos dorados, uno por uno** | **PASA. D-089 no movió ni un centavo.** Reejecutados los 59 casos y sub-casos de `tests/golden/casos-dorados.test.ts` (25), `tests/golden/caso19-memoria.test.ts` (8) y `tests/adversarial/casos-dorados.test.ts` (26). Se revisó el **diff** de las pruebas para descartar que el PASS venga de aflojar una aserción: **ni un solo valor esperado en pesos cambió**; lo único que cambió es el `account_id` del crédito de retefuente (`2365` → `236x`) y, en el caso 14, la aserción se volvió **más exigente** (antes «las tres retenciones caen en la misma cuenta»; ahora «caen en tres subcuentas distintas», con la misma suma de $77.000). Tabla completa abajo |
+| +1 | **¿`db/seeds/_fuentes/*.txt` rompe el barrido «db/seeds es dato .sql»?** | **La exclusión de A1 era incorrecta: V-48, corregida.** A1 excluyó el **directorio entero**, y `src/db/seed.ts` recorre **todos** los subdirectorios de `db/seeds/` y aplica **cualquier** `.sql` que encuentre, `_fuentes/` incluido: un archivo puesto ahí se habría ejecutado contra la base sin pasar por ninguna de las cuatro comprobaciones —ni «ningún seed hace UPDATE/DELETE», ni «ningún seed define lógica», ni «toda fila normativa declara su norma». **Corregido por A14**: la excepción se acota a lo que la justifica (en `_fuentes/` se toleran los archivos que **no** son `.sql`) y se añadió una prueba que exige que **lo que el cargador aplica sea exactamente lo que el barrido audita** |
+| +2 | **Entregables de A8 y A9** | **PASA.** El simulador de impacto de A8 predice `PU002..PU005` con el mismo criterio del trigger y sus 8 pruebas siguen verdes tras las correcciones; la exportación de A9 (`/api/parametros/puc/exportar`) mantiene la seguridad de `/api/terceros/exportar` y sus 5 pruebas —incluidas la de aislamiento A↔B y la de 403 sin `parametro.puc.leer`— siguen verdes |
+
+### Vulnerabilidades encontradas en esta compuerta
+
+| Id | Qué es | Gravedad | Estado |
+|---|---|---|---|
+| **V-47** | **Cualquier firma podía BORRAR el catálogo global y APROPIARSE de sus filas.** Medido con SQL directo desde una sesión de negocio real: `DELETE FROM account WHERE tenant_id IS NULL` dejó el catálogo base en **cero filas**, y `UPDATE account SET tenant_id = <el mío>` movió una fila compartida al patrimonio de una firma. La causa es la política RLS híbrida de la Ola 0: su `USING` incluye las filas globales para poder **leerlas**, y un `DELETE` no tiene `WITH CHECK`. **No era solo `account`**: se probó el barrido y el mismo camino borraba el valor global de la **UVT** (con la UVT borrada el motor deja de calcular para toda la plataforma), un **municipio** o una **actividad CIIU** del catálogo nacional, una vigencia global de `tax_rule` **todavía no vigente** (`PR003` solo cubre las que ya rigen) y los **permisos de un rol del sistema** por `role_permission` | **Alta.** Escritura destructiva entre firmas sobre datos compartidos: violación directa de la Regla de Oro 7 y, por la puerta de atrás, de la 3 (si una vigencia global se puede borrar, «recalcular enero en julio da lo mismo» deja de ser cierto). Con D-089 el daño se multiplica: el catálogo global pasó de 111 a 2.506 cuentas | **CORREGIDA por A14**: migración **181**, `CT001`. Desde una sesión de negocio, una fila con `tenant_id IS NULL` es de **solo lectura** en las **18 tablas de RLS híbrida** más `role_permission`. Sin sesión (migraciones, seeds, plataforma) no se aplica: el camino administrativo sigue intacto y hay prueba. El trigger se llama `<tabla>_zz_global_solo_lectura` para dispararse **el último** y no robarle el diagnóstico a ningún guardia más específico — `PU001`, `PR001` y `PR003` siguen dando su código. **Inventario que se mantiene solo**: una prueba deriva las tablas híbridas de la **forma de su política** en `pg_policies` y exige que todas lleven el guardia, así que una decimonovena tabla no puede entrar sin él |
+| **V-48** | **El barrido «db/seeds es dato, no código» excluía un directorio que el cargador SÍ aplica.** La exclusión de `_fuentes/` que introdujo D-089/A1 saltaba el directorio entero, y `src/db/seed.ts` ejecuta cualquier `.sql` bajo `db/seeds/`, subdirectorios incluidos. Un seed puesto ahí habría entrado a la base sin pasar por ninguna de las cuatro comprobaciones del barrido | Media (infraestructura de QA: no rompe nada hoy, pero es un guardia que dice cubrir lo que no cubre — el patrón de V-43) | **CORREGIDA por A14**: la excepción se acota a los archivos que **no** son `.sql`, y una prueba nueva exige que el conjunto que audita el barrido sea **idéntico** al que aplica el cargador |
+| **V-49** | **Vuelve el patrón de V-45, en otra plantilla.** `src/services/carga-masiva/definiciones.ts` traía `base_minima_servicios_uvt` con ejemplo **`4`** y `base_minima_compras_uvt` con ejemplo **`27`**: son las bases mínimas de la sección 7.5, es decir **valores tributarios reales escritos en el código fuente** (Regla de Oro 2), y además `plantilla.ts` los escribe en la **fila 2, que es una fila de DATOS**. Quien descargara la plantilla y pegara su lista sobre las filas de ejemplo se llevaba las bases mínimas del ejemplo como si fueran las de su municipio. Las demás celdas numéricas de esa plantilla ya eran marcadores obviamente falsos (`0,5`, `0`, `1`); estas dos eran las reales | Media-alta (RO 2 y advertencia §17.5: un parámetro tributario falso cargado sin que nadie lo decida) | **CORREGIDA por A14**: las dos celdas van **vacías** y el formato se explica en la descripción de la columna. Las 55 pruebas de carga masiva siguen verdes |
+| **V-50** | **La red de seguridad de D-089 no cubre la NOTA CRÉDITO.** `verificarCuentasImputables` —el filtro que A3 añadió para que una cuenta no imputable acabe en revisión manual con motivo legible en vez de matar al worker con un `LG004` crudo— se llama en `causarFactura` y **no** en `causarNotaCredito`. Las partidas no-retención de la nota vienen del asiento original (y la puerta de la reversa las admite), pero las de retención las resuelve el motor **a la fecha de la nota** y pueden apuntar a una cuenta que no esté en el original | **Baja**: es contrivada (exige que alguien reapunte una regla a una agrupadora entre la factura y la nota), no corrompe el ledger —lo peor es una excepción que reintenta el worker, que es lo que pasaba antes de D-089— y ninguna prueba existente la alcanza | **DECLARADA, NO corregida por A14.** El arreglo obvio (llamar el mismo filtro) **rompería** la garantía de A2: la reversa tiene permitido reproducir una cuenta inactivada, y ese filtro la rechazaría. La versión correcta tiene que exceptuar las cuentas que ya están en el asiento original, y eso es criterio de diseño del motor. **Le corresponde a A3** |
+
+### Los 20 casos dorados, uno por uno (reejecutados por A14 tras D-089 y tras sus propias correcciones)
+
+| # | Caso | Estado tras D-089 |
+|---|---|---|
+| 1 | Servicio $1.000.000 + IVA 19%, PJ declarante, Bogotá → retefuente $40.000, ReteIVA $28.500 | ✅ pasa. Mismos pesos; el crédito de retefuente va ahora a **236525** en vez de a `2365`. La pata de ReteICA de Bogotá sigue sin tarifa por actividad (**V-5**, abierta) |
+| 1b | El ReteICA de Bogotá NO se inventa | ✅ pasa |
+| 2 | Mismo servicio, PN no declarante → $60.000: el eje «tercero» opera | ✅ pasa, sin cambio de importe |
+| 3 | Servicio de $80.000 (bajo 2 UVT): no retiene y el motivo queda | ✅ pasa |
+| 4 | Compra de $500.000 (bajo 10 UVT): no retiene, con motivo | ✅ pasa |
+| 5 | Compra de $600.000 a declarante → $15.000 | ✅ pasa. Crédito a **236540** |
+| 6 | Honorarios PJ $200.000 → $22.000 desde el primer peso | ✅ pasa. Crédito a **236515** |
+| 7 | Arrendamiento de inmueble no retiene; de mueble por igual valor sí ($16.000) | ✅ pasa. Crédito a **236530** |
+| 8 | Servicio en Medellín: ReteICA 2‰ y base 15 UVT = $785.610 | ✅ pasa. `2368` sigue siendo hoja y no la tocó la 180 |
+| 9 | Mismo servicio en Cali: base de servicios 3 UVT = $157.122 | ✅ pasa |
+| 10 | Principal en Bogotá, secundaria en Cali, operación en Cali: manda la actividad de Cali | ✅ pasa |
+| 10b | Varias actividades en el mismo municipio: desempate configurable | ✅ pasa |
+| 11 | Vigilancia $5.000.000 con AIU $500.000: retiene 2% sobre el AIU = $10.000 | ✅ pasa |
+| 12 | Proveedor del exterior: ReteIVA al 100% = $190.000 | ✅ pasa. `2367` sigue siendo hoja |
+| 12b | Exterior sin regla parametrizada: revisión manual | ✅ pasa |
+| 13 | Régimen SIMPLE: tratamiento diferenciado según parametrización | ✅ pasa |
+| 14 | Tres líneas de conceptos distintos: retención por concepto, agregada ($77.000) | ✅ pasa, **y la aserción se endureció**: los tres agregados caen ahora en **tres subcuentas distintas** (236525 / 236540 / 236515) en vez de las tres en `2365`. La suma en pesos es idéntica |
+| 14b | Partir un concepto en dos líneas no esquiva la base mínima | ✅ pasa |
+| 15 | Nota crédito: reversa proporcional por asiento nuevo, sin mutar el original | ✅ pasa. Ver **V-50**: declarada, no bloqueante |
+| 15b | Nota crédito por el total reversa exactamente lo retenido | ✅ pasa |
+| 16 | Factura de junio procesada en julio: manda la fecha del hecho | ✅ pasa, y ahora también contra el reapunte de cuenta de la 180: un hecho de 2025 sigue resolviendo `2365` |
+| 17 | Cambio de tarifa con vigencia futura: lo publicado no cambia | ✅ pasa |
+| 18 | Reprocesar 10 veces la misma factura: asiento idéntico las 10 | ✅ pasa |
+| 19 | Segunda factura del mismo proveedor con la misma descripción: **cero llamadas al LLM** | ✅ pasa (8 pruebas de `caso19-memoria.test.ts`; el motor no tiene con qué llamar a un LLM) |
+| 20 | Usuario del tenant A consulta datos del tenant B: cero filas, en la base | ✅ pasa. Y en esta compuerta se cerró el lado **de escritura** que faltaba en el catálogo compartido (**V-47**) |
+
+### Estado del árbol tras la compuerta
+
+`npx tsc --noEmit` **limpio** · `npx vitest run` **1345 en verde, 70 archivos** (base del encargo =
+1293/68, que en realidad salía 1292 por la prueba intermitente; **+52 pruebas en 2 archivos nuevos y
+1 añadida a `valores-tributarios`, 0 regresiones**). Las migraciones **179**, **180** y **181** y los
+seeds `011`/`050`/`070` siguen **sin aplicar a la Neon**. **A14 no comitea.** La verificación en
+navegador real es un paso aparte, del usuario.
+
+**Lo que A14 tocó de otros agentes, y por qué:** `tests/services/puc-d089.test.ts` y
+`tests/gates/puc-d089-integridad.test.ts` (código de cuenta determinista, sin sortear),
+`tests/adversarial/valores-tributarios.test.ts` (V-48),
+`src/services/carga-masiva/definiciones.ts` (V-49), `src/db/types.ts` (`CT001`) y la migración **181**
+(V-49 es de **A8**; V-48 es de **A1**; V-47 es de la política híbrida de la Ola 0, **A2**, agravada
+por el volumen que D-089 le dio al catálogo global). Ninguna aserción ajena se relajó: la única que
+se movió —el caso 14— se volvió más exigente.
+
+---
+
+## D-089 — Módulo PUC / Plan de cuentas: MODELO DE DATOS (A2, migración 179)
+
+**Alcance de esta entrega: solo esquema.** Interfaz, servicio y compuerta los entregan otros agentes
+sobre estas garantías. **Sin comitear.**
+
+### La decisión de fondo: no había nada que crear, había que cerrar tres agujeros
+
+`account` ya estaba completa desde la Ola 0 (jerarquía por longitud del código, naturaleza,
+`permite_movimiento`, RLS híbrida global/firma/empresa, unique `(tenant_id, company_id, codigo)`) y
+`v_account_efectivo` (170) ya resolvía la precedencia empresa>firma>global. **No se creó ni una
+tabla ni una columna.** Lo que faltaba era **integridad**, y en los tres casos estaba delegada en la
+aplicación o simplemente no existía.
+
+### Migración `db/migrations/179_a2_d089_puc_integridad.sql`
+
+| Objeto | Qué impone | SQLSTATE |
+|---|---|---|
+| `journal_line_valida_cuenta` (`BEFORE INSERT OR UPDATE ON journal_line`) | Una partida no entra al ledger —**ni siquiera en borrador**— contra una cuenta agrupadora o inactiva | `LG004` (reusado) / `LG009` (nuevo) |
+| `app.cuenta_tiene_movimientos(uuid) → boolean` | ¿Esta cuenta aparece en el ledger? `STABLE SECURITY DEFINER` | — |
+| `app.cuenta_conceptos_activos(uuid) → bigint` | Cuántos `concepto_causacion` **activos** (por cualquiera de sus 3 FKs) y cuántas `memoria_clasificacion` activas la usan | — |
+| `app.cuenta_uso(uuid) → TABLE(...)` | Conteos de uso: partidas, conceptos, hijas, `niif_mapping`, `exogena_account_mapping` | — |
+| `account_restrict_uso` (`BEFORE UPDATE OR DELETE ON account`) | Cinco reglas, abajo | `PU001`..`PU005` |
+
+### Punto 1 — LG004 pasa de la publicación al INSERT, y aparece LG009
+
+Hasta hoy `LG004` **solo se disparaba en el trigger diferido de publicación** (010:251). Eso
+significa que la bandeja de causación podía enseñarle al contador una propuesta imputada contra la
+clase 5, él la aprobaba, y el error salía **después** de la revisión humana. Ahora muere en el
+`INSERT` de la partida.
+
+Decisiones que no son obvias:
+
+1. **`LG004` se REUSA, no se inventa un código nuevo.** Es el mismo hecho contable que ya
+   diagnosticaba el trigger de publicación; darle código propio obligaría a todo el código
+   existente a mirar dos. La prueba de la Ola 0 (`ola0.test.ts:267`) sigue verde **sin tocarla**:
+   pide `LG004` y `LG004` recibe, solo que antes.
+2. **`LG009` (`CUENTA_INACTIVA`) sí es nuevo**, porque es un hecho distinto: la cuenta es imputable
+   pero está retirada del plan. El remedio que se le ofrece al contador no es el mismo
+   («escoja la hoja» vs. «reactívela o use la que la sustituyó»), y colapsarlos haría imposible
+   que la interfaz dijera cuál de las dos cosas pasó.
+3. **El trigger de publicación NO se quita.** Se suma. Una cuenta puede degradarse después de que
+   la partida entrara, y quitar el diferido sería relajar el ledger para ganar una consulta.
+4. **La puerta de la reversa.** Una reversa reproduce las partidas del asiento que corrige, y ese
+   asiento es del pasado: sus cuentas pueden haberse retirado desde entonces. Bloquearla dejaría un
+   error **incorregible** en el ledger, que es lo contrario exacto de la Regla de Oro 1. Por eso una
+   partida de un asiento `tipo = 'reversa'` se admite **si esa misma cuenta ya aparece en el asiento
+   que reversa**. No es un portillo genérico: hay prueba de que una reversa **no** puede colar una
+   cuenta agrupadora que el original no tenía.
+5. **Orden de disparo**: `journal_line_alcance` (018) → `journal_line_inmutable` (010) →
+   `journal_line_valida_cuenta`. Un intento sobre un asiento publicado sigue diciendo `LG001`, no
+   `LG004`.
+
+### Punto 2 — una cuenta en uso no se degrada (patrón TP001 de D-084)
+
+Trigger en **la base**, no guard de servicio: es el criterio del resto del sistema, y `guardarCuenta`
+no es el único camino (carga masiva, acción de servidor, `psql`).
+
+| Código | Se bloquea | Por qué |
+|---|---|---|
+| `PU001` | **DELETE** de una cuenta con partidas, conceptos activos, cuentas hijas o mapeos NIIF/exógena | Las FK ya lo impedían con un `23503` ilegible. Aquí se dice qué pasa y qué hacer. Mismo criterio que `TP001`: lo que el ledger o la exógena ya citan tiene que resolverse por su id para siempre |
+| `PU002` | Cambiar **`naturaleza`** con movimientos | El más grave y el más invisible: no toca ni una partida, pero **invierte el signo con que todos los reportes históricos leen la cuenta**. Un balance ya emitido dejaría de cuadrar sin que nada en el ledger cambiara. Sin excepción y sin «forzar» |
+| `PU003` | Quitar **`permite_movimiento`** con movimientos | Deja el histórico imputado sobre algo que por definición del PUC no admite imputación; los reportes por niveles la sumarían dos veces (como hoja y como grupo) |
+| `PU004` | Cambiar **`codigo`** con movimientos | El código ES la identidad contable en todo reporte, en la exógena y en los papeles de trabajo ya emitidos: moverlo reclasifica el pasado en silencio |
+| `PU005` | Retirar (`activo=false`) o desimputar una cuenta a la que apunta un **`concepto_causacion` activo** | Sin esto, la causación automática se rompe en la siguiente factura con un error que no menciona esta pantalla. Reasigne el concepto primero |
+
+**Lo que NO se bloquea, a propósito:**
+
+- **`activo = false` con movimientos** (y sin conceptos activos). Es **el** camino previsto para
+  retirar una cuenta, igual que en terceros. Bloquearlo dejaría el plan de cuentas sin manera de
+  limpiarse.
+- **Tener `niif_mapping` o `exogena_account_mapping`.** Son mapeos **por vigencia**: retirar la
+  cuenta no los invalida y el estado financiero de un período pasado se sigue armando con el mapeo
+  de entonces. Se **cuentan** en `app.cuenta_uso` para que la interfaz avise, pero no bloquean.
+- **Nombre, `requiere_tercero`, `requiere_centro_costo`, `requiere_base_gravable`, `parent_id`.**
+  Ninguno reinterpreta el histórico.
+- Toda comparación usa `IS DISTINCT FROM`: **reguardar una cuenta con los mismos valores no dispara
+  nada**, que es exactamente lo que hace `guardarCuenta` en cada importación y en cada guardado sin
+  cambios de la pantalla. Hay prueba.
+
+### Punto 3 — el reverse lookup NO necesita esquema, pero el criterio SÍ tiene que ser uno solo
+
+**Confirmado: «qué conceptos de causación usan esta cuenta» es una consulta normal** con tres
+`LEFT JOIN` sobre `concepto_causacion` bajo RLS, y la hace **A8** en el servicio. **No se creó
+`v_account_uso`**: una vista que cuente partidas por cada fila de un PUC de miles de cuentas es un
+recorrido completo de la tabla más grande del sistema cada vez que alguien abre la pantalla, y la
+consulta real es siempre por **una** cuenta.
+
+Lo que sí se creó es **`app.cuenta_uso(uuid)`**, y la razón no es rendimiento sino que **la interfaz
+no puede prometer lo que el motor va a negar** (precedente `app.tercero_tiene_movimientos`, D-084):
+el badge «en uso» y el botón deshabilitado tienen que salir del **mismo criterio exacto** que aplica
+el trigger. Devuelve **conteos, no nombres**: el listado detallado va bajo RLS en el servicio, para
+que el nombre de un concepto de otra firma no pueda salir nunca por una función `SECURITY DEFINER`.
+
+**Por qué las tres funciones son `SECURITY DEFINER`** (y están declaradas en el inventario de A14 de
+`evasion.test.ts` y `compuerta-ola1.test.ts`, que las cazó): **no es comodidad, es corrección.** Una
+cuenta de alcance global o de firma (`company_id IS NULL`, D-064) puede tener movimientos en
+**varias** empresas; bajo la RLS de la sesión, el guardia solo vería los de la empresa en contexto y
+**dejaría reclasificar desde la empresa A una cuenta con histórico en la B**. Reciben un
+`account_id` que quien pregunta ya tuvo que resolver pasando por la RLS híbrida de `account`, y
+devuelven un booleano o conteos: no filtran ni un dato de otra firma.
+
+### Lo que queda para otros agentes
+
+- **A8 (servicio + interfaz)**: listado «qué conceptos usan esta cuenta» (consulta bajo RLS, no
+  esquema); traducir `LG009` y `PU001`..`PU005` a mensajes de pantalla; usar `app.cuenta_uso` para
+  deshabilitar acciones. `src/services/puc.ts` **no se tocó**: `guardarCuenta` sigue funcionando
+  igual y el motor ahora lo respalda.
+- **A3/A7**: nada que cambiar. El camino de reversa está explícitamente protegido y las pruebas de
+  bandeja/causación siguen verdes.
+
+### Defecto de DATOS que esta migración destapó (no es de A2, no se tocó)
+
+Con el seed **nuevo y aún sin comitear** `db/seeds/tanda2/011_puc_completo_2650.sql` (PUC completo
+del Decreto 2650, en curso por otro agente), la cuenta **`2365` «RETENCIÓN EN LA FUENTE» pasa a
+`permite_movimiento = false`** —correcto: es nivel 3 y tiene subcuentas `236505`…`236595`—, pero
+**`db/seeds/tanda1/050_tax_rules_retefuente.sql` apunta `tax_rule.account_id` a `2365`** en sus
+**doce** reglas. Resultado: el motor construye la propuesta de retefuente imputando sobre una cuenta
+agrupadora. **Antes de D-089 eso no se veía** (el borrador se creaba y solo habría reventado al
+publicar); ahora `tests/services/bandeja.test.ts` (V-7) falla con `LG004` en el INSERT. **Es
+exactamente el bug que este trabajo existe para destapar.** El arreglo es de **A1/A3**: apuntar cada
+`tax_rule` de retefuente a su subcuenta (`236515` honorarios, `236525` servicios, `236540` compras,
+`236530` arrendamientos…), no a `2365`. **Sin ese seed nuevo, `npm test` queda entero en verde.**
+
+### Estado del árbol
+
+`npx tsc --noEmit` **limpio**. `npm test`: **21 pruebas nuevas en verde** en
+`tests/gates/puc-d089-integridad.test.ts`, **0 regresiones atribuibles a 179**. Se modificaron dos
+pruebas ajenas y **solo para declarar el inventario**: `evasion.test.ts` y `compuerta-ola1.test.ts`
+listan ahora las tres funciones `SECURITY DEFINER` nuevas con su justificación (no se relajó ninguna
+aserción). La migración **179** está **sin aplicar a la Neon**. **Sin comitear.**
+
+---
+
+## D-089 — INTERFAZ (A8, 2026-09-04) — TAREAS 4 y 5
+
+**Alcance: solo `src/services/puc.ts`, `app/parametros/puc/**` y `app/api/parametros/puc/exportar`.**
+No se tocó `src/domain/motor.ts`, `src/services/causacion.ts` ni los seeds de `tax_rule` (A3). **Sin
+comitear.**
+
+### Estado ya resuelto por olas anteriores — verificado, NO duplicado
+
+- `/parametros/puc` migrado al shell nuevo (D-087 T0). ✔
+- Precedencia empresa>firma>global en `v_account_efectivo` (D-064) y modo `puc.solo_propio` (D-065). ✔
+- Alta/edición de cuenta propia (`guardarCuenta`), carga masiva `/carga-masiva/account`, permiso
+  `parametro.puc.editar` (D-087). ✔ — **TAREAS 3 y 6 de D-089 ya cubiertas.**
+
+### TAREA 4 — uso inverso + protección visual
+
+**`src/services/puc.ts` (añadido, sin tocar lo existente):**
+
+| Función | Qué hace |
+|---|---|
+| `usoDeCuenta(tx, id) → UsoCuenta` | Envuelve `app.cuenta_uso`: partidas, conceptos activos, hijas, mapeos NIIF/exógena. `tieneMovimientos = partidasLedger > 0`, `enUso = partidas>0 ∨ conceptos>0` |
+| `usoDeCuentas(tx, ids[]) → Map` | Lo mismo para el lote de la tabla, **un round-trip** (`unnest` + `LATERAL app.cuenta_uso`). No se creó vista sobre todo `account` (migración 179) |
+| `conceptosQueUsanCuenta(tx, id)` | Qué `concepto_causacion` la usan y **en qué rol** (`gasto` / `iva_descontable` / `contrapartida`), mirando las 3 FKs, **bajo RLS** de `concepto_causacion` — nombre de concepto de otra firma no sale |
+| `conceptosQueUsanCuentas(tx, ids[])` | Idem para el lote |
+| `simularImpactoCambioCuenta(tx, actual, propuesta)` | Predice `PU002..PU005` con el **mismo criterio que el trigger** `account_restrict_uso`. Devuelve `rechazos[]` (motor va a negar), `advertencias[]` (permitido pero sensible), `bloqueadoPorMotor`, `requiereConfirmacion` |
+
+**`app/parametros/puc/page.tsx`:**
+
+- Columna **«En uso»** por fila: badge `N conceptos` + `M partida(s)` (de `usoDeCuentas`), y botón
+  **«Ver uso»** (modal genérico D-087, `_uso-cuenta.tsx`) con el listado de conceptos, su rol, y los
+  conteos de partidas / hijas / mapeos.
+- **Simulador de impacto bloqueante** (`?simular=<codigo>`): `guardarCuentaAction` detecta que es una
+  edición real de la misma fila (mismo alcance), corre `simularImpactoCambioCuenta` y, si hay
+  `bloqueadoPorMotor` o `requiereConfirmacion`, redirige al panel simulador **en vez de guardar**. El
+  panel muestra «afecta N conceptos y M partidas» + la lista de conceptos.
+  - **`bloqueadoPorMotor`** (PU002/PU003/PU004/PU005): se muestra el impacto y **NO hay botón de
+    guardar** — no hay «forzar», es la garantía de la 179. Texto: «cree una cuenta nueva y traslade
+    el saldo».
+  - **`requiereConfirmacion`** (inactivar cuenta con movimientos y sin conceptos — el motor lo
+    permite): botón **«Confirmar y guardar el cambio»** que reenvía `guardarCuentaAction` con
+    `confirmado=1`. El impacto se **recalcula en el servidor en la misma lectura**, nunca desde el
+    query string.
+- Nunca se ofrece una acción que el motor va a negar sin avisar antes.
+
+**`app/parametros/puc/acciones.ts`:** `mensajeDeError` traduce `PU001..PU005` y `LG009`/`LG004` a
+mensajes con contexto de pantalla (antepone el qué-hacer, conserva el detalle del motor).
+
+### TAREA 5 (lado UI) — Exportar PUC a Excel
+
+- Botón **«Exportar PUC a Excel»** en la cabecera de `/parametros/puc` → `GET /api/parametros/puc/exportar`.
+- **Contrato acordado con A9** (en el header del `route.ts`): `.xlsx` del PUC efectivo de la empresa
+  en sesión, hojas «Datos» (fila por cuenta: codigo, nombre, nivel, naturaleza, imputable, estado,
+  alcance, en_uso, partidas, mapeo NIIF), «Papel de trabajo» (encabezado empresa/NIT/fecha),
+  «Parámetros» (modo del PUC + totales del resumen). Nombre `puc_<AAAA-MM-DD>.xlsx`.
+- **Seguridad idéntica a `/api/terceros/exportar`**: empresa solo de `conSesion`, sin parámetro de
+  empresa, RLS de `account`/`v_account_efectivo` aísla; 401 sin sesión, 403 sin `parametro.puc.leer`.
+- Hoy es **stub 501** (con `exigirPermiso` ya cableado y un `TODO(A9, D-089)`): el generador
+  `src/reports/puc-efectivo.ts` lo implementa **A9**.
+
+### Verificación
+
+- `npx tsc --noEmit`: **sin errores en archivos de A8**. Quedan 3 errores en `tests/golden/casos-dorados.test.ts`
+  y `tests/adversarial/a14-d088-ampliada.test.ts` (`cuentas.retefuente` → subcuentas), que son de la
+  migración **180** / seeds de **A1/A3 en paralelo**, no de A8.
+- `tests/services/puc-d089.test.ts` — **8 pruebas nuevas** (uso inverso por rol, lote, y simulador:
+  PU002 / PU003+PU004 / PU005 / confirmación no bloqueante / cambio inocuo). Verdes.
+- Sin regresiones: `parametrizacion.test.ts` (29), `puc-d089-integridad.test.ts` (21),
+  `ola4-carga-masiva.test.ts` (42) — todas verdes.
+
+### Coordinación pendiente
+
+- **A9**: ~~implementar `GET /api/parametros/puc/exportar` (hoy 501)~~ **HECHO** — ver «D-089 — REPORTERÍA (A9)».
+- **A2 confirmó (RLS de firma)**: `app.cuenta_uso` y `cuenta_conceptos_activos` son `SECURITY
+  DEFINER` justamente para que un administrador de firma que edita una cuenta compartida (global /
+  `company_id NULL`) vea el histórico de **todas** sus empresas y no pueda reclasificar desde la
+  empresa A una cuenta con movimientos en la B. El simulador de A8 hereda ese criterio. Nada que
+  cambiar en las políticas RLS para el diseño elegido.
+
+---
+
+## D-089 — REPORTERÍA (A9, 2026-09-04) — TAREA 5: exportar el PUC efectivo a Excel
+
+**Alcance: `src/reports/puc-efectivo.ts` (nuevo), `app/api/parametros/puc/exportar/route.ts` (quita el
+501), `tests/reports/puc-efectivo.test.ts` (nuevo).** No se tocó `src/domain/motor.ts`, seeds de
+`tax_rule` ni `src/services/puc.ts`. **Sin comitear.**
+
+### Qué hace
+
+- `generarLibroPucEfectivo(tx): ExcelJS.Workbook` — workbook construido a mano (mismo estilo de papel
+  de trabajo que `terceros-maestro.ts`), **cuatro hojas** en el orden de la sección 11.2:
+  - **Datos** — una fila por cuenta de `v_account_efectivo` (precedencia empresa>firma>global ya
+    resuelta, D-064). Columnas: Código, Nombre, Nivel, Naturaleza (Débito/Crédito), Imputable (Sí/No),
+    Estado (Activa/Inactiva), Alcance (Genérica / De la firma / Propia de la empresa), ¿En uso?,
+    Conceptos que la usan, Partidas en el ledger, Clasificación NIIF, Sección NIIF, Rubro ESF, Rubro
+    ERI, Norma NIIF, NIIF vigente desde, NIIF vigente hasta.
+  - **Papel de trabajo** — encabezado obligatorio (razón social, NIT, período/corte, responsable,
+    generado el) + modo del PUC + totales de `resumenPuc` (efectivas, imputables, propias/firma/
+    genéricas) + nº de cuentas en el archivo.
+  - **Trazabilidad** — una fila por cuenta **con** clasificación NIIF vigente (regla + vigencia
+    «cuando aplique»: el PUC no calcula nada tributario, la única regla versionada que le aplica es el
+    `niif_mapping`). Incluye `¿Verificación humana pendiente?`. Si ninguna cuenta tiene mapeo NIIF, lo
+    dice en una línea.
+  - **Parámetros** — modo del PUC, fecha de resolución de la precedencia, desglose del resumen,
+    nota de que el mapeo NIIF se resuelve por la vigencia más específica.
+- **En uso / partidas / conceptos**: consultas agregadas directas (no `usoDeCuentas` cuenta a cuenta)
+  — `journal_line` sobre asientos `posted` agrupado por cuenta, y `concepto_causacion` activos por las
+  tres FKs. `¿En uso? = partidas>0 ∨ conceptos>0`, mismo criterio que el motor (migración 179).
+- **NIIF vigente**: `DISTINCT ON (account_id)` de `niif_mapping` con ventana que contiene la fecha de
+  corte, ordenado por especificidad (`company_id` → `tenant_id` → `vigente_desde`), como D-064.
+- Se consulta `v_account_efectivo` **directamente** (no `listarPucEfectivo`): su LIMIT tope de 2000 no
+  alcanza para un PUC completo (~2.500 cuentas del Decreto 2650 cargado por A1).
+
+### Ruta
+
+`GET /api/parametros/puc/exportar` → `puc_<AAAA-MM-DD>.xlsx`. Seguridad **idéntica** a
+`/api/terceros/exportar`: `workbook` se arma dentro de `conSesion`, `exigirPermiso(tx,
+PERMISOS.PARAMETRO_PUC_LEER)` antes de generar; empresa exclusivamente de la sesión (sin parámetro, la
+RLS de `account`/`v_account_efectivo`/`niif_mapping`/`journal_line` aísla). 401 sin sesión, 403 sin
+permiso o sin empresa, 500 con detalle solo al log.
+
+### Verificación
+
+- `npx tsc --noEmit`: sin errores en archivos de A9. Queda **1** preexistente en
+  `tests/adversarial/a14-d088-ampliada.test.ts` (`cuentas.retefuente` → subcuentas), de **A3** en
+  paralelo, no de A9.
+- `tests/reports/puc-efectivo.test.ts` — **5 pruebas**: las 4 hojas obligatorias; encabezado de
+  empresa/NIT/responsable en el papel de trabajo; filas de «Datos» = `SELECT codigo FROM
+  v_account_efectivo` (mismo conteo y mismos códigos, incluye la cuenta propia); aislamiento (empresa
+  B no ve la cuenta propia de A); 403 — un rol sin `parametro.puc.leer` no exporta.
+- Sin regresiones: `tests/reports/` (90) + `tests/services/puc-d089.test.ts` (8), todas verdes.
+
+### Reportes ya exportables a Excel (sección 11.3)
+
+Libro auxiliar por cuenta y tercero · Libro diario · Libro mayor · Balance de prueba (cualquier nivel
+del PUC) · Certificado de retenciones por tercero · Relación de retenciones por período y tipo ·
+Movimiento de terceros · Detalle de IVA generado y descontable · **PUC efectivo (D-089 TAREA 5, nuevo)**.
+Estados financieros (A10) y formatos de exógena (A11) tienen su propia reportería.
+
+---
+
+## D-089 — MOTOR / REGLAS (A3, 2026-09-04) — reapunte de retefuente a subcuentas + guard del motor
+
+> A3 hizo el trabajo (migración 180, seeds, motor, prueba adversarial) y verificó sus 7 pruebas
+> nuevas; el corte por límite de cupo le impidió correr la suite completa y escribir esta ficha. El
+> orquestador corrió la suite: **`tsc` limpio · `npx vitest run` 1293/1293 en verde, 68 archivos**
+> (base A9 = 1273/65; +20 en 3 archivos: `a3-d089-cuenta-agrupadora` 7, y ampliaciones de
+> `golden/casos-dorados` y `adversarial/casos-dorados`). Sin comitear. Sin aplicar a la Neon.
+
+### El problema
+
+Las **18** reglas globales de retefuente (`tanda1/050` doce, `tanda2/070` seis) apuntaban
+`tax_rule.account_id` a `2365` «RETENCIÓN EN LA FUENTE». Con el PUC completo del Decreto 2650
+(D-089/A1), `2365` es una cuenta de nivel 3 **con subcuentas** → agrupadora imputable, y el saldo de
+la retención quedaba sin decir por qué concepto se retuvo (lo que el art. 381 ET y el Formato 1001
+exigen desagregado). Antes de D-089 solo habría reventado al publicar; con el trigger de la 179,
+revienta en el `INSERT` de la partida.
+
+### Qué hizo A3
+
+| Punto | Resolución |
+|---|---|
+| **Seeds corregidos** (`tanda1/050`, `tanda2/070`) | Cada `INSERT` de regla apunta ya a su subcuenta 236x por concepto. Una base **nueva** nace bien, sin vigencia partida. Mapeo: `servicios*`,`transporte*`,`vigilancia_aseo`,`hoteles_restaurantes`,`servicios_integrales_salud` → **236525**; `compras_generales`,`productos_agricolas`,`combustibles` → **236540**; `honorarios_pj/pn` → **236515**; `arrendamiento_muebles/inmuebles` → **236530**; `rendimientos_financieros*` → **236535**. `2367` (ReteIVA) y `2368` (ReteICA) **no se tocan**: en el Decreto 2650 son hojas, sus reglas ya estaban bien. |
+| **Migración 180** (`180_a3_d089_retefuente_subcuentas.sql`) | Solo para la base **ya sembrada** (la Neon), donde el seed `INSERT … WHERE NOT EXISTS` nunca tocaría las filas viejas. **No hace `UPDATE`** de `account_id`: el trigger `tax_rule_vigencia_append_only` (migración 001) lo prohíbe (`PR001`) y esa conducta es correcta. En su lugar **cierra la vigencia vieja** (`vigente_hasta = CURRENT_DATE - 1`) y **abre una gemela** contra la subcuenta, idéntica en tarifa/base/comparador/discriminadores/norma. Consecuencia declarada (sección 9.2): una factura con hecho económico anterior a la migración se sigue resolviendo contra la vigencia vieja y sigue acreditando `2365` — el pasado no se reinterpreta. Todo idempotente y condicional; en base limpia es un no-op (corre antes que los seeds). |
+| **Bloque B de la 180** | `2365` pasa a `permite_movimiento = false` **solo si** tiene subcuentas imputables **y** ninguna vigencia de `tax_rule` (viva o cerrada) la referencia **y** no tiene movimientos (`PU003`) **y** no tiene conceptos activos (`PU005`). Si algo falla, no hace nada. |
+| **Motor** (`src/domain/motor.ts`, `repositorio.ts`, `tipos.ts`, `src/services/causacion.ts`) | Una regla o `concepto_causacion` cuya cuenta destino no es imputable (agrupadora o inactiva) manda el documento a **revisión manual con motivo legible** (`regla_con_cuenta_no_imputable`) ANTES de escribir la partida — ya no muere con el `LG004` crudo del trigger en la cara del contador. |
+| **Prueba adversarial** `tests/adversarial/a3-d089-cuenta-agrupadora.test.ts` (7) | (a) regla con cuenta agrupadora/inactiva → motor rechaza con mensaje entendible, nada escrito; (b) **diferencial**: cada regla global de retefuente resuelta dos veces (subcuenta de hoy vs. espejo del destino anterior) da el mismo asiento **centavo a centavo** — solo cambia el `account_id` del crédito. |
+
+### Pendiente (no bloquea el cierre de D-089, lo verifica A14)
+
+- Los 20 casos dorados vueltos a correr por el orquestador vía suite completa: verdes. A14 los
+  reejecuta uno por uno en su compuerta.
+- Aplicar 179 + 180 + seeds `011`/`050`/`070` a la Neon: paso del despliegue (usuario / A15).
+
+---
+
 ## Vulnerabilidades — registro de A14
 
 | Id | Qué es | Gravedad | Estado | De quién |
 |---|---|---|---|---|
+| **V-47** | **Cualquier firma podía BORRAR el catálogo global compartido y APROPIARSE de sus filas.** Medido por A14 con SQL directo desde una sesión de negocio real (`app_user`, RLS activa, token presentado): `DELETE FROM account WHERE tenant_id IS NULL` dejó el catálogo base en **cero filas** —con el PUC de D-089, **2.506 cuentas que desaparecen para todas las firmas de la plataforma**— y `UPDATE account SET tenant_id = <el mío>` movió una fila compartida al patrimonio de una firma, quitándosela a las demás. La causa no es de D-089 ni de `account`: es la **política RLS híbrida de la Ola 0** (012), cuyo `USING` incluye las filas globales para poder **leerlas** mientras un `DELETE` no tiene `WITH CHECK` que lo detenga. **Y no era solo `account`**: por el mismo camino se borraba el valor global de la **UVT** (sin UVT el motor deja de calcular para toda la plataforma), un **municipio** o una **actividad CIIU** del catálogo nacional, una vigencia global de `tax_rule` **todavía no vigente** (`PR003` solo cubre las que ya rigen) y los **permisos de un rol del sistema** vía `role_permission` | **Alta**: escritura destructiva entre firmas sobre datos compartidos. Regla de Oro 7 en su forma literal, y la 3 por la puerta de atrás (si una vigencia global se puede borrar, «recalcular enero en julio da lo mismo» deja de ser cierto) | **CORREGIDA por A14**: migración **181** (`CT001`). Desde una sesión de negocio, una fila con `tenant_id IS NULL` es de **solo lectura** en las 18 tablas de RLS híbrida más `role_permission`; sin sesión (migraciones, seeds, plataforma) no se aplica, con prueba. El trigger va con sufijo `_zz_` para dispararse el último y no robarle el diagnóstico a `PU001`/`PR001`/`PR003`. Una prueba deriva las tablas híbridas de la **forma de su política** en `pg_policies` y exige que todas lleven el guardia: el inventario no se mantiene a mano | era de **A2** (política de la Ola 0), agravado por el volumen que **D-089/A1** dio al catálogo global |
+| **V-48** | **El barrido «`db/seeds` es dato, no código» excluía un directorio que el cargador SÍ aplica.** D-089/A1 excluyó `_fuentes/` **entero** del barrido, pero `src/db/seed.ts` recorre todos los subdirectorios de `db/seeds/` y ejecuta cualquier `.sql` que encuentre. Un seed puesto ahí habría entrado a la base sin pasar por ninguna de las cuatro comprobaciones: ni «ningún seed hace UPDATE/DELETE», ni «ningún seed define lógica», ni «toda fila normativa declara su norma de respaldo» | Media (infraestructura de QA; el patrón de V-43: un guardia que dice cubrir lo que no cubre) | **CORREGIDA por A14**: la excepción se acota a los archivos que **no** son `.sql` dentro de `_fuentes/`, y una prueba nueva exige que el conjunto auditado sea **idéntico** al que aplica el cargador | era de **A1** |
+| **V-49** | **Reaparece el patrón de V-45 en otra plantilla.** `src/services/carga-masiva/definiciones.ts` traía `base_minima_servicios_uvt` con ejemplo **`4`** y `base_minima_compras_uvt` con ejemplo **`27`**: las bases mínimas de la sección 7.5, es decir valores tributarios reales escritos en el código, y además `plantilla.ts` los escribe en la **fila 2, que es fila de DATOS**. Quien pegara su lista sobre las filas de ejemplo cargaba las bases mínimas del ejemplo como si fueran las de su municipio. Las demás celdas numéricas de esa plantilla ya eran marcadores obviamente falsos (`0,5`, `0`, `1`); estas dos eran las de verdad | Media-alta (Regla de Oro 2 y advertencia §17.5) | **CORREGIDA por A14**: las dos celdas van vacías y el formato se explica en la descripción de la columna. Las 55 pruebas de carga masiva siguen verdes | era de **A8** |
+| **V-50** | **La red de seguridad de D-089 no cubre la nota crédito.** `verificarCuentasImputables` —el filtro de A3 que manda a revisión manual con motivo legible cuando una cuenta de la propuesta no admite partidas, en vez de matar al worker con el `LG004` crudo de la 179— se llama en `causarFactura` y **no** en `causarNotaCredito`. Las partidas no-retención de la nota vienen del asiento original (y la puerta de la reversa las admite), pero las de retención las resuelve el motor **a la fecha de la nota** y pueden apuntar a una cuenta que no esté en el original | **Baja**: exige que alguien reapunte una regla a una agrupadora entre la factura y la nota; no corrompe el ledger —lo peor es una excepción que el worker reintenta, que es lo que pasaba antes de D-089— y ninguna prueba existente la alcanza | **DECLARADA, NO corregida.** El arreglo obvio (llamar el mismo filtro) **rompería** la garantía de A2: la reversa tiene permitido reproducir una cuenta inactivada y ese filtro la rechazaría. La versión correcta debe exceptuar las cuentas que ya están en el asiento original, y eso es criterio de diseño del motor. A14 no lo inventa | **A3** |
 | **V-43** | **El guard `gravada`/tarifa de `editarTarifaTaxRule` no miraba el flag que la fila iba a HEREDAR.** La comprobación era `if (input.gravada === false && tarifa !== 0)`, pero el `INSERT` de más abajo escribía `input.gravada ?? anterior.gravada`: si la llamada **no** traía `gravada` —que es lo normal cuando solo se cambia la tarifa— la vigencia nueva heredaba `false` de la regla anterior y se iba a la base con una tarifa positiva. La combinación prohibida era exactamente la misma, pero el guard no la veía, así que el contador recibía un error crudo de PostgreSQL en vez del motivo, y el comentario del código («el mismo guard que impone el CHECK») era falso. La UI de D-088 pasa el flag siempre, así que ese camino estaba cubierto; cualquier otro consumidor del servicio, no | Media (el CHECK `tax_rule_gravada_ck` seguía siendo la garantía real y **nada se escribió nunca mal**; el defecto es que el resguardo de aplicación no cubría lo que decía cubrir, y un guard que miente es peor que no tenerlo) | **CORREGIDA por A14**: el guard se evalúa **después** de leer la regla anterior y contra el flag **efectivo**, con la **misma expresión** (`input.gravada ?? anterior.gravada`) que va al `INSERT`; si guard y escritura no calcularan el flag igual, el guard no valdría nada. Dos pruebas: flag explícito y flag heredado, ambas exigiendo `VigenciaInvalidaError` y comprobando que no quedó ni una fila | era de **A8** |
 | **V-44** | **La carga masiva de ICA tomaba la celda «Gravada» EN BLANCO por «no gravada», y admitía «Por periodo» sin ventana.** (a) `validarActividad` trataba `''` igual que `'N'`: una actividad **sí gravada** con su tarifa a la que se le olvidó la «S» se cargaba como `gravada = false, tarifa = 0`, **sin salir en el informe de errores**. Es decir, apagaba la retención de ICA de esa actividad en el municipio en silencio, y nadie lo veía hasta que un cliente reclamara. Es el error silencioso más caro del parser: una celda que decide si se practica una retención no puede tener valor por defecto (§17.5). (b) Con «Tipo de medición = Por periodo» y la celda «Periodo en meses» vacía o con basura, el archivo se cargaba dejando el municipio midiendo por periodo con ventana desconocida: **cada** factura suya se habría ido a revisión manual por `ICA_PERIODO_SIN_VENTANA`, un vacío que hay que ver **al cargar**, no factura a factura | **Alta** para (a) —cambio silencioso del resultado tributario, invisible en el informe— y media para (b) | **CORREGIDA por A14** en `src/services/carga-masiva/ica-municipio.ts`: la celda «Gravada» vacía es **error de fila** con el motivo explícito («escriba S o N: el sistema no supone que una actividad no está gravada»), y «Por periodo» sin un entero de 1 a 12 rechaza el archivo con `ArchivoIlegibleError` y un mensaje que explica por qué. Pruebas: fila con tarifa y sin «S» → error y **cero filas escritas**; ventana `0`, `13`, `2,5`, `dos` y ausente → rechazo; ventana `2` → carga y queda guardada | era de **A8** |
 | **V-45** | **La plantilla descargable venía con valores tributarios PRECARGADOS en las celdas que el parser lee como configuración real.** `construirPlantillaIcaMunicipio` escribía `D5 = '05001'` (DANE de Medellín), `H5 = 27` («Base mínima UVT compra»), `H6 = 4` («Base mínima UVT servicio») e `I9 = 6` («Tarifa por mil»). Esas celdas **no son decoración**: son el bloque de encabezado que `leerArchivoIca` interpreta como los parámetros del municipio. Un contador que descargue la plantilla, pegue su lista de actividades sobre las filas de ejemplo y suba el archivo **habría cargado el municipio y las bases mínimas del ejemplo como si fueran los suyos**, sin enterarse. Y son, literalmente, una base mínima y una tarifa escritas en el código fuente | **Alta** como producto (un parámetro tributario falso cargado sin que nadie lo decida es exactamente lo que la advertencia §17.5 llama peor que el dato faltante) y violación directa de la **Regla de Oro 2** | **CORREGIDA por A14**: el bloque de encabezado y la fila de ejemplo van **vacíos**; el formato («9,66 por mil → 0,00966») y el cómo se llena cada celda viven en la hoja «Instrucciones» como prosa, no como valores cargables. La plantilla sin llenar, subida tal cual, ahora **se rechaza** en vez de cargar el ejemplo. Tres pruebas: ninguna celda de encabezado ni de tarifa trae valor; la plantilla vacía se rechaza; la plantilla llenada a mano sí la entiende el parser | era de **A8** |
@@ -4677,6 +5161,80 @@ ISO 27001 / SOC 2, y habilitación DIAN. Están declarados como no hechos en `do
 Para que quede dicho, porque es fácil suponer lo contrario: el ledger inmutable, el aislamiento entre firmas, el motor de retenciones con sus 20 casos dorados, la parametrización sin desplegar código, la memoria de clasificación que evita llamar al LLM, la bandeja multiempresa con aprobación en lote, los libros y estados financieros en Excel, la exógena, el arranque sin SQL y los datos de ejemplo **están construidos, probados y verificados de forma adversarial**. Lo que falta arriba es casi todo **dato, contrato, despliegue o juicio humano** — no motor.
 
 
+## D-089 — DATOS PARAMÉTRICOS (A1, 2026-09-04) — PUC completo Decreto 2650 cargado
+
+**Alcance: TAREA 1 de D-089 — catálogo COMPLETO del PUC como catálogo global de `account`
+(`tenant_id IS NULL, company_id IS NULL`). Sin comitear. Compuerta de A14: PENDIENTE.**
+
+### Qué quedó cargado
+
+- **Seed nuevo:** `db/seeds/tanda2/011_puc_completo_2650.sql` (generado desde
+  `db/seeds/_fuentes/puc_decreto_2650_catalogo.txt` con un script de un solo uso, no versionado).
+  `INSERT ... SELECT ... FROM (VALUES ...)` en 4 lotes por nivel, `parent_id` resuelto por
+  subconsulta de prefijo, `WHERE NOT EXISTS` por `(tenant NULL, company NULL, codigo)` → idempotente,
+  no pisa nada de tanda1/tanda2 con `UPDATE`.
+- **Total global de `account` tras los seeds: 2.506 filas.** 2.502 de la fuente (Decreto 2650
+  consolidado) + 4 de clase 7 de 4 díg (`7105/7205/7305/7405`) que tanda2 ya traía y que **no están
+  en la fuente** (ver pendientes).
+- **Por nivel:** 9 clases · 52 grupos · 344 cuentas (4 díg) · 2.101 subcuentas (6 díg).
+- **Por clase (grupos/cuentas/subcuentas):** 1 → 9/106/569 · 2 → 9/90/220 · 3 → 8/27/79 ·
+  4 → 3/33/467 · 5 → 5/39/412 · 6 → 2/19/256 · **7 → 4/0/0** · 8 → 6/15/65 · 9 → 6/11/33.
+- `norma_respaldo` conceptual (va en `COMMENT ON TABLE account`, no en columna —`account` no la
+  tiene): «Decreto 2650 de 1993 (Catálogo de Cuentas), consolidado con Decretos 2894 de 1994 y
+  2116 de 1996». **REQUIERE COTEJO HUMANO contra el Diario Oficial antes de producción.**
+- **Prueba nueva:** `tests/seeds/puc-completo-d089.test.ts` (10 casos: conteos por nivel/clase,
+  clase 7 sin detalle, 0 huérfanos, contra-natura, sufijos (DB)/(CR), `permite_movimiento`,
+  `requiere_tercero`, idempotencia). `npx tsc --noEmit` limpio. **Suite completa: 1.263 en verde**
+  (antes 1.263; se sumó el archivo nuevo, no hay archivo con conteo fijo de `account` que actualizar
+  — la idempotencia de `tanda2.test.ts` compara antes/después, no un número).
+
+### Derivaciones aplicadas (criterio de A1, documentado en el encabezado del seed y en `docs/reportes/d089-a1.md`)
+
+- **nivel** por longitud (1→1, 2→2, 4→3, 6→4).
+- **naturaleza** por clase (1 D · 2/3/4 C · 5/6/7/8 D · 9 C), invertida en: (a) contra-activos de
+  clase 1 — `1299/1399/1499/1599/1699/1899` provisiones, `1592/1596/1597/1598` depreciación/
+  agotamiento/amortización acumulada, `1698` y **`1798`** (amortización acumulada de diferidos —
+  llamada normativa de A1, la fuente no la marca); (b) **toda** cuenta cuyo nombre termina en
+  `(DB)`/`(CR)` → naturaleza **opuesta a la de su cuenta padre** (cubre grupos 84/85/86 y 94/95/96,
+  `4175/4275`, `6225`, `3105 10/15`, `3205 10`, `330516/330518`, `292010/292510`, `262010`,
+  `159610`, etc.).
+- **permite_movimiento = true** solo en hojas (sin hijos en la fuente); clases y grupos siempre
+  `false`; toda subcuenta 6 díg `true`.
+- **requiere_tercero = true** por prefijo de código en cuentas por cobrar/pagar a terceros
+  identificables (`1305/1310/1315/1320/1323/1325/1328/1365/1370/1380`, `2205/2210`,
+  `2305/2310/2315/2320/2335/2355/2357/2360/2365/2367/2368/2380` y sus subcuentas). 99 filas.
+
+### Discrepancias contra lo que tanda1/tanda2 ya habían cargado (NO se pisaron con UPDATE)
+
+| código | nombre en tanda2 | nombre en el Decreto 2650 | nota |
+|---|---|---|---|
+| `1698` | AMORTIZACIÓN ACUMULADA | DEPRECIACIÓN Y/O AMORTIZACIÓN ACUMULADA | tanda2 abrevió; sin efecto de cálculo |
+| `2210` | PROVEEDORES DEL EXTERIOR | DEL EXTERIOR | tanda2 más explícito; misma cuenta |
+| `3305` | RESERVA LEGAL | **RESERVAS OBLIGATORIAS** | **error de tanda2**: «Reserva legal» es la subcuenta `330505`. `3305` es agrupador |
+| `4155` | ACTIVIDADES DE SERVICIOS | ACTIVIDADES INMOBILIARIAS, EMPRESARIALES Y DE ALQUILER | tanda2 usó rótulo laxo |
+| `4245` | RECUPERACIONES | **UTILIDAD EN VENTA DE PROPIEDADES, PLANTA Y EQUIPO** | **error de tanda2**: «Recuperaciones» es `4250` |
+| `6155` | DE SERVICIOS | ACTIVIDADES INMOBILIARIAS, EMPRESARIALES Y DE ALQUILER | igual que `4155` |
+
+Además, tanda2 cargó ~40 cuentas de 4 díg con `permite_movimiento = true` que este catálogo dota de
+subcuentas (p. ej. `5135`, `2365`, `6205`, `1305`). **A14 las contó en su compuerta: son 52, no ~40**
+—todas de nivel 3—, y quedaron clavadas en una lista cerrada en
+`tests/adversarial/a14-d089-catalogo.test.ts`, de modo que una cincuenta y tres no puede aparecer sin
+que una prueba lo diga. `2365` **ya no está** entre ellas: D-089/A3 la volvió agrupadora.
+**No se corrigieron con `UPDATE`**: (1) un seed no
+hace `UPDATE` (lo prohíbe `tests/adversarial/valores-tributarios.test.ts`); (2) los escenarios dorados
+imputan directamente sobre esas cuentas y volverlas agrupadoras rompería la causación. Queda como
+discrepancia a resolver por interfaz (crear el auxiliar y trasladar el saldo). Detalle en
+`docs/reportes/d089-a1.md`.
+
+### Decisión de estructura
+
+`tests/adversarial/valores-tributarios.test.ts` — `archivosDeSeeds()` ahora **excluye `db/seeds/_fuentes/`**:
+ese directorio guarda catálogos normativos de referencia en texto plano (la fuente desde la que A1
+genera los `.sql`), no son seeds y no se aplican a la base. El barrido «todos los seeds son `.sql`» y
+«ningún seed hace UPDATE/DELETE» sigue intacto para lo que sí es seed.
+
+---
+
 ## Pendiente de verificación normativa humana
 
 Estado al cerrar la Ola 1. **A1 no inventó ni un valor**, y eso se comprobó: las 28 filas de `tax_rule`
@@ -4684,7 +5242,8 @@ declaran su `norma_respaldo`, y las 5 que la sección 17 marca como de referenci
 `requiere_verificacion_humana = true`. Censo real de lo que dejan los seeds: `uvt_value` 2,
 `tax_concept` 23, `tax_rule` 28 (18 retefuente, 4 autorretención, 3 IVA, 2 ReteIVA, **1 ReteICA —
 Medellín**), `rounding_rule` **1** (parámetro operativo global, D-046), `municipality` 6,
-`municipality_ica_rule` 4, `ciiu_activity` 7, `account` 111, `niif_mapping` 68, `exogena_format` 12,
+`municipality_ica_rule` 4, `ciiu_activity` 7, `account` 111 (→ **2.506 tras D-089/A1, 2026-09-04**),
+`niif_mapping` 68, `exogena_format` 12,
 `smmlv_value` 0, `tax_calendar` 0.
 
 | Dato | Motivo | Estado |
@@ -4701,7 +5260,9 @@ Medellín**), `rounding_rule` **1** (parámetro operativo global, D-046), `munic
 | **D-088 — anclaje de la ventana de acumulación de ICA por periodo** | El motor la ancla al **año calendario** (primer periodo desde el 1 de enero del año del hecho; recorte al 31-dic si `periodo_meses` no divide a 12). Ningún acuerdo municipal consultado dice desde cuándo cuenta la ventana | **decisión normativa pendiente de confirmación del cliente final, declarada por A3.** No es bug ni TODO. Alternativa no elegida: anclar a `vigente_desde` de la regla municipal. Cambiarla es tocar `ventanaPeriodoIca` y nada más |
 | **D-088 — cruce del umbral a mitad de periodo** | El motor retiene **solo hacia adelante**: la factura que cruza retiene sobre su propia base y lo ya causado antes no se ajusta | **decisión normativa pendiente de confirmación del cliente final, declarada por A3.** Es la lectura conservadora y reversible; la contraria exigiría reescribir asientos publicados (Regla de Oro 1). Consecuencia asociada: la **nota crédito no descuenta del acumulador**, también declarada |
 | Honorarios PN al 11% por acumulado anual > 3.300 UVT | Exige un acumulado por tercero y año gravable que hoy no tiene dónde vivir | **declarado por A3, no resuelto en silencio.** Ningún caso dorado lo ejercita |
-| PUC y mapeo NIIF cargados | Reconstruidos de memoria por A1, no transcritos del Decreto 2650 ni del 2420 | pendiente de cotejo antes de producción |
+| **PUC completo (Decreto 2650) cargado por D-089/A1 (2026-09-04)** — 2.506 cuentas globales | La fuente es una transcripción de `puc.com.co` (catálogo de referencia consistente con el Decreto 2650 consolidado), **no el texto del Diario Oficial**. `naturaleza`, `permite_movimiento` y `requiere_tercero` los derivó A1 por regla | pendiente de **cotejo humano del catálogo completo** (nombres literales del Diario Oficial, naturaleza de contra-cuentas dudosas como `1596`/`1798`) antes de producción |
+| **Clase 7 (Costos de producción o de operación) — cuentas de 4 díg y subcuentas** | La fuente de D-089 solo expone los grupos `71`–`74`. El detalle (`7105`, `7205`… y sus subcuentas) **no se pudo verificar y NO se inventó**. Las 4 filas `7105/7205/7305/7405` que hoy existen las puso tanda2 de memoria y **tampoco están verificadas** | pendiente. Una empresa manufacturera que necesite costeo por órdenes no tiene el detalle de clase 7 en el catálogo global; debe cargarlo como PUC propio o esperar el cotejo |
+| Mapeo NIIF (`niif_mapping`, 68 filas) | Reconstruido de memoria por A1 (Ola 1), no transcrito del Decreto 2420 | pendiente de cotejo antes de producción. Ya lleva `requiere_verificacion_humana = true` |
 | Modo y múltiplo de redondeo por defecto (`peso_half_up`) | **No es un dato normativo**: no hay decreto que citar. Es un parámetro operativo, y la tabla donde vive no puede expresar una tarifa (D-046) | **cargado y aceptado.** Cualquier firma lo sobreescribe con datos, sin tocar código — probado |
 | Tarifas Decreto 572 de 2025 | En etapa cautelar; fallo de fondo abierto (exp. 30229) | vigente, con riesgo documentado. La Regla 3 lo absorbe sin migración ni redespliegue — probado |
 | Un XML **real** de la DIAN | Los 11 fixtures son construidos a mano; el CUFE no es criptográficamente auténtico | pendiente antes de producción. A14 amplió la cobertura con variantes hostiles, pero ninguna sustituye una captura real |
@@ -4720,6 +5281,34 @@ sin broker, tal como exige la sección 5.
 ---
 
 ## Próximo paso
+
+**2026-09-04 — D-089 pasó la compuerta AMPLIADA de A14: «PASA con correcciones, hechas por A14 en la
+misma pasada» (V-47, V-48, V-49 corregidas; V-50 declarada y devuelta a A3).** Estado del árbol:
+`npx tsc --noEmit` limpio · `npx vitest run` **1345 en verde, 70 archivos**. Sin comitear (A14 no
+comitea). Ver «Compuerta AMPLIADA de D-089 — veredicto de A14».
+
+Pendiente inmediato de D-089:
+
+0. **Aplicar a la Neon las migraciones `179`, `180` y `181` y los seeds `011`/`050`/`070`**, en ese
+   orden. Ojo con el orden real de producción: la **180** repara la base **ya sembrada** cerrando la
+   vigencia vieja de cada regla de retefuente y abriendo su gemela contra la subcuenta; en esa base
+   `2365` **seguirá siendo imputable** a propósito (una vigencia cerrada la cita, y desimputarla
+   rompería el reproceso de una factura anterior). Es conducta declarada, no defecto.
+1. **Verificación en navegador real de D-089** (usuario): `/parametros/puc` con el PUC completo
+   cargado (2.506 cuentas) — la columna «En uso», el modal «Ver uso», el simulador de impacto
+   bloqueante y el botón «Exportar PUC a Excel». A14 midió el motor, los servicios y la base; no una
+   sesión de teclado y ratón. Y conviene mirar el **rendimiento de la tabla** con el catálogo
+   completo, que es la primera vez que esa pantalla ve miles de filas.
+2. **V-50 (A3):** extender la red de `verificarCuentasImputables` a `causarNotaCredito` exceptuando
+   las cuentas que ya están en el asiento original — si no se exceptúan, se rompe la puerta de la
+   reversa que la 179 abre a propósito.
+3. **V-47 — revisar el alcance de la corrección al desplegar (A15/A2):** la migración **181** vuelve
+   de solo lectura el catálogo global en 18 tablas. Si algún camino administrativo de producción
+   corriera **con sesión de negocio** y necesitara tocar una fila global, ahí se enteraría. A14 no
+   encontró ninguno (el flujo de parametrización nunca cierra una vigencia global: la sombrea) y la
+   suite completa lo confirma, pero la Neon tiene datos que las pruebas no.
+
+Anterior (D-088, ya cerrado):
 
 **2026-09-03 — D-088 pasó la compuerta AMPLIADA de A14: «PASA con correcciones, hechas por A14 en la
 misma pasada» (V-43, V-44, V-45, V-46).** Estado del árbol: `npx tsc --noEmit` limpio ·

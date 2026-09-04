@@ -626,6 +626,19 @@ describe('A14 · barrido estructural de puertas laterales', () => {
       // NO aparece aquí: está concedido solo a `app_auth`, igual que
       // `abrir_sesion`/`buscar_credencial`.
       'app.crear_token_integracion',
+      // D-089 (migración 179): las tres del módulo PUC. Reciben un
+      // `account_id` que quien pregunta YA tuvo que resolver pasando por la
+      // RLS híbrida de `account`, y devuelven un booleano o conteos — nunca un
+      // nombre, un código ni una fila de otra firma. SECURITY DEFINER es
+      // obligatorio aquí, no comodidad: una cuenta de alcance global o de
+      // firma (`company_id IS NULL`, D-064) puede tener movimientos en VARIAS
+      // empresas, y bajo la RLS de la sesión el guardia solo vería los de la
+      // empresa en contexto — dejaría reclasificar desde la empresa A una
+      // cuenta con histórico en la B. Las usan los triggers de `account` y la
+      // interfaz, con el mismo criterio exacto.
+      'app.cuenta_conceptos_activos',
+      'app.cuenta_tiene_movimientos',
+      'app.cuenta_uso',
       'app.current_company_id',
       // D-087 (migración 176): filas concretas detras del conteo del simulador
       // de impacto de parametros. SECURITY DEFINER + row_security=off con

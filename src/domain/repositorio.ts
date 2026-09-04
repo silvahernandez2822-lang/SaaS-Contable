@@ -124,6 +124,24 @@ export interface FilaTaxRule {
    *    tarifa (que además el CHECK `tax_rule_gravada_ck` obliga a que sea 0).
    */
   gravada: boolean | null;
+  /**
+   * D-089. ¿La cuenta PUC a la que apunta la regla admite partidas hoy?
+   *
+   *  · `true`  — es hoja y está activa: se puede imputar.
+   *  · `false` — es de agrupación (`permite_movimiento = false`) o está
+   *    inactiva. El motor NO liquida contra ella: manda el documento a revisión
+   *    manual con el motivo `regla_con_cuenta_no_imputable`, en vez de dejar
+   *    que el `INSERT` de la partida muera con LG004/LG009 (migración 179) sin
+   *    explicarle nada al contador.
+   *  · `null` — la regla no tiene cuenta (`account_id IS NULL`, que ya tiene su
+   *    propio motivo) o la fila de `account` no es visible desde esta sesión.
+   *    No se bloquea por `null`: eso es un problema de alcance, no de PUC.
+   */
+  cuenta_imputable: boolean | null;
+  /** Código PUC de la cuenta de la regla. Solo para que el motivo sea legible. */
+  cuenta_codigo: string | null;
+  /** Nombre de la cuenta de la regla. Solo para que el motivo sea legible. */
+  cuenta_nombre: string | null;
 }
 
 export interface FilaMunicipioIca {
@@ -353,6 +371,10 @@ export class RepositorioTributarioSql implements RepositorioTributario {
            base_minima_valor::text, comparador_base_minima, aplica_sobre, aplica_a, tipo_persona,
            municipality_id, ciiu_activity_id, account_id, vigente_desde::text,
            vigente_hasta::text, norma_respaldo, gravada,
+           (SELECT a.permite_movimiento AND a.activo FROM account a WHERE a.id = tax_rule.account_id)
+             AS cuenta_imputable,
+           (SELECT a.codigo FROM account a WHERE a.id = tax_rule.account_id) AS cuenta_codigo,
+           (SELECT a.nombre FROM account a WHERE a.id = tax_rule.account_id) AS cuenta_nombre,
            ((aplica_a <> 'ambos')::int * 4
             + (tipo_persona <> 'ambos')::int * 2
             + (ciiu_activity_id IS NOT NULL)::int) AS especificidad

@@ -296,10 +296,15 @@ describe('A1 · seeds tanda 1 — sección 7 del mega-prompt', () => {
         ),
       );
       expect(rows.map((r) => r.codigo)).toEqual(['2365', '2367', '2368']);
-      for (const r of rows) {
-        expect(r.naturaleza).toBe('credito');
-        expect(r.permite_movimiento).toBe(true);
-      }
+      for (const r of rows) expect(r.naturaleza).toBe('credito');
+      // D-089: 2365 tiene subcuentas en el Decreto 2650 (236515 honorarios,
+      // 236525 servicios, 236540 compras...), así que es de AGRUPACIÓN y no
+      // admite partidas. 2367 y 2368 sí son hojas del decreto y siguen siendo
+      // imputables: ahí es donde se acreditan ReteIVA y ReteICA.
+      const porCodigo = new Map(rows.map((r) => [r.codigo, r.permite_movimiento]));
+      expect(porCodigo.get('2365')).toBe(false);
+      expect(porCodigo.get('2367')).toBe(true);
+      expect(porCodigo.get('2368')).toBe(true);
     });
 
     it('los tax_rule de retefuente/reteIVA apuntan a la cuenta PUC correcta', async () => {
@@ -311,7 +316,12 @@ describe('A1 · seeds tanda 1 — sección 7 del mega-prompt', () => {
       );
       expect(rows.length).toBeGreaterThan(0);
       for (const r of rows) {
-        if (r.tipo === 'retefuente') expect(r.codigo).toBe('2365');
+        // D-089: retefuente acredita la SUBCUENTA 236x que corresponde al
+        // concepto, nunca la agrupadora 2365.
+        if (r.tipo === 'retefuente') {
+          expect(r.codigo).toMatch(/^2365\d\d$/);
+          expect(r.codigo).not.toBe('2365');
+        }
         if (r.tipo === 'reteiva') expect(r.codigo).toBe('2367');
       }
     });

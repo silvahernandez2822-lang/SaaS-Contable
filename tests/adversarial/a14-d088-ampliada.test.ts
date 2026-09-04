@@ -850,7 +850,8 @@ describe('A14 · D-088 · Reglas de Oro 1 y 3 — nada de esto abre el ledger', 
         await tx.query(
           `INSERT INTO journal_line (tenant_id, company_id, journal_entry_id, account_id, side, monto, orden)
            VALUES ($1,$2,$3,$4,'credito',90000,2)`,
-          [e.tenantId, e.companyId, entryId, e.cuentas.retefuente],
+          // D-089: la agrupadora 2365 ya no admite partidas; se usa la subcuenta.
+          [e.tenantId, e.companyId, entryId, e.cuentas.retefuenteServicios],
         );
         await tx.query(
           `UPDATE journal_entry SET estado = 'posted', posted_at = now() WHERE id = $1`,

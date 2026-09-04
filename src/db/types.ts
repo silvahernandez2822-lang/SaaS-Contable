@@ -60,6 +60,25 @@ export const SQLSTATE = {
   ASIENTO_SIN_APROBACION: 'LG006',
   ASIENTO_DEBE_NACER_BORRADOR: 'LG007',
   REVERSA_INVALIDA: 'LG008',
+  /**
+   * PUC (D-089, migración 179): la cuenta es imputable pero está retirada del
+   * plan. Distinto de LG004: allí el remedio es escoger una hoja, aquí es
+   * reactivarla o imputar sobre la que la sustituyó.
+   */
+  CUENTA_INACTIVA: 'LG009',
+  /** PUC (D-089, migración 179): integridad de `account`. Ver 179 para el detalle. */
+  CUENTA_EN_USO: 'PU001',
+  CUENTA_NATURALEZA_INMUTABLE: 'PU002',
+  CUENTA_CON_MOVIMIENTOS: 'PU003',
+  CUENTA_CODIGO_INMUTABLE: 'PU004',
+  CUENTA_REFERENCIADA_POR_CONCEPTO: 'PU005',
+  /**
+   * A14 (V-47, migración 181): desde una sesión de negocio, una fila de
+   * catálogo global (`tenant_id IS NULL`) es de solo lectura. La política RLS
+   * híbrida la expone a UPDATE/DELETE porque su USING la incluye para poder
+   * LEERLA; este código es el lado que faltaba cerrar.
+   */
+  CATALOGO_GLOBAL_SOLO_LECTURA: 'CT001',
   VIGENCIA_INMUTABLE: 'PR001',
   VIGENCIA_SOLAPADA: 'PR002',
   VIGENCIA_NO_BORRABLE: 'PR003',

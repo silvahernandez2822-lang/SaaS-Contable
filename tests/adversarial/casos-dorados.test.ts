@@ -621,9 +621,13 @@ describe('A14 · los 20 casos dorados de la sección 12 — veredicto propio', (
     const valores = r.retenciones.map((x) => x.valor).sort((a, b) => a - b);
     expect(valores).toEqual([pesos(15_000), pesos(22_000), pesos(40_000)]);
     expect(r.agregados.reduce((s, a) => s + a.valor, 0)).toBe(pesos(77_000));
-    // Tres reglas distintas contra la MISMA cuenta: tres agregados, no uno.
+    // Tres reglas distintas: tres agregados, no uno. Y desde D-089 también
+    // TRES cuentas distintas del PUC — servicios 236525, compras 236540,
+    // honorarios 236515 —, porque `2365` es una cuenta de agrupación del
+    // Decreto 2650 y acreditarlo todo ahí escondía por qué concepto se retuvo.
+    // La suma en pesos es la misma de antes de D-089: $77.000.
     expect(new Set(r.agregados.map((a) => a.regla.taxRuleId)).size).toBe(3);
-    expect(new Set(r.agregados.map((a) => a.accountId)).size).toBe(1);
+    expect(new Set(r.agregados.map((a) => a.accountId)).size).toBe(3);
   });
 
   it('14 (variante hostil) · trocear un concepto en dos líneas NO esquiva la base mínima', async () => {

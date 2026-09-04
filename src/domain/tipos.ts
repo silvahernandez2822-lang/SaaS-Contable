@@ -199,6 +199,12 @@ export const MOTIVO = {
   SIN_UVT: 'sin_uvt_vigente_a_la_fecha',
   SIN_REGLA: 'sin_regla_vigente_a_la_fecha',
   REGLA_SIN_CUENTA: 'regla_sin_cuenta_puc_asignada',
+  /**
+   * D-089. La regla sí tiene cuenta, pero esa cuenta no admite partidas: es de
+   * agrupación en el PUC o está inactiva. Es un hecho DISTINTO de no tener
+   * cuenta, y el remedio también («escoja la subcuenta», no «asigne una»).
+   */
+  REGLA_CUENTA_NO_IMPUTABLE: 'regla_con_cuenta_no_imputable',
   REGLA_AMBIGUA: 'mas_de_una_regla_igual_de_especifica',
   SIN_REDONDEO: 'sin_regla_de_redondeo_vigente',
   SIN_AIU: 'concepto_aiu_sin_aiu_declarado',

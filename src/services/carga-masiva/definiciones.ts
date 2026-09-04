@@ -1076,8 +1076,16 @@ const ICA_MUNICIPIOS: DefinicionCarga<FilaIcaImport> = {
       descripcion: 'NO para municipios que no tienen retención de ICA. Se carga igual, para que quede dicho.',
       ejemplo: 'SI',
     },
-    { nombre: 'base_minima_servicios_uvt', obligatoria: false, tipo: 'decimal', descripcion: 'Base mínima de servicios, en UVT.', ejemplo: '4' },
-    { nombre: 'base_minima_compras_uvt', obligatoria: false, tipo: 'decimal', descripcion: 'Base mínima de compras, en UVT.', ejemplo: '27' },
+    // A14 (V-49, compuerta de D-089): estas dos celdas iban con `4` y `27`, que
+    // son las bases mínimas de servicios y de compras de la sección 7.5 — es
+    // decir, VALORES TRIBUTARIOS REALES escritos en el código (Regla de Oro 2)
+    // y, además, precargados en la FILA DE DATOS de la plantilla descargable:
+    // exactamente el mecanismo de V-45. Quien pegara su lista de actividades
+    // sobre las filas de ejemplo se llevaba las bases mínimas del ejemplo como
+    // si fueran las de su municipio, sin enterarse. El formato se explica en la
+    // descripción; la celda va vacía y el acuerdo municipal lo pone el usuario.
+    { nombre: 'base_minima_servicios_uvt', obligatoria: false, tipo: 'decimal', descripcion: 'Base mínima de servicios, en UVT, tal como la fija el acuerdo municipal. Número con coma decimal. Excluyente con la de pesos.', ejemplo: '' },
+    { nombre: 'base_minima_compras_uvt', obligatoria: false, tipo: 'decimal', descripcion: 'Base mínima de compras, en UVT, tal como la fija el acuerdo municipal. Número con coma decimal. Excluyente con la de pesos.', ejemplo: '' },
     { nombre: 'base_minima_servicios_pesos', obligatoria: false, tipo: 'pesos', descripcion: 'Base mínima de servicios en pesos, si el acuerdo la fija así. Excluyente con la de UVT.', ejemplo: '' },
     { nombre: 'base_minima_compras_pesos', obligatoria: false, tipo: 'pesos', descripcion: 'Base mínima de compras en pesos. Excluyente con la de UVT.', ejemplo: '' },
     {

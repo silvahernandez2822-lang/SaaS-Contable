@@ -17,6 +17,18 @@
 -- `rango_hasta_uvt` / `uvt_adicionales`. Inventar esos tramos de memoria es
 -- precisamente lo que prohíbe la regla 17.5 para una tabla que golpea
 -- directamente la nómina de cada empresa. Queda en pendientes.
+--
+-- D-089 (A3): mismo cambio de destino contable que en tanda1/050 — las seis
+-- reglas dejan de apuntar a la agrupadora `2365` y apuntan a su subcuenta:
+--
+--   productos_agricolas                → 236540 COMPRAS
+--   combustibles                       → 236540 COMPRAS
+--   rendimientos_financieros_generales → 236535 RENDIMIENTOS FINANCIEROS
+--   rendimientos_titulos_renta_fija    → 236535 RENDIMIENTOS FINANCIEROS
+--   servicios_integrales_salud         → 236525 SERVICIOS
+--   hoteles_restaurantes               → 236525 SERVICIOS
+--
+-- Ninguna tarifa, base ni vigencia cambia. Ver la nota larga en tanda1/050.
 -- =============================================================================
 
 INSERT INTO tax_concept (tenant_id, company_id, tipo, codigo, nombre, descripcion)
@@ -43,7 +55,7 @@ SELECT NULL, NULL, tc.id, 'retefuente', 0.015000, 70, 'mayor',
        'Decreto 572 de 2025; vigente desde 1-jul-2026. Sección 7.2 ("productos agrícolas/pecuarios sin proceso industrial", base ">70 UVT").'
 FROM tax_concept tc, account acc
 WHERE tc.tenant_id IS NULL AND tc.company_id IS NULL AND tc.tipo = 'retefuente' AND tc.codigo = 'productos_agricolas'
-  AND acc.tenant_id IS NULL AND acc.company_id IS NULL AND acc.codigo = '2365'
+  AND acc.tenant_id IS NULL AND acc.company_id IS NULL AND acc.codigo = '236540'  -- COMPRAS
   AND NOT EXISTS (SELECT 1 FROM tax_rule r WHERE r.tax_concept_id = tc.id AND r.tenant_id IS NULL AND r.company_id IS NULL);
 
 -- Combustibles — 0,1%, sin base mínima dada.
@@ -56,7 +68,7 @@ SELECT NULL, NULL, tc.id, 'retefuente', 0.001000, NULL,
        'Decreto 572 de 2025; vigente desde 1-jul-2026. Sección 7.2.'
 FROM tax_concept tc, account acc
 WHERE tc.tenant_id IS NULL AND tc.company_id IS NULL AND tc.tipo = 'retefuente' AND tc.codigo = 'combustibles'
-  AND acc.tenant_id IS NULL AND acc.company_id IS NULL AND acc.codigo = '2365'
+  AND acc.tenant_id IS NULL AND acc.company_id IS NULL AND acc.codigo = '236540'  -- COMPRAS
   AND NOT EXISTS (SELECT 1 FROM tax_rule r WHERE r.tax_concept_id = tc.id AND r.tenant_id IS NULL AND r.company_id IS NULL);
 
 -- Rendimientos financieros generales — 7%, desde el primer peso. No modificado por el 572.
@@ -69,7 +81,7 @@ SELECT NULL, NULL, tc.id, 'retefuente', 0.070000, 0,
        'Decreto 1625 de 2016 (DUT); no modificado por el Decreto 572 de 2025 (nota expresa sección 7.2). Fecha de vigencia usada como cota conocida.'
 FROM tax_concept tc, account acc
 WHERE tc.tenant_id IS NULL AND tc.company_id IS NULL AND tc.tipo = 'retefuente' AND tc.codigo = 'rendimientos_financieros_generales'
-  AND acc.tenant_id IS NULL AND acc.company_id IS NULL AND acc.codigo = '2365'
+  AND acc.tenant_id IS NULL AND acc.company_id IS NULL AND acc.codigo = '236535'  -- RENDIMIENTOS FINANCIEROS
   AND NOT EXISTS (SELECT 1 FROM tax_rule r WHERE r.tax_concept_id = tc.id AND r.tenant_id IS NULL AND r.company_id IS NULL);
 
 -- Rendimientos títulos de renta fija (CDT/CDAT) — 4%.
@@ -83,7 +95,7 @@ SELECT NULL, NULL, tc.id, 'retefuente', 0.040000, NULL,
        'La sección 7.2 no aclara si este concepto está entre los que el Decreto 572 dejó sin modificar; se trató igual que rendimientos financieros generales por prudencia. Verificar.'
 FROM tax_concept tc, account acc
 WHERE tc.tenant_id IS NULL AND tc.company_id IS NULL AND tc.tipo = 'retefuente' AND tc.codigo = 'rendimientos_titulos_renta_fija'
-  AND acc.tenant_id IS NULL AND acc.company_id IS NULL AND acc.codigo = '2365'
+  AND acc.tenant_id IS NULL AND acc.company_id IS NULL AND acc.codigo = '236535'  -- RENDIMIENTOS FINANCIEROS
   AND NOT EXISTS (SELECT 1 FROM tax_rule r WHERE r.tax_concept_id = tc.id AND r.tenant_id IS NULL AND r.company_id IS NULL);
 
 -- Servicios integrales de salud — 2%, base 2 UVT.
@@ -96,7 +108,7 @@ SELECT NULL, NULL, tc.id, 'retefuente', 0.020000, 2,
        'Decreto 572 de 2025; vigente desde 1-jul-2026. Sección 7.2.'
 FROM tax_concept tc, account acc
 WHERE tc.tenant_id IS NULL AND tc.company_id IS NULL AND tc.tipo = 'retefuente' AND tc.codigo = 'servicios_integrales_salud'
-  AND acc.tenant_id IS NULL AND acc.company_id IS NULL AND acc.codigo = '2365'
+  AND acc.tenant_id IS NULL AND acc.company_id IS NULL AND acc.codigo = '236525'  -- SERVICIOS
   AND NOT EXISTS (SELECT 1 FROM tax_rule r WHERE r.tax_concept_id = tc.id AND r.tenant_id IS NULL AND r.company_id IS NULL);
 
 -- Hoteles y restaurantes — 3,5%, base 2 UVT.
@@ -109,5 +121,5 @@ SELECT NULL, NULL, tc.id, 'retefuente', 0.035000, 2,
        'Decreto 572 de 2025; vigente desde 1-jul-2026. Sección 7.2.'
 FROM tax_concept tc, account acc
 WHERE tc.tenant_id IS NULL AND tc.company_id IS NULL AND tc.tipo = 'retefuente' AND tc.codigo = 'hoteles_restaurantes'
-  AND acc.tenant_id IS NULL AND acc.company_id IS NULL AND acc.codigo = '2365'
+  AND acc.tenant_id IS NULL AND acc.company_id IS NULL AND acc.codigo = '236525'  -- SERVICIOS
   AND NOT EXISTS (SELECT 1 FROM tax_rule r WHERE r.tax_concept_id = tc.id AND r.tenant_id IS NULL AND r.company_id IS NULL);

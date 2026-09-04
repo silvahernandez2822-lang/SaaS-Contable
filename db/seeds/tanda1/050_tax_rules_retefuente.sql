@@ -26,6 +26,36 @@
 -- cubrir cualquier fecha de hecho económico de los casos dorados.
 --
 -- Todas las tarifas como FRACCIÓN (D-005): 4% = 0.040000.
+--
+-- -----------------------------------------------------------------------------
+-- D-089 (A3) — CADA REGLA APUNTA A SU SUBCUENTA 236x, NUNCA A `2365`.
+--
+-- Hasta D-089 las doce reglas de este archivo llevaban `account_id` a la cuenta
+-- `2365` «RETENCIÓN EN LA FUENTE». Con el PUC completo del Decreto 2650, `2365`
+-- es una cuenta de nivel 3 CON subcuentas: imputar ahí es plan de cuentas mal
+-- armado (una agrupadora imputable), y deja el saldo de la retención sin decir
+-- por qué concepto se retuvo — que es exactamente lo que el certificado del
+-- art. 381 ET y el Formato 1001 de la exógena exigen desagregado.
+--
+-- Mapeo aplicado (criterio normativo por el concepto de la regla; el nombre de
+-- cada subcuenta es el del Decreto 2650):
+--
+--   servicios_generales       → 236525 SERVICIOS
+--   compras_generales         → 236540 COMPRAS
+--   honorarios_pj / _pn       → 236515 HONORARIOS
+--   arrendamiento_muebles     → 236530 ARRENDAMIENTOS
+--   arrendamiento_inmuebles   → 236530 ARRENDAMIENTOS
+--   transporte_carga          → 236525 SERVICIOS   (el transporte es un servicio;
+--   transporte_pasajeros      → 236525 SERVICIOS    el PUC no le da subcuenta propia)
+--   servicios_temporales      → 236525 SERVICIOS
+--   vigilancia_aseo           → 236525 SERVICIOS
+--
+-- NO se cambió NI UNA tarifa, NI UNA base mínima, NI UNA fecha de vigencia: el
+-- monto retenido es el mismo centavo a centavo, lo único que cambia es en qué
+-- hoja del PUC queda el crédito. `2367` (ReteIVA) y `2368` (ReteICA) NO se
+-- tocan: en el Decreto 2650 son cuentas HOJA, sin subcuentas, y sus reglas
+-- estaban bien.
+-- -----------------------------------------------------------------------------
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
@@ -41,7 +71,7 @@ SELECT NULL, NULL, tc.id, 'retefuente', 0.040000, 2,
        'Decreto 572 de 2025 (DUT, Decreto 1625 de 2016); vigente desde 1-jul-2026 (auto 2-jun-2026, exp. 30229; DIAN Comunicado 070/2026-05-08). Sección 7.2.'
 FROM tax_concept tc, account acc
 WHERE tc.tenant_id IS NULL AND tc.company_id IS NULL AND tc.tipo = 'retefuente' AND tc.codigo = 'servicios_generales'
-  AND acc.tenant_id IS NULL AND acc.company_id IS NULL AND acc.codigo = '2365'
+  AND acc.tenant_id IS NULL AND acc.company_id IS NULL AND acc.codigo = '236525'  -- SERVICIOS
   AND NOT EXISTS (
     SELECT 1 FROM tax_rule r
     WHERE r.tax_concept_id = tc.id AND r.tipo = 'retefuente' AND r.aplica_a = 'declarante'
@@ -58,7 +88,7 @@ SELECT NULL, NULL, tc.id, 'retefuente', 0.060000, 2,
        'Decreto 572 de 2025 (DUT, Decreto 1625 de 2016); vigente desde 1-jul-2026 (auto 2-jun-2026, exp. 30229; DIAN Comunicado 070/2026-05-08). Sección 7.2 ("servicios a PN no declarante").'
 FROM tax_concept tc, account acc
 WHERE tc.tenant_id IS NULL AND tc.company_id IS NULL AND tc.tipo = 'retefuente' AND tc.codigo = 'servicios_generales'
-  AND acc.tenant_id IS NULL AND acc.company_id IS NULL AND acc.codigo = '2365'
+  AND acc.tenant_id IS NULL AND acc.company_id IS NULL AND acc.codigo = '236525'  -- SERVICIOS
   AND NOT EXISTS (
     SELECT 1 FROM tax_rule r
     WHERE r.tax_concept_id = tc.id AND r.tipo = 'retefuente' AND r.aplica_a = 'no_declarante'
@@ -78,7 +108,7 @@ SELECT NULL, NULL, tc.id, 'retefuente', 0.025000, 10,
        'Decreto 572 de 2025; vigente desde 1-jul-2026 (auto 2-jun-2026, exp. 30229). Sección 7.2.'
 FROM tax_concept tc, account acc
 WHERE tc.tenant_id IS NULL AND tc.company_id IS NULL AND tc.tipo = 'retefuente' AND tc.codigo = 'compras_generales'
-  AND acc.tenant_id IS NULL AND acc.company_id IS NULL AND acc.codigo = '2365'
+  AND acc.tenant_id IS NULL AND acc.company_id IS NULL AND acc.codigo = '236540'  -- COMPRAS
   AND NOT EXISTS (
     SELECT 1 FROM tax_rule r
     WHERE r.tax_concept_id = tc.id AND r.tipo = 'retefuente' AND r.aplica_a = 'declarante'
@@ -95,7 +125,7 @@ SELECT NULL, NULL, tc.id, 'retefuente', 0.035000, 10,
        'Decreto 572 de 2025; vigente desde 1-jul-2026 (auto 2-jun-2026, exp. 30229). Sección 7.2.'
 FROM tax_concept tc, account acc
 WHERE tc.tenant_id IS NULL AND tc.company_id IS NULL AND tc.tipo = 'retefuente' AND tc.codigo = 'compras_generales'
-  AND acc.tenant_id IS NULL AND acc.company_id IS NULL AND acc.codigo = '2365'
+  AND acc.tenant_id IS NULL AND acc.company_id IS NULL AND acc.codigo = '236540'  -- COMPRAS
   AND NOT EXISTS (
     SELECT 1 FROM tax_rule r
     WHERE r.tax_concept_id = tc.id AND r.tipo = 'retefuente' AND r.aplica_a = 'no_declarante'
@@ -117,7 +147,7 @@ SELECT NULL, NULL, tc.id, 'retefuente', 0.110000, 0,
        'Decreto 1625 de 2016 (DUT); no modificado por el Decreto 572 de 2025 (nota expresa de la sección 7.2). Fecha de vigencia usada como cota conocida, no como fecha de origen certificada.'
 FROM tax_concept tc, account acc
 WHERE tc.tenant_id IS NULL AND tc.company_id IS NULL AND tc.tipo = 'retefuente' AND tc.codigo = 'honorarios_pj'
-  AND acc.tenant_id IS NULL AND acc.company_id IS NULL AND acc.codigo = '2365'
+  AND acc.tenant_id IS NULL AND acc.company_id IS NULL AND acc.codigo = '236515'  -- HONORARIOS
   AND NOT EXISTS (
     SELECT 1 FROM tax_rule r
     WHERE r.tax_concept_id = tc.id AND r.tipo = 'retefuente' AND r.tenant_id IS NULL AND r.company_id IS NULL
@@ -134,7 +164,7 @@ SELECT NULL, NULL, tc.id, 'retefuente', 0.100000, 0,
        'Tarifa base 10%. Sube a 11% si los contratos con el mismo contratante superan 3.300 UVT en el año gravable (umbral acumulado anual, no representable en base_minima_uvt de una sola factura). Resolución de esa escalada es responsabilidad del motor (A3).'
 FROM tax_concept tc, account acc
 WHERE tc.tenant_id IS NULL AND tc.company_id IS NULL AND tc.tipo = 'retefuente' AND tc.codigo = 'honorarios_pn'
-  AND acc.tenant_id IS NULL AND acc.company_id IS NULL AND acc.codigo = '2365'
+  AND acc.tenant_id IS NULL AND acc.company_id IS NULL AND acc.codigo = '236515'  -- HONORARIOS
   AND NOT EXISTS (
     SELECT 1 FROM tax_rule r
     WHERE r.tax_concept_id = tc.id AND r.tipo = 'retefuente' AND r.tenant_id IS NULL AND r.company_id IS NULL
@@ -154,7 +184,7 @@ SELECT NULL, NULL, tc.id, 'retefuente', 0.040000, 0,
        'Decreto 1625 de 2016 (DUT); no modificado por el Decreto 572 de 2025 (nota expresa de la sección 7.2). Fecha de vigencia usada como cota conocida, no como fecha de origen certificada.'
 FROM tax_concept tc, account acc
 WHERE tc.tenant_id IS NULL AND tc.company_id IS NULL AND tc.tipo = 'retefuente' AND tc.codigo = 'arrendamiento_muebles'
-  AND acc.tenant_id IS NULL AND acc.company_id IS NULL AND acc.codigo = '2365'
+  AND acc.tenant_id IS NULL AND acc.company_id IS NULL AND acc.codigo = '236530'  -- ARRENDAMIENTOS
   AND NOT EXISTS (
     SELECT 1 FROM tax_rule r
     WHERE r.tax_concept_id = tc.id AND r.tipo = 'retefuente' AND r.tenant_id IS NULL AND r.company_id IS NULL
@@ -173,7 +203,7 @@ SELECT NULL, NULL, tc.id, 'retefuente', 0.035000, 10,
        'Decreto 572 de 2025; vigente desde 1-jul-2026 (auto 2-jun-2026, exp. 30229). Sección 7.2.'
 FROM tax_concept tc, account acc
 WHERE tc.tenant_id IS NULL AND tc.company_id IS NULL AND tc.tipo = 'retefuente' AND tc.codigo = 'arrendamiento_inmuebles'
-  AND acc.tenant_id IS NULL AND acc.company_id IS NULL AND acc.codigo = '2365'
+  AND acc.tenant_id IS NULL AND acc.company_id IS NULL AND acc.codigo = '236530'  -- ARRENDAMIENTOS
   AND NOT EXISTS (
     SELECT 1 FROM tax_rule r
     WHERE r.tax_concept_id = tc.id AND r.tipo = 'retefuente' AND r.tenant_id IS NULL AND r.company_id IS NULL
@@ -192,7 +222,7 @@ SELECT NULL, NULL, tc.id, 'retefuente', 0.010000, 2,
        'Decreto 572 de 2025; vigente desde 1-jul-2026 (auto 2-jun-2026, exp. 30229). Sección 7.2.'
 FROM tax_concept tc, account acc
 WHERE tc.tenant_id IS NULL AND tc.company_id IS NULL AND tc.tipo = 'retefuente' AND tc.codigo = 'transporte_carga'
-  AND acc.tenant_id IS NULL AND acc.company_id IS NULL AND acc.codigo = '2365'
+  AND acc.tenant_id IS NULL AND acc.company_id IS NULL AND acc.codigo = '236525'  -- SERVICIOS
   AND NOT EXISTS (
     SELECT 1 FROM tax_rule r
     WHERE r.tax_concept_id = tc.id AND r.tipo = 'retefuente' AND r.tenant_id IS NULL AND r.company_id IS NULL
@@ -211,7 +241,7 @@ SELECT NULL, NULL, tc.id, 'retefuente', 0.035000, 10,
        'Decreto 572 de 2025; vigente desde 1-jul-2026 (auto 2-jun-2026, exp. 30229). Sección 7.2.'
 FROM tax_concept tc, account acc
 WHERE tc.tenant_id IS NULL AND tc.company_id IS NULL AND tc.tipo = 'retefuente' AND tc.codigo = 'transporte_pasajeros'
-  AND acc.tenant_id IS NULL AND acc.company_id IS NULL AND acc.codigo = '2365'
+  AND acc.tenant_id IS NULL AND acc.company_id IS NULL AND acc.codigo = '236525'  -- SERVICIOS
   AND NOT EXISTS (
     SELECT 1 FROM tax_rule r
     WHERE r.tax_concept_id = tc.id AND r.tipo = 'retefuente' AND r.tenant_id IS NULL AND r.company_id IS NULL
@@ -230,7 +260,7 @@ SELECT NULL, NULL, tc.id, 'retefuente', 0.010000, 2,
        'Decreto 572 de 2025; vigente desde 1-jul-2026 (auto 2-jun-2026, exp. 30229). Sección 7.2. Base = AIU, no el valor total del contrato (sección 9.3 / caso dorado 11).'
 FROM tax_concept tc, account acc
 WHERE tc.tenant_id IS NULL AND tc.company_id IS NULL AND tc.tipo = 'retefuente' AND tc.codigo = 'servicios_temporales'
-  AND acc.tenant_id IS NULL AND acc.company_id IS NULL AND acc.codigo = '2365'
+  AND acc.tenant_id IS NULL AND acc.company_id IS NULL AND acc.codigo = '236525'  -- SERVICIOS
   AND NOT EXISTS (
     SELECT 1 FROM tax_rule r
     WHERE r.tax_concept_id = tc.id AND r.tipo = 'retefuente' AND r.tenant_id IS NULL AND r.company_id IS NULL
@@ -249,7 +279,7 @@ SELECT NULL, NULL, tc.id, 'retefuente', 0.020000, 2,
        'Decreto 572 de 2025; vigente desde 1-jul-2026 (auto 2-jun-2026, exp. 30229). Sección 7.2. Base = AIU, no el valor total del contrato (caso dorado 11).'
 FROM tax_concept tc, account acc
 WHERE tc.tenant_id IS NULL AND tc.company_id IS NULL AND tc.tipo = 'retefuente' AND tc.codigo = 'vigilancia_aseo'
-  AND acc.tenant_id IS NULL AND acc.company_id IS NULL AND acc.codigo = '2365'
+  AND acc.tenant_id IS NULL AND acc.company_id IS NULL AND acc.codigo = '236525'  -- SERVICIOS
   AND NOT EXISTS (
     SELECT 1 FROM tax_rule r
     WHERE r.tax_concept_id = tc.id AND r.tipo = 'retefuente' AND r.tenant_id IS NULL AND r.company_id IS NULL

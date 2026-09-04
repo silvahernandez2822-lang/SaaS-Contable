@@ -1140,6 +1140,18 @@ describe('A14 · la vía del buzón: ¿se puede cruzar de firma por ahí? (adjud
       // concedida solo a `app_auth`, igual que `abrir_sesion`/
       // `buscar_credencial`.
       'app.crear_token_integracion',
+      // D-089 (migración 179): las tres del módulo PUC. Reciben un
+      // `account_id` que quien pregunta YA tuvo que resolver pasando por la
+      // RLS híbrida de `account`, y devuelven un booleano o conteos — nunca un
+      // nombre, un código ni una fila de otra firma. SECURITY DEFINER es
+      // obligatorio aquí, no comodidad: una cuenta de alcance global o de
+      // firma (`company_id IS NULL`, D-064) puede tener movimientos en VARIAS
+      // empresas, y bajo la RLS de la sesión el guardia solo vería los de la
+      // empresa en contexto — dejaría reclasificar desde la empresa A una
+      // cuenta con histórico en la B.
+      'app.cuenta_conceptos_activos',
+      'app.cuenta_tiene_movimientos',
+      'app.cuenta_uso',
       'app.current_company_id',
       // D-087 (migración 176): detalle (filas concretas) del simulador de
       // impacto de parametros, hermanas de app.simular_impacto_*.
@@ -1319,7 +1331,9 @@ describe('A14 · LA COSTURA QUE NADIE PROBÓ: el pipeline completo CON retencion
     expect(porCuenta.get('513595:debito')).toBe(100_000_000);
     expect(porCuenta.get('240805:debito')).toBe(19_000_000);
     // Créditos: las DOS retenciones con los valores de la sección 12...
-    expect(porCuenta.get('2365:credito')).toBe(4_000_000); // $40.000
+    // D-089: el crédito de retefuente por servicios va a la subcuenta 236525,
+    // no a la agrupadora 2365. El MONTO no cambia.
+    expect(porCuenta.get('236525:credito')).toBe(4_000_000); // $40.000
     expect(porCuenta.get('2367:credito')).toBe(2_850_000); // $28.500
     // ...y el proveedor por el NETO A PAGAR, que es lo que de verdad se gira.
     expect(porCuenta.get('220505:credito')).toBe(119_000_000 - 4_000_000 - 2_850_000);
