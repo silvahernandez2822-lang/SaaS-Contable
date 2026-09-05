@@ -40,8 +40,9 @@ import { Inter } from 'next/font/google';
 import { cookies } from 'next/headers';
 import { conSesionEmpresa, COOKIE_COMPANY_ID, COOKIE_TEMA, SesionNoPresenteError } from './lib/sesion';
 import { SesionInvalidaError } from '../src/db/tenant-context';
-import { listarEmpresasAccesibles, type EmpresaAccesible } from '../src/services/bandeja';
+import { type EmpresaAccesible } from '../src/services/bandeja';
 import { estadoDeMiCredencial } from '../src/services/administracion';
+import { empresasVisiblesParaLaSesion, explicacionDeOrigen } from './lib/empresas';
 import { Chrome } from './_ui/Chrome';
 import './globals.css';
 
@@ -59,6 +60,9 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   let empresas: EmpresaAccesible[] = [];
   let usuario: { nombre: string; email: string } | null = null;
   let activaId: string | null = null;
+  /** Por qué la lista de empresas puede venir incompleta o vacía (D-092-bis).
+   *  `null` = no hay nada que explicar. */
+  let avisoEmpresas: string | null = null;
 
   // Tema elegido por el usuario (cookie escrita por `TemaProvider`). Sin cookie
   // (primera visita, o nunca tocó el toggle) → `null` y manda el SO por CSS.
@@ -68,10 +72,17 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
     temaCookie === 'claro' || temaCookie === 'oscuro' ? temaCookie : null;
 
   try {
-    const [lista, credencial] = await conSesionEmpresa('', async (tx) => {
-      return [await listarEmpresasAccesibles(tx), await estadoDeMiCredencial(tx)] as const;
+    // D-092-bis: `listarEmpresasAccesibles` exige `documento.leer` EN EL MOTOR,
+    // y esto es el layout raíz — es decir, TODA pantalla. Un usuario válido sin
+    // ese permiso (p. ej. el administrador acotado con solo
+    // `usuario.administrar` que D-092 hizo creable) recibía aquí un `SE002` sin
+    // capturar y no podía abrir NINGUNA ruta, ni las suyas. Ahora se pregunta
+    // primero y se degrada con la verdad; ningún permiso del motor se relaja.
+    const [visibles, credencial] = await conSesionEmpresa('', async (tx) => {
+      return [await empresasVisiblesParaLaSesion(tx), await estadoDeMiCredencial(tx)] as const;
     });
-    empresas = lista;
+    empresas = visibles.empresas;
+    avisoEmpresas = explicacionDeOrigen(visibles.origen);
     usuario = credencial ? { nombre: credencial.nombreCompleto, email: credencial.email } : null;
     activaId = jarra.get(COOKIE_COMPANY_ID)?.value || null;
   } catch (error) {
@@ -93,7 +104,13 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
       suppressHydrationWarning
     >
       <body>
-        <Chrome empresas={empresas} activaId={activaId} usuario={usuario} temaInicial={tema}>
+        <Chrome
+          empresas={empresas}
+          activaId={activaId}
+          usuario={usuario}
+          temaInicial={tema}
+          avisoEmpresas={avisoEmpresas}
+        >
           {children}
         </Chrome>
       </body>

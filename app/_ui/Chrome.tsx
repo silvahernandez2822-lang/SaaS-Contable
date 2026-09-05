@@ -30,11 +30,16 @@ export function Chrome({
   activaId,
   usuario,
   temaInicial,
+  avisoEmpresas = null,
   children,
 }: {
   empresas: readonly EmpresaAccesible[];
   activaId: string | null;
   usuario: { nombre: string; email: string } | null;
+  /** D-092-bis: por qué la lista viene vacía o sin rol, cuando lo viene. El
+   *  selector lo enseña en vez de afirmar que el usuario no tiene acceso a
+   *  ninguna empresa — que era falso para quien no tiene `documento.leer`. */
+  avisoEmpresas?: string | null;
   /** Tema de la cookie, leído en servidor (`app/layout.tsx`). `null` = sin
    *  elección; manda el SO. Se pasa como prop para que servidor y cliente
    *  arranquen con el MISMO valor y no haya mismatch de hidratación. */
@@ -46,7 +51,7 @@ export function Chrome({
   if (RUTAS_SIN_SHELL.has(pathname)) return <>{children}</>;
 
   return (
-    <EmpresaProvider empresas={empresas} activaId={activaId}>
+    <EmpresaProvider empresas={empresas} activaId={activaId} aviso={avisoEmpresas}>
       <TemaProvider inicial={temaInicial}>
         <DensidadProvider>
           <AppShell usuario={usuario}>{children}</AppShell>

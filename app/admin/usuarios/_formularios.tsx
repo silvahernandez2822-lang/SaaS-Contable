@@ -2,6 +2,8 @@
 
 /**
  * A16 — Los dos formularios que devuelven una contraseña (Ola 4, Tarea 7).
+ * Migrados al kit de `app/_ui/componentes` por A12 en D-092: mismo
+ * comportamiento, sin un solo `#hex`.
  *
  * Son de cliente por una sola razón: la contraseña generada tiene que llegar en
  * el CUERPO de la respuesta y pintarse una vez, no viajar en la URL de un
@@ -13,33 +15,25 @@
  * serlo — lo que la base guarda es un hash scrypt.
  */
 import { useActionState } from 'react';
+import { Boton, Campo, Entrada, MensajeEstado, Panel, Selector } from '../../_ui/componentes';
 import { crearUsuarioAction, fijarPasswordAction, type EstadoAdmin } from './acciones';
 
 function Resultado({ estado }: { estado: EstadoAdmin }) {
   return (
-    <div
-      role="status"
-      style={{
-        border: `1px solid ${estado.ok ? '#15803d' : '#b91c1c'}`,
-        background: estado.ok ? '#f0fdf4' : '#fef2f2',
-        padding: 12,
-        marginTop: 12,
-      }}
-    >
-      <p style={{ margin: 0 }}>{estado.mensaje}</p>
-      {estado.passwordGenerada && (
-        <>
-          <p style={{ marginBottom: 4 }}>
-            <strong>Contraseña generada — cópiela ahora, no se vuelve a mostrar:</strong>
-          </p>
-          <code style={{ fontSize: 18, userSelect: 'all', background: '#fff', padding: '4px 8px' }}>
-            {estado.passwordGenerada}
-          </code>
-          <p style={{ fontSize: 13, color: '#475569' }}>
-            Entréguesela por un canal distinto del correo si puede. El usuario tendrá que cambiarla al entrar.
-          </p>
-        </>
-      )}
+    <div className="mt-3">
+      <MensajeEstado tipo={estado.ok ? 'sin-datos' : 'error'} titulo={estado.mensaje}>
+        {estado.passwordGenerada && (
+          <>
+            <p className="font-semibold text-texto">Contraseña generada — cópiela ahora, no se vuelve a mostrar:</p>
+            <code className="mt-1 inline-block select-all rounded-md border border-borde bg-superficie-elevada px-2 py-1 text-[17px] tracking-wide text-texto">
+              {estado.passwordGenerada}
+            </code>
+            <p className="mt-1 text-metadata text-texto-suave">
+              Entréguesela por un canal distinto del correo si puede. El usuario tendrá que cambiarla al entrar.
+            </p>
+          </>
+        )}
+      </MensajeEstado>
     </div>
   );
 }
@@ -54,60 +48,57 @@ export function FormularioCrearUsuario({
   const [estado, accion, enCurso] = useActionState<EstadoAdmin | null, FormData>(crearUsuarioAction, null);
 
   return (
-    <section style={{ border: '1px solid #334155', padding: 16, marginTop: 24 }}>
-      <h2 style={{ marginTop: 0 }}>Crear usuario</h2>
-      <form action={accion}>
-        <div>
-          <label>
-            Correo * <input name="email" type="email" required size={34} placeholder="revisor@sufirma.co" />
-          </label>{' '}
-          <label>
-            Nombre completo * <input name="nombreCompleto" required size={34} />
-          </label>
-        </div>
-        <div style={{ marginTop: 8 }}>
-          <label>
-            Documento <input name="documento" size={18} />
-          </label>{' '}
-          <label>
-            Contraseña inicial (vacío = se genera una fuerte){' '}
-            <input name="password" type="password" size={26} autoComplete="new-password" />
-          </label>
-        </div>
-        <div style={{ marginTop: 8 }}>
-          <label>
-            Acceso inicial a la empresa{' '}
-            <select name="companyId" defaultValue="">
+    <Panel
+      className="mt-6"
+      titulo="Crear usuario"
+      descripcion="Nace obligado a cambiar la contraseña la primera vez que entre: quien se la fija la conoce, y una contraseña conocida por dos personas no identifica a ninguna (D-069)."
+    >
+      <form action={accion} className="flex flex-col gap-4 p-5">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Campo etiqueta="Correo" requerido>
+            <Entrada name="email" type="email" required placeholder="revisor@sufirma.co" />
+          </Campo>
+          <Campo etiqueta="Nombre completo" requerido ayuda="Es lo que verá la auditoría dentro de tres años.">
+            <Entrada name="nombreCompleto" required />
+          </Campo>
+          <Campo etiqueta="Documento">
+            <Entrada name="documento" />
+          </Campo>
+          <Campo etiqueta="Contraseña inicial" ayuda="Vacío = se genera una fuerte y se muestra una sola vez.">
+            <Entrada name="password" type="password" autoComplete="new-password" />
+          </Campo>
+          <Campo
+            etiqueta="Acceso inicial a la empresa"
+            ayuda="Sin acceso a ninguna empresa el usuario entra y no ve nada: no es un error, es lo correcto mientras alguien decide qué le toca."
+          >
+            <Selector name="companyId" defaultValue="">
               <option value="">— ninguno por ahora —</option>
               {empresas.map((e) => (
                 <option key={e.companyId} value={e.companyId}>
                   {e.razonSocial}
                 </option>
               ))}
-            </select>
-          </label>{' '}
-          <label>
-            con el rol{' '}
-            <select name="roleId" defaultValue="">
+            </Selector>
+          </Campo>
+          <Campo etiqueta="con el rol">
+            <Selector name="roleId" defaultValue="">
               <option value="">— ninguno —</option>
               {roles.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.nombre} ({r.codigo})
                 </option>
               ))}
-            </select>
-          </label>
+            </Selector>
+          </Campo>
         </div>
-        <p style={{ fontSize: 13, color: '#475569' }}>
-          Sin acceso a ninguna empresa el usuario puede entrar y no verá nada: no es un error, es lo correcto
-          mientras alguien decide qué le toca.
-        </p>
-        <button type="submit" disabled={enCurso}>
-          {enCurso ? 'Creando…' : 'Crear usuario'}
-        </button>
+        <div>
+          <Boton tipo="submit" disabled={enCurso}>
+            {enCurso ? 'Creando…' : 'Crear usuario'}
+          </Boton>
+        </div>
+        {estado && <Resultado estado={estado} />}
       </form>
-      {estado && <Resultado estado={estado} />}
-    </section>
+    </Panel>
   );
 }
 
@@ -116,15 +107,14 @@ export function FormularioPassword({ userId, email }: { userId: string; email: s
 
   return (
     <div>
-      <form action={accion}>
+      <form action={accion} className="flex flex-wrap items-end gap-2">
         <input type="hidden" name="userId" value={userId} />
-        <label>
-          Contraseña nueva para {email} (vacío = generar){' '}
-          <input name="password" type="password" size={22} autoComplete="new-password" />
-        </label>{' '}
-        <button type="submit" disabled={enCurso}>
+        <Campo etiqueta={`Contraseña nueva para ${email}`} ayuda="Vacío = generar una fuerte.">
+          <Entrada name="password" type="password" autoComplete="new-password" />
+        </Campo>
+        <Boton tipo="submit" variante="fantasma" disabled={enCurso}>
           Cambiar contraseña
-        </button>
+        </Boton>
       </form>
       {estado && <Resultado estado={estado} />}
     </div>

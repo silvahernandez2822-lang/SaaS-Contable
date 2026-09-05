@@ -54,6 +54,7 @@ import {
   verificarPassword,
 } from '../auth/password';
 import { PERMISOS, exigirPermiso } from '../auth/permisos';
+import type { EmpresaAccesible } from './bandeja';
 
 // =============================================================================
 // ERRORES DE DOMINIO
@@ -413,6 +414,59 @@ export async function eliminarRol(tx: SqlClient, roleId: string): Promise<{ borr
 }
 
 // =============================================================================
+// EMPRESAS DE LA FIRMA (para administración de usuarios)
+// =============================================================================
+
+/**
+ * D-092-bis — las empresas-cliente de la firma, para las pantallas de
+ * administración de usuarios y permisos.
+ *
+ * POR QUÉ EXISTE Y NO SE USA `app.empresas_accesibles()` (migración 070): esa
+ * función —la única vía que había para listar empresas— exige
+ * `documento.leer`. Es correcto para lo suyo (es el insumo de la BANDEJA), pero
+ * convierte a `documento.leer` en un requisito de facto para respirar: un
+ * administrador acotado con SOLO `usuario.administrar` —el rol que la propia
+ * pantalla `/admin/roles` describe como legítimo, y que D-092 hizo creable
+ * desde la interfaz— se quedaba sin ninguna manera de saber a qué empresas
+ * asignar a alguien.
+ *
+ * NO RELAJA NADA DEL MOTOR: `app.empresas_accesibles()` se queda como está.
+ * Esta lectura tiene su propia puerta, `usuario.administrar`, y encima de la
+ * RLS por tenant de `company` — que es la que impide de verdad ver la empresa
+ * de otra firma (Regla de Oro 7). Tampoco revela nada nuevo: `listarUsuarios`,
+ * con ese mismo permiso, ya devuelve `companyRazonSocial` de cada acceso.
+ *
+ * DIFERENCIA DE SEMÁNTICA, DECLARADA: devuelve las empresas de la FIRMA, no
+ * «las mías». `user_company_access` tiene RLS estricta por empresa y en una
+ * sesión de firma (sin empresa elegida) devuelve cero filas —por eso 070 tuvo
+ * que ser `SECURITY DEFINER`—, así que en TypeScript no hay forma de resolver
+ * «las mías» sin tocar el motor. Para administrar usuarios la lista de la firma
+ * es además la correcta: se asigna acceso a empresas, no solo a las propias.
+ * Por eso `rolCodigo` va vacío: aquí no hay un rol del que hablar.
+ */
+export async function listarEmpresasDeLaFirma(tx: SqlClient): Promise<EmpresaAccesible[]> {
+  await exigirPermiso(tx, PERMISOS.USUARIO_ADMINISTRAR);
+  const { rows } = await tx.query<{
+    id: string;
+    nit: string;
+    razon_social: string;
+    nombre_comercial: string | null;
+  }>(
+    `SELECT id, nit, razon_social, nombre_comercial
+       FROM company
+      WHERE estado = 'activa'
+      ORDER BY razon_social`,
+  );
+  return rows.map((r) => ({
+    companyId: r.id,
+    nit: r.nit,
+    razonSocial: r.razon_social,
+    nombreComercial: r.nombre_comercial,
+    rolCodigo: '',
+  }));
+}
+
+// =============================================================================
 // USUARIOS
 // =============================================================================
 
@@ -677,6 +731,21 @@ export async function asignarRol(tx: SqlClient, input: AsignarRolInput): Promise
   await exigirPermiso(tx, PERMISOS.USUARIO_ADMINISTRAR);
   const ctx = await contexto(tx);
 
+  /* D-092. La RLS de `user_company_access` (012, patrón tenant+company) solo
+   * deja escribir filas de la empresa EN CONTEXTO. Hasta esta ficha, otorgar un
+   * rol sobre otra empresa de la firma —que la pantalla ofrecía en el
+   * desplegable, porque lista todas las accesibles— moría con un 42501 crudo de
+   * RLS que `mensajeDeError` traducía a «falló por un problema técnico». El
+   * comportamiento no cambia (sigue siendo la empresa la unidad del
+   * aislamiento); lo que cambia es que ahora se dice por qué. */
+  if (ctx.companyId && input.companyId !== ctx.companyId) {
+    throw new AdministracionInvalidaError(
+      'Solo se pueden otorgar accesos sobre la empresa que tiene activa: la empresa es la unidad del ' +
+        'aislamiento, no un parámetro de la petición. Cámbiese a esa empresa en el selector de arriba y ' +
+        'vuelva a intentarlo.',
+    );
+  }
+
   const rol = await cargarRol(tx, input.roleId);
   const { rows: activo } = await tx.query<{ activo: boolean }>('SELECT activo FROM role WHERE id = $1', [
     input.roleId,
@@ -735,31 +804,442 @@ export async function revocarAcceso(tx: SqlClient, accesoId: string): Promise<vo
   ]);
 }
 
-/** Los permisos que un usuario PUEDE ejercer hoy, por empresa (vista de 170). */
+export interface PermisoEfectivo {
+  codigo: string;
+  /** De dónde sale: del rol, de una excepción individual, o de los dos. */
+  origen: 'rol' | 'rol_todopoderoso' | 'excepcion_individual' | 'rol_y_excepcion';
+  /** Solo cuando lo aporta una excepción individual (D-092). */
+  motivo: string | null;
+  venceEn: string | null;
+}
+
+/**
+ * Los permisos que un usuario PUEDE ejercer hoy, por empresa
+ * (`v_user_permission_efectivo`, redefinida en 183).
+ *
+ * Ya no es una lista plana de códigos: cada permiso viene con su ORIGEN. La
+ * pregunta que responde esta pantalla no es «¿qué puede hacer?» sino «¿por qué
+ * puede hacerlo?», y un permiso que viene de una excepción individual —con su
+ * motivo y su vencimiento— es justo el que no se deduce mirando el rol.
+ */
 export async function permisosEfectivosDe(
   tx: SqlClient,
   userId: string,
-): Promise<Array<{ companyId: string; rolCodigo: string; esTodopoderoso: boolean; permisos: string[] }>> {
+): Promise<
+  Array<{
+    companyId: string;
+    rolCodigo: string;
+    esTodopoderoso: boolean;
+    permisos: PermisoEfectivo[];
+  }>
+> {
   const { rows } = await tx.query<{
     company_id: string;
     role_codigo: string;
     es_todopoderoso: boolean;
-    permisos: string[];
+    permission_codigo: string;
+    origen: PermisoEfectivo['origen'];
+    excepcion_motivo: string | null;
+    excepcion_vence_en: string | null;
   }>(
-    `SELECT company_id, role_codigo, es_todopoderoso,
-            array_agg(permission_codigo ORDER BY permission_codigo) AS permisos
+    `SELECT company_id, role_codigo, es_todopoderoso, permission_codigo, origen,
+            excepcion_motivo, excepcion_vence_en::text
        FROM v_user_permission_efectivo
       WHERE user_id = $1
-      GROUP BY company_id, role_codigo, es_todopoderoso
-      ORDER BY role_codigo`,
+      ORDER BY role_codigo, permission_codigo`,
     [userId],
   );
-  return rows.map((r) => ({
+
+  const porGrupo = new Map<
+    string,
+    { companyId: string; rolCodigo: string; esTodopoderoso: boolean; permisos: PermisoEfectivo[] }
+  >();
+  for (const r of rows) {
+    const clave = `${r.company_id}|${r.role_codigo}`;
+    let g = porGrupo.get(clave);
+    if (!g) {
+      g = {
+        companyId: r.company_id,
+        rolCodigo: r.role_codigo,
+        esTodopoderoso: r.es_todopoderoso,
+        permisos: [],
+      };
+      porGrupo.set(clave, g);
+    }
+    g.permisos.push({
+      codigo: r.permission_codigo,
+      origen: r.origen,
+      motivo: r.excepcion_motivo,
+      venceEn: r.excepcion_vence_en,
+    });
+  }
+  return [...porGrupo.values()];
+}
+
+// =============================================================================
+// PERMISO INDIVIDUAL POR USUARIO, POR ENCIMA DEL ROL (D-092, migración 183)
+//
+// `user_permission_override` es APPEND-ONLY: revocar una excepción no borra la
+// fila que la otorgó, inserta una decisión nueva con su propio motivo. Por eso
+// aquí no hay ninguna función `eliminarOverride`: no existe tal operación, y el
+// trigger `user_permission_override_append_only` (PO003) la rechazaría igual si
+// alguien la escribiera.
+//
+// Ninguna de estas funciones AUTORIZA nada. `usuario.administrar` lo exige el
+// trigger de 016; el «no se concede lo que no se tiene» y el «no se asciende a
+// sí mismo» los exige `user_permission_override_zz_blindaje` (PO001/PO002).
+// Estas comprobaciones existen para dar un mensaje legible antes (D-025).
+// =============================================================================
+
+export interface FilaOverride {
+  id: string;
+  companyId: string;
+  companyRazonSocial: string;
+  userId: string;
+  usuarioNombre: string;
+  permisoCodigo: string;
+  permisoNombre: string;
+  efecto: 'otorgado' | 'revocado';
+  motivo: string;
+  venceEn: string | null;
+  otorgadoPorNombre: string | null;
+  otorgadoEn: string;
+  /** `true` si esta fila es la que manda hoy para (usuario, empresa, permiso). */
+  vigente: boolean;
+}
+
+const SQL_OVERRIDES = `
+  SELECT o.id, o.company_id, c.razon_social, o.user_id, u.nombre_completo AS usuario_nombre,
+         o.permission_codigo, p.nombre AS permiso_nombre, o.efecto, o.motivo,
+         o.vence_en::text, o.otorgado_en::text, a.nombre_completo AS otorgado_por_nombre,
+         (o.id = (SELECT o2.id
+                    FROM user_permission_override o2
+                   WHERE o2.user_id           = o.user_id
+                     AND o2.company_id        = o.company_id
+                     AND o2.permission_codigo = o.permission_codigo
+                     AND o2.otorgado_en <= now()
+                     AND (o2.vence_en IS NULL OR o2.vence_en > now())
+                   ORDER BY o2.otorgado_en DESC, o2.id DESC
+                   LIMIT 1)) AS vigente
+    FROM user_permission_override o
+    JOIN company c    ON c.id = o.company_id
+    JOIN "user"  u    ON u.id = o.user_id
+    JOIN permission p ON p.codigo = o.permission_codigo
+    LEFT JOIN "user" a ON a.id = o.otorgado_por
+`;
+
+function aFilaOverride(r: {
+  id: string;
+  company_id: string;
+  razon_social: string;
+  user_id: string;
+  usuario_nombre: string;
+  permission_codigo: string;
+  permiso_nombre: string;
+  efecto: 'otorgado' | 'revocado';
+  motivo: string;
+  vence_en: string | null;
+  otorgado_en: string;
+  otorgado_por_nombre: string | null;
+  vigente: boolean | null;
+}): FilaOverride {
+  return {
+    id: r.id,
     companyId: r.company_id,
-    rolCodigo: r.role_codigo,
-    esTodopoderoso: r.es_todopoderoso,
-    permisos: r.permisos,
-  }));
+    companyRazonSocial: r.razon_social,
+    userId: r.user_id,
+    usuarioNombre: r.usuario_nombre,
+    permisoCodigo: r.permission_codigo,
+    permisoNombre: r.permiso_nombre,
+    efecto: r.efecto,
+    motivo: r.motivo,
+    venceEn: r.vence_en,
+    otorgadoPorNombre: r.otorgado_por_nombre,
+    otorgadoEn: r.otorgado_en,
+    vigente: r.vigente === true,
+  };
+}
+
+/** Toda la cadena de decisiones de un usuario, la vigente y las históricas. */
+export async function overridesDeUsuario(tx: SqlClient, userId: string): Promise<FilaOverride[]> {
+  const { rows } = await tx.query<Parameters<typeof aFilaOverride>[0]>(
+    `${SQL_OVERRIDES} WHERE o.user_id = $1 ORDER BY o.otorgado_en DESC, o.id DESC`,
+    [userId],
+  );
+  return rows.map(aFilaOverride);
+}
+
+/** Las excepciones que MANDAN hoy en toda la firma. Es la lista que audita un revisor. */
+export async function overridesVigentes(tx: SqlClient): Promise<FilaOverride[]> {
+  const { rows } = await tx.query<Parameters<typeof aFilaOverride>[0]>(
+    `${SQL_OVERRIDES}
+      WHERE o.otorgado_en <= now()
+        AND (o.vence_en IS NULL OR o.vence_en > now())
+      ORDER BY o.otorgado_en DESC, o.id DESC`,
+  );
+  return rows.map(aFilaOverride).filter((f) => f.vigente);
+}
+
+export interface DecidirPermisoInput {
+  userId: string;
+  companyId: string;
+  permisoCodigo: string;
+  efecto: 'otorgado' | 'revocado';
+  motivo: string;
+  /** Solo para `otorgado`: fecha ISO (YYYY-MM-DD) en la que la excepción caduca. */
+  venceEn?: string | null;
+}
+
+const MOTIVO_MINIMO = 10;
+
+/**
+ * Otorga o revoca un permiso individual a UN usuario sobre UNA empresa.
+ *
+ * El motivo es obligatorio y no es burocracia: es lo único que dentro de un año
+ * distingue «se le dio porque el contador estaba incapacitado y había que
+ * presentar la exógena» de «se le dio y nadie recuerda por qué». La longitud
+ * mínima no garantiza calidad —nada la garantiza— pero corta el «x» que se
+ * escribe para pasar de pantalla. La impone también el motor (`upo_motivo_ck`).
+ */
+export async function decidirPermisoIndividual(
+  tx: SqlClient,
+  input: DecidirPermisoInput,
+): Promise<{ id: string }> {
+  await exigirPermiso(tx, PERMISOS.USUARIO_ADMINISTRAR);
+  const ctx = await contexto(tx);
+
+  const motivo = input.motivo.trim();
+  if (motivo.length < MOTIVO_MINIMO) {
+    throw new AdministracionInvalidaError(
+      'Toda excepción de permiso exige un motivo escrito (Regla de Oro 6): dentro de un año, quien lo lea ' +
+        'tiene que poder saber por qué se concedió. Escriba al menos una frase.',
+    );
+  }
+  if (input.efecto === 'otorgado' && input.userId === ctx.userId) {
+    throw new AdministracionInvalidaError(
+      'Nadie se concede a sí mismo un permiso que no tiene. Si de verdad lo necesita, pídaselo a otro ' +
+        'administrador: así queda quién lo autorizó, y no solo quién lo usó.',
+    );
+  }
+
+  const { rows: existe } = await tx.query<{ codigo: string }>(
+    'SELECT codigo FROM permission WHERE codigo = $1',
+    [input.permisoCodigo],
+  );
+  if (!existe[0]) {
+    throw new AdministracionInvalidaError(
+      `El permiso "${input.permisoCodigo}" no existe en el catálogo del producto. El catálogo lo fija el ` +
+        'código, no la firma.',
+    );
+  }
+
+  // Cortesía, no garantía (D-025): el motor lo vuelve a comprobar con PO002.
+  if (input.efecto === 'otorgado' && !(await tienePermisoLaSesion(tx, input.permisoCodigo))) {
+    throw new AdministracionInvalidaError(
+      `No se puede conceder "${input.permisoCodigo}": su propia sesión no ejerce ese permiso. Administrar ` +
+        'usuarios no equivale a tener todos los permisos del producto.',
+    );
+  }
+
+  const venceEn = input.efecto === 'otorgado' ? (input.venceEn ?? null) || null : null;
+
+  const { rows } = await tx.query<{ id: string }>(
+    `INSERT INTO user_permission_override
+       (tenant_id, company_id, user_id, permission_codigo, efecto, motivo, vence_en, otorgado_por)
+     VALUES ($1, $2, $3, $4, $5, $6, $7::date, app.current_user_id())
+     RETURNING id`,
+    [ctx.tenantId, input.companyId, input.userId, input.permisoCodigo, input.efecto, motivo, venceEn],
+  );
+  return { id: rows[0]!.id };
+}
+
+async function tienePermisoLaSesion(tx: SqlClient, codigo: string): Promise<boolean> {
+  const { rows } = await tx.query<{ tiene: boolean }>('SELECT app.tiene_permiso($1) AS tiene', [codigo]);
+  return rows[0]?.tiene === true;
+}
+
+// =============================================================================
+// HISTORIAL DE CAMBIOS DE PERMISOS (D-092)
+//
+// POR QUÉ ES UN HISTORIAL PROPIO Y NO UNA FILA MÁS DEL DE CARGA MASIVA O EL DE
+// REPORTES: aquellos leen UNA acción sobre UNA entidad (`CARGA_MASIVA`,
+// `EXPORT`). La pregunta de este es «¿quién tocó los permisos de quién?», y esa
+// respuesta está repartida en CINCO entidades distintas del mismo `audit_log`
+// — `user_permission_override`, `user_company_access`, `role`,
+// `role_permission` y `"user"`. Un historial por entidad obligaría a cruzar
+// cinco pantallas para reconstruir un solo episodio.
+//
+// No se creó tabla nueva ni permiso nuevo: misma `audit_log` bajo RLS, mismo
+// `auditoria.leer` que D-090 y D-091. La RLS de `audit_log` (012) es la única
+// que aísla: aquí no hay ni un filtro de aplicación por tenant o empresa.
+// =============================================================================
+
+/** Las entidades del `audit_log` que responden «quién tocó los permisos de quién». */
+export const ENTIDADES_DE_PERMISOS = [
+  'user_permission_override',
+  'user_company_access',
+  'role',
+  'role_permission',
+  'user',
+] as const;
+
+export interface FilaHistorialPermisos {
+  id: string;
+  ocurridoEn: string;
+  accion: string;
+  entidad: string;
+  entidadId: string | null;
+  autorNombre: string | null;
+  autorEmail: string | null;
+  /** A quién le cambió algo, cuando la fila lo dice. */
+  afectadoNombre: string | null;
+  /** Resumen legible de lo que cambió, ya construido para la pantalla. */
+  resumen: string;
+  motivo: string | null;
+}
+
+export interface HistorialPermisosPagina {
+  filas: FilaHistorialPermisos[];
+  total: number;
+  pagina: number;
+  porPagina: number;
+}
+
+/** Mismo saneo defensivo que `listarHistorialCargaMasiva` (V-52): `NaN` incluido. */
+function entero(valor: number | undefined, porDefecto: number, minimo: number, maximo: number): number {
+  const n = Math.trunc(Number(valor ?? porDefecto));
+  if (!Number.isFinite(n)) return porDefecto;
+  return Math.min(maximo, Math.max(minimo, n));
+}
+
+interface FilaCruda {
+  id: string;
+  ocurrido_en: string;
+  accion: string;
+  entidad: string;
+  entidad_id: string | null;
+  autor_nombre: string | null;
+  autor_email: string | null;
+  afectado_nombre: string | null;
+  valor_anterior: Record<string, unknown> | null;
+  valor_nuevo: Record<string, unknown> | null;
+}
+
+function texto(v: unknown): string | null {
+  return typeof v === 'string' && v.trim() !== '' ? v : null;
+}
+
+function resumirCambio(r: FilaCruda): { resumen: string; motivo: string | null } {
+  const nuevo = r.valor_nuevo ?? {};
+  const viejo = r.valor_anterior ?? {};
+
+  if (r.entidad === 'user_permission_override') {
+    const efecto = texto(nuevo.efecto) === 'revocado' ? 'Revocó' : 'Otorgó';
+    const vence = texto(nuevo.vence_en);
+    return {
+      resumen:
+        `${efecto} el permiso individual «${texto(nuevo.permission_codigo) ?? '?'}»` +
+        (vence ? ` (vence ${vence.slice(0, 10)})` : ''),
+      motivo: texto(nuevo.motivo),
+    };
+  }
+  if (r.entidad === 'user_company_access') {
+    if (r.accion === 'INSERT') return { resumen: 'Otorgó un rol sobre una empresa', motivo: null };
+    const antes = texto(viejo.revocado_en);
+    const ahora = texto(nuevo.revocado_en);
+    if (!antes && ahora) return { resumen: 'Revocó el acceso a una empresa', motivo: null };
+    if (antes && !ahora) return { resumen: 'Reactivó un acceso revocado', motivo: null };
+    return { resumen: 'Cambió un acceso a una empresa', motivo: null };
+  }
+  if (r.entidad === 'role_permission') {
+    const codigo = texto(nuevo.permission_codigo) ?? texto(viejo.permission_codigo) ?? '?';
+    return {
+      resumen: r.accion === 'INSERT' ? `Añadió «${codigo}» a un rol` : `Quitó «${codigo}» de un rol`,
+      motivo: null,
+    };
+  }
+  if (r.entidad === 'role') {
+    const codigo = texto(nuevo.codigo) ?? texto(viejo.codigo) ?? '?';
+    if (r.accion === 'INSERT') return { resumen: `Creó el rol «${codigo}»`, motivo: null };
+    if (r.accion === 'DELETE') return { resumen: `Eliminó el rol «${codigo}»`, motivo: null };
+    if (viejo.activo === true && nuevo.activo === false) {
+      return { resumen: `Inactivó el rol «${codigo}»`, motivo: null };
+    }
+    if (viejo.activo === false && nuevo.activo === true) {
+      return { resumen: `Reactivó el rol «${codigo}»`, motivo: null };
+    }
+    return { resumen: `Editó el rol «${codigo}»`, motivo: null };
+  }
+  // "user": el trigger de 016 ya redactó las credenciales antes de escribir.
+  const correo = texto(nuevo.email) ?? texto(viejo.email) ?? '?';
+  if (r.accion === 'INSERT') return { resumen: `Creó el usuario ${correo}`, motivo: null };
+  if (texto(viejo.estado) !== texto(nuevo.estado)) {
+    return { resumen: `Cambió el estado de ${correo}: ${texto(viejo.estado)} → ${texto(nuevo.estado)}`, motivo: null };
+  }
+  if (viejo.password_hash !== nuevo.password_hash || nuevo.debe_cambiar_password === true) {
+    return { resumen: `Restableció la contraseña de ${correo}`, motivo: null };
+  }
+  return { resumen: `Editó el usuario ${correo}`, motivo: null };
+}
+
+export async function listarHistorialDePermisos(
+  tx: SqlClient,
+  opciones: { pagina?: number; porPagina?: number } = {},
+): Promise<HistorialPermisosPagina> {
+  const pagina = entero(opciones.pagina, 1, 1, 1_000_000);
+  const porPagina = entero(opciones.porPagina, 25, 1, 200);
+  const offset = (pagina - 1) * porPagina;
+  const entidades = [...ENTIDADES_DE_PERMISOS];
+
+  const { rows: totalRows } = await tx.query<{ total: string }>(
+    'SELECT count(*)::text AS total FROM audit_log WHERE entidad = ANY($1::text[])',
+    [entidades],
+  );
+
+  const { rows } = await tx.query<FilaCruda>(
+    `SELECT al.id::text,
+            al.ocurrido_en::text,
+            al.accion,
+            al.entidad,
+            al.entidad_id,
+            autor.nombre_completo AS autor_nombre,
+            autor.email           AS autor_email,
+            afectado.nombre_completo AS afectado_nombre,
+            al.valor_anterior,
+            al.valor_nuevo
+       FROM audit_log al
+       LEFT JOIN "user" autor ON autor.id = al.user_id
+       LEFT JOIN "user" afectado
+              ON afectado.id = COALESCE(
+                   NULLIF(al.valor_nuevo->>'user_id', '')::uuid,
+                   NULLIF(al.valor_anterior->>'user_id', '')::uuid,
+                   CASE WHEN al.entidad = 'user' THEN NULLIF(al.entidad_id, '')::uuid END)
+      WHERE al.entidad = ANY($1::text[])
+      ORDER BY al.ocurrido_en DESC, al.id DESC
+      LIMIT $2 OFFSET $3`,
+    [entidades, porPagina, offset],
+  );
+
+  return {
+    filas: rows.map((r) => {
+      const { resumen, motivo } = resumirCambio(r);
+      return {
+        id: r.id,
+        ocurridoEn: r.ocurrido_en,
+        accion: r.accion,
+        entidad: r.entidad,
+        entidadId: r.entidad_id,
+        autorNombre: r.autor_nombre,
+        autorEmail: r.autor_email,
+        afectadoNombre: r.afectado_nombre,
+        resumen,
+        motivo,
+      };
+    }),
+    total: Number(totalRows[0]?.total ?? '0'),
+    pagina,
+    porPagina,
+  };
 }
 
 // =============================================================================

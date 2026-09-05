@@ -1,7 +1,68 @@
 # ESTADO_PROYECTO.md
 
 > Memoria única entre sesiones. Todo agente lo lee al empezar y lo actualiza al terminar.
-> Última actualización: 2026-09-04 — **V-54 CERRADA (A9, con re-check acotado de A14).** Las dos
+> Última actualización: 2026-09-04 (tarde) — **A12 cierra D-092-bis: el defecto que la verificación
+> en NAVEGADOR REAL encontró en D-092 está corregido.** Un rol propio de firma con **un solo
+> permiso**, `usuario.administrar` —el «administrador acotado» que la propia pantalla `/admin/roles`
+> propone como caso legítimo y que D-092 hizo creable—, dejaba al usuario **fuera de TODO el
+> producto**: no era «una sección menos», era un error 500 en **cualquier** ruta, incluida
+> `/admin/usuarios`, la única a la que ese rol da derecho. Causa raíz medida, no supuesta:
+> `app.empresas_accesibles()` (migración 070) exige `documento.leer`, y era la ÚNICA vía para listar
+> empresas — llamada sin `try/catch` desde el **layout raíz** (`app/layout.tsx`, o sea toda
+> pantalla), desde `obtenerBandejaConsolidada` y desde `/admin/usuarios` y `/admin/permisos`.
+> **Ningún permiso del motor se relajó**: la corrección es de aplicación
+> (`app/lib/empresas.ts` — preguntar antes de pedir, y degradar diciendo la verdad) más una puerta
+> nueva con su propio candado (`listarEmpresasDeLaFirma`, exige `usuario.administrar`). Sin
+> migración: la 184 de A14 no se toca. Árbol: `tsc` limpio · `next build` OK · `vitest run`
+> **1499/1499, 79 archivos** (12 nuevas, todas fallan sin el parche — comprobado desactivándolo).
+> **Verificado en el servidor real contra la Neon**: la sesión del repro (`qa-acotado@contable.co`,
+> rol `admin_acotado_qa`) abre `/`, `/admin/usuarios`, `/admin/permisos`, `/admin/roles` y `/bandeja`
+> con **200**, y la sesión de un `contador` sigue viendo exactamente lo de antes. Sin comitear. Ver
+> «D-092-bis». Historial:
+> 2026-09-04 — **A14 cierra la compuerta AMPLIADA de D-092: PASA CON
+> CORRECCIONES, hechas por A14 en la misma pasada.** Verificación independiente por SQL directo desde
+> sesiones reales (`tests/adversarial/a14-d092-compuerta.test.ts`, **38 pruebas**), sin dar por buena
+> ninguna afirmación de la ficha de A12. **Dos defectos reales encontrados y cerrados**: **V-57**, la
+> CUARTA puerta de la anti-escalada —una sesión con solo `usuario.administrar` se ascendía a
+> `admin_firma` con `UPDATE user_company_access SET role_id = ...` sobre su propio acceso **ya
+> vigente**, porque el guardia de 183 solo miraba el `UPDATE` cuando era una *reactivación*; corregido
+> en la migración **184**, que la 183 está aplicada y no se edita— y **V-58**, `PO001`..`PO004` sin
+> traducir en `app/admin/_errores.ts`, que hacía que el rechazo del motor se leyera como «problema
+> técnico» (el mismo defecto que la ficha corrigió para el `42501` de `asignarRol`, repetido en los
+> guardias que estrenaba). Todo lo demás de D-092 se sostuvo bajo ataque: las tres puertas, el rol
+> todopoderoso, la precedencia, el vencimiento (incluido el que caduca **con el tiempo** durante la
+> prueba), el append-only contra el superusuario, el aislamiento de doble nivel con empresa activa y
+> **sin ella**, la firma del `otorgado_por` por el trigger, el motivo dentro del `audit_log`, y
+> `v_user_permission` (011) intacta. **Los 20 casos dorados, uno por uno: verdes.** Árbol medido por
+> A14: `tsc` limpio · `next build` OK (las cinco rutas de `/admin`) · `vitest run` **1487/1487, 78
+> archivos** (base de A12 reconfirmada: 1449/1449/77). **Sin comitear. La migración 184 es lo más
+> urgente que hay pendiente de aplicar a la Neon: hasta que no esté, la base real tiene V-57
+> abierta.** Sigue faltando la verificación en navegador real. Ver «Compuerta AMPLIADA de D-092 —
+> veredicto de A14». Historial:
+> 2026-09-04 — **A12 entrega D-092 (Administración, Fase 8): permiso
+> individual por usuario con motivo obligatorio, anti-escalada de privilegios en el motor, historial
+> de cambios de permisos y migración visual de `/admin/**` — con lo que `PREFIJOS_SIN_MIGRAR` queda
+> VACÍO.** Investigación primero: la gestión de usuarios y el CRUD de roles propios de firma YA
+> estaban completos desde la Ola 4 y **no se reconstruyeron**; lo que de verdad faltaba era (a) el
+> permiso individual —`v_user_permission` y `v_user_permission_efectivo` eran **las dos** derivadas
+> 100% del rol, así que «granular por usuario» describía en realidad «hacerse un rol a medida»— y
+> (b) la anti-escalada, porque `usuario.administrar` era **transitivamente equivalente a todos los
+> permisos** (crear un rol con el catálogo entero y auto-asignárselo). Migración **183**:
+> `user_permission_override` **append-only** (`PO003`: revocar es una fila nueva con su motivo, ni el
+> superusuario edita), `motivo` NOT NULL, vencimiento opcional, `app.tiene_permiso` v3 con la
+> precedencia «rol todopoderoso > excepción individual > rol» —el todopoderoso gana siempre, o una
+> excepción reabriría el agujero que D-066 cerró—, y `PO001`/`PO002`/`PO004` sobre las tres vías por
+> las que un permiso llega a una persona. **Tres defectos encontrados y corregidos**:
+> `/admin/correcciones` listaba documentos sin exigir ningún permiso; `asignarRol` sobre otra empresa
+> moría con un `42501` crudo; y la escalada de `usuario.administrar`. Historial nuevo
+> `/admin/historial` (cinco entidades del `audit_log`, permiso `auditoria.leer` reutilizado, sin
+> tabla ni permiso nuevos). **`tsc` limpio · `next build` OK · `vitest run` 1449/1449, 77 archivos**
+> (antes 1424/1424/76; **+25**, 0 regresiones). Ni el detector de la Regla de Oro 2 ni el inventario
+> cerrado de funciones `SECURITY DEFINER` se ensancharon para dar cabida a esta ficha. **Sin
+> comitear. Falta la compuerta de A14 y la verificación en navegador real** (esta sesión no tuvo
+> herramienta de navegador; el guion exacto está en la ficha). **La migración 183 no se aplicó a la
+> Neon.** Ver «D-092 — Administración, Fase 8» y la tabla reverificada de la sección 14.1. Historial:
+> 2026-09-04 — **V-54 CERRADA (A9, con re-check acotado de A14).** Las dos
 > exportaciones que vivían fuera de la ruta central de reportes (`/api/parametros/puc/exportar` y
 > `/api/terceros/exportar`) ahora escriben el mismo rastro `EXPORT` (`app.registrar_exportacion`,
 > dentro del mismo `conSesion`) que `/api/reportes/[libro]`, y exigen además `reporte.exportar` en JS
@@ -4304,6 +4365,8 @@ revienta en el `INSERT` de la partida.
 
 | Id | Qué es | Gravedad | Estado | De quién |
 |---|---|---|---|---|
+| **V-59** | **El parche de D-092-bis solo funcionaba en una firma de UNA empresa — o sea, en ninguna firma real.** `empresasVisiblesParaLaSesion` con `origen: 'firma'` devuelve las empresas de la FIRMA, no «las mías» (la propia ficha lo declara). `obtenerBandejaConsolidada` seguía recorriendo esa lista abriendo `conSesionEmpresa(empresa.companyId)` por cada una, y `withSessionContext` **rechaza** la empresa sobre la que la sesión no tiene acceso vigente: `EmpresaNoAutorizadaError` **más un `ACCESO_DENEGADO` escrito en `audit_log` por cada empresa ajena**. El escenario de la prueba de A12 tiene una empresa por firma, así que nunca se dispara. Con dos —y el producto se vende a firmas de 30-60 empresas-cliente— el administrador acotado vuelve a recibir **el mismo error 500 en toda ruta** que D-092-bis vino a cerrar, y la alarma de seguridad se llena de intrusiones falsas que genera el propio producto al pintar una portada | **Alta como producto** (reabre por completo el defecto que la ficha declara cerrado, en la configuración normal del cliente) y **media como ruido de seguridad** (`ACCESO_DENEGADO` deja de significar algo si lo emite el flujo feliz) | **CORREGIDA por A14** en `app/lib/bandeja.ts`: el bucle por empresa solo corre con `origen === 'accesibles'`, el único origen donde cada empresa está garantizada como accesible **y** legible; en cualquier otro se devuelve la bandeja vacía con `puedeLeerDocumentos: false`, que es lo que la pantalla ya sabe decir. **Tres pruebas de regresión** que fallan sin el parche (`tests/adversarial/a14-d092bis-compuerta.test.ts`), incluida una que compara el conteo de `ACCESO_DENEGADO` antes y después de pintar la portada | era de **A12** (D-092-bis) |
+| **V-60** | **Una revocación individual acotada a UNA empresa vetaba la firma entera — y dejaba al usuario encerrado fuera de la empresa donde su permiso estaba intacto.** `app.tiene_permiso` de la migración 183 resuelve la excepción con `... (current_company_id() IS NULL OR o.company_id = current_company_id()) ... ORDER BY otorgado_en DESC LIMIT 1`. **Sin empresa en contexto** —la sesión de firma, que es la que usa el LAYOUT RAÍZ en TODA ruta— el filtro por empresa desaparece y **la excepción más reciente de cualquier empresa decide por toda la firma**, mientras el bloque `accesos` de la misma función hace lo contrario (une todas las empresas). Medido en los dos sentidos con un contador con acceso a dos empresas: `documento.leer` **revocado solo en B** → en A `true`, en B `false`, **en sesión de firma `false`**; `usuario.administrar` **otorgado solo en B** → en A `false`, en B `true`, **en sesión de firma `true`**. Consecuencia real del primero: `app.empresas_accesibles()` (que exige `documento.leer`) rechaza, la aplicación degrada a `sin_permiso`, **el selector de empresas del shell se queda VACÍO y el contador ya no puede ni volver a la empresa A**. Y cuál de las dos semánticas gana depende de `otorgado_en DESC`, es decir del **orden en que se escribieron** excepciones de empresas distintas: eso no es una regla de permisos | **Alta**: bloqueo total del producto para un usuario legítimo, por el mismo mecanismo que D-092-bis vino a cerrar y por la puerta de al lado. Introducida por **la migración 183**, no preexistente | **CORREGIDA por A14**: migración **`185_a14_d092_excepcion_individual_por_empresa_en_sesion_de_firma.sql`** (la 183 no se edita: está aplicada y tiene checksum). La excepción pasa a resolverse **por empresa** (`DISTINCT ON (company_id)`, la misma regla que ya usa la vista `v_user_permission_efectivo` de 183), se combina con el rol **de esa misma empresa** y se agrega con `EXISTS`. **Con empresa en contexto el resultado es idéntico al de 183** —ahí vive toda la seguridad de D-092— y hay prueba que lo recorre para **todo el catálogo de `permission`, permiso por permiso, contra la vista**, en las dos empresas. **Seis pruebas de regresión**, tres de las cuales fallan sin la 185, incluida «revocado en TODAS las empresas sí veta la sesión de firma» para que el arreglo no se convierta en un aflojamiento | era de **A12** (migración 183, D-092) |
 | **V-51** | **El foco se escapaba del `Modal` compartido, y en el de carga masiva encima se quedaba clavado.** Dos defectos en el mismo `useEffect` de `app/_ui/componentes.tsx` (D-087), encontrados montando el componente de verdad y despachando teclas reales. (a) El selector de enfocables no excluía `input[type="hidden"]`: en `CargaMasiva`, con `catalogo` y `soloValidas` ocultos, «el primer enfocable» era un input oculto, así que el `Tab` del último elemento hacía `preventDefault()` + `.focus()` sobre algo que ningún navegador enfoca y el ciclo se rompía. (b) El manejador solo reconocía los dos bordes: con el foco en `body` el `Tab` se le dejaba al navegador, que lo llevaba al primer enfocable del **documento** —la navegación del AppShell, por debajo de un diálogo `aria-modal="true"`—. Y el foco cae en `body` trivialmente: al pulsar «Validar y cargar» el botón se deshabilita y lo suelta | **Media**: accesibilidad y control de teclado, no seguridad ni contabilidad. Pero vive en el componente que comparten **cuatro pantallas ya cerradas** (dirección DIAN de Terceros, modal genérico y detalle de impacto de Parámetros, uso de cuenta del PUC): la mitad (b) estaba **viva** en las cuatro; la (a), latente, solo la disparaba `CargaMasiva` | **CORREGIDA por A14**: se excluyen `type="hidden"`, `[hidden]` y `aria-hidden="true"`, y si el foco no está dentro del diálogo el `Tab` lo devuelve. **10 pruebas de teclado real sobre el DOM montado** (`tests/app/carga-masiva-modal-teclado.test.ts`), que fallaban antes del arreglo. Para poder escribirlas se añadió `jsdom` como devDependency | era de **A8** (D-087) |
 | **V-52** | **El saneo de la paginación del historial no saneaba `NaN`.** `Math.max(1, Math.trunc(x))` propaga el `NaN` hasta el `OFFSET` (`invalid input syntax for type bigint: "NaN"`), y un `pagina` gigantesco produce un `offset` que ya no es entero exacto en JavaScript y se serializa en notación científica: otro `bigint` inválido | **Baja**: hoy no es alcanzable desde la pantalla, que filtra antes con `Number.isFinite`. Pero el servicio se anuncia a sí mismo como defensivo y no lo era — el patrón de V-43: un resguardo que dice cubrir lo que no cubre | **CORREGIDA por A14** en `src/services/carga-masiva/historial.ts`: saneo único que rechaza lo no finito y topa la página en 1.000.000. Prueba con `0`, `-1`, `-999`, `NaN`, `1e9` y `3.7` | era de **A8** |
 | **V-53** | **Un guardia de QA estaba CIEGO justo en el momento en que se le pregunta.** `tests/adversarial/compuerta-ola3-ruta.test.ts` buscaba con `git grep`, que solo mira archivos **ya rastreados por git**. Como en este proyecto ningún agente comitea —comitea el usuario **después** de la compuerta—, todo archivo entregado y aún sin comitear era invisible para el guardia precisamente durante la compuerta. Efecto medido: la compuerta de D-089 declaró «1345 en verde» de buena fe con `app/api/parametros/puc/exportar/route.ts` ya escrito, y el árbol amaneció rojo en el commit siguiente | Media (infraestructura de QA; V-43 y V-48 otra vez, con el agravante de que falla en el único momento en que importa) | **CORREGIDA por A14**: el guardia recorre el sistema de archivos (`app`, `src`) en vez del índice de git. Las otras 34 pruebas del archivo siguen verdes: no sobre-reporta | era de **A14** (guardia propio) |
@@ -5294,6 +5357,13 @@ más específico— y ninguna deja de exigir el rechazo del motor:
 
 ## Sección 14.1 — recorrido punto por punto del "día uno", con su estado REAL
 
+> **Reverificado por A12 el 2026-09-04, al cerrar D-092.** Los puntos marcados **implementado** se
+> volvieron a medir corriendo la suite, no leyendo la fila anterior de esta tabla. Los marcados
+> **documentado** se comprobaron abriendo el archivo (existe y tiene contenido); lo que sigue
+> faltando de ellos es la revisión jurídica y los datos de la sociedad, y así está escrito. Los
+> marcados **configuración de despliegue** siguen sin ejecutarse: no hay dominio productivo ni plan
+> contratado, y **nadie debe leerlos como hechos**.
+
 Cuatro estados, sin ambigüedad: **implementado** (está en código y hay una prueba que lo demuestra),
 **configuración de despliegue** (no es código; hay que hacerlo al desplegar y dejar constancia),
 **documentado** (existe el documento, falta la revisión jurídica y los datos de la sociedad),
@@ -5301,21 +5371,30 @@ Cuatro estados, sin ambigüedad: **implementado** (está en código y hay una pr
 
 | # | Punto de la 14.1 | Estado real | Dónde / qué falta |
 |---|---|---|---|
-| 1 | **RLS activa en todas las tablas de datos, doble nivel tenant/company** | **implementado** | `012_rls.sql`. Verificado **desde el catálogo** (`pg_class`, `pg_policies`), no desde una lista: RLS habilitada **y forzada** en toda tabla de `public` salvo `schema_migration`. Además un **barrido de comportamiento** consulta todas las tablas con `tenant_id` y con `company_id` desde una sesión y confirma cero filas ajenas. `tests/gates/seguridad.test.ts` |
+| 1 | **RLS activa en todas las tablas de datos, doble nivel tenant/company** | **implementado** | `012_rls.sql`. Verificado **desde el catálogo** (`pg_class`, `pg_policies`), no desde una lista: RLS habilitada **y forzada** en toda tabla de `public` salvo `schema_migration`. Además un **barrido de comportamiento** consulta todas las tablas con `tenant_id` y con `company_id` desde una sesión y confirma cero filas ajenas. `tests/gates/seguridad.test.ts` y `tests/gates/arranque.test.ts`. **D-092**: la tabla nueva `user_permission_override` entra al barrido y lo pasa; lleva la variante de política de `audit_log` (`current_company_id() IS NULL OR company_id = ...`) por la razón escrita en la ficha D-092, no por comodidad |
 | 1b | *(añadido por A12)* **El contexto de aislamiento no lo elige la sesión** | **implementado** | Cierre de D-020. `015`. El tenant se deriva del token verificado; `app.tenant_id` quedó inerte y hay prueba de ello |
-| 2 | **Cifrado en tránsito (TLS)** | **configuración de despliegue** | No hay dominio productivo todavía. Exigencias escritas en `docs/cifrado-y-proteccion-de-datos.md` §1: TLS 1.2+, HSTS, cookies `Secure/HttpOnly/SameSite`, y **`sslmode=verify-full`** en `DATABASE_URL` (no `require`, que cifra pero no verifica identidad). **A15 debe ejecutarlo y archivar la constancia** |
-| 3 | **Cifrado en reposo** | **configuración de despliegue** (volumen y respaldos) + **implementado** (sobre de aplicación) | El cifrado del volumen y de los respaldos lo da el proveedor gestionado; hay que confirmarlo en el plan contratado y archivar la constancia. Lo que **sí** es código: el secreto TOTP va envuelto en AES-256-GCM con clave fuera de la base (D-028), las contraseñas se derivan con scrypt (irreversible) y del token de sesión solo se guarda su `sha256`. `docs/cifrado-y-proteccion-de-datos.md` §2 |
-| 4 | **Autenticación con MFA disponible** | **implementado** | TOTP RFC 6238 en `src/auth/totp.ts`, verificado contra los vectores de RFC 4226 y RFC 6238. Secreto cifrado. Sesiones con vencimiento (8 h; tope duro de 24 h en la BD), revocación individual y masiva, bloqueo tras 5 intentos fallidos, respuesta de tiempo constante ante correo inexistente. **MFA *obligatorio* por rol: pendiente** (requiere interfaz de A7/A8) |
-| 5 | **Roles y permisos granulares (5 roles mínimos)** | **implementado** | Los cinco roles y 25 permisos ya existían como datos (`014`). A12 los volvió **restricción del motor** (`016`, D-025): trigger `BEFORE` en 31 tablas que rechaza con `SE002`. Probado: el auxiliar de causación no edita parámetros ni aprueba ni publica; el contador no crea vigencias de tarifas; el rol de solo lectura **no escribe en ninguna** de las tablas protegidas (barrido por catálogo) |
-| 6 | **`audit_log` de toda acción sensible** | **implementado** | Append-only impuesto por la BD (`AU001`), ni el superusuario lo altera. Cubre aprobaciones, ediciones de parámetros, cambios de mapeo PUC y de plan de cuentas, **accesos denegados a datos de otra empresa**, **inicios de sesión fallidos**, cierres de sesión, creación/publicación/reversa de asientos, cierre de período y cambios de usuarios y accesos. Registra usuario, `ocurrido_en`, IP, agente y petición. **Las credenciales se redactan antes de escribir** (D-029) |
-| 7 | **Política de tratamiento de datos personales y aviso de privacidad** | **documentado** | `docs/politica-tratamiento-datos-personales.md` y `docs/aviso-privacidad.md`. Ley 1581/2012, Decreto 1377/2013, Decreto 1074/2015. **Falta:** revisión jurídica, datos de la sociedad y publicación |
-| 8 | **Contrato de transmisión con el cliente (encargado del tratamiento)** | **documentado** | `docs/contrato-encargado-tratamiento.md`, con el contenido del art. 2.2.2.25.5.2 del Decreto 1074/2015: sujeción a instrucciones, seguridad y confidencialidad, y devolución o supresión al terminar. **Falta:** revisión jurídica y firma |
-| 9 | **Cláusulas de transferencia internacional** | **documentado** | `docs/clausulas-transferencia-internacional.md`. Se dice con todas las letras que **EE. UU. no está en el listado de países adecuados de la SIC** y se sustenta el flujo en la cadena de **contratos de transmisión** (art. 2.2.2.25.5.1) más autorización expresa. **Falta:** verificar vigencia y numeración exacta de la circular de la SIC y firmar el clausulado con cada proveedor |
-| 10 | **Términos y condiciones con limitación de responsabilidad por cálculo tributario** | **documentado** | `docs/terminos-y-condiciones.md` §7, apoyado en los arts. 571, 572 y 581 del Estatuto Tributario y en que **la aprobación humana es un control técnico real**, no una formalidad. **Falta:** revisión jurídica; advertencia expresa sobre el art. 43 de la Ley 1480/2011 si alguna vez hay consumidores |
-| 11 | **Procedimiento de consultas y reclamos de titulares** | **documentado** | `docs/procedimiento-consultas-y-reclamos.md`. Plazos de los arts. 14 y 15 de la Ley 1581/2012 (10 y 15 días hábiles, con sus prórrogas), leyenda "reclamo en trámite" en 2 días hábiles y traslado por incompetencia. **Falta:** designar formalmente el área responsable y abrir el buzón |
-| 12 | **Procedimiento de reporte de incidentes a la SIC (15 días hábiles)** | **documentado, con dos puntos abiertos** | `docs/procedimiento-incidentes-sic.md`. **Abierto y escrito como tal:** (a) el canal de reporte está asociado al RNBD y **no estamos inscritos** por no superar el umbral del Decreto 090/2018, aunque el deber sustancial subsiste — hay que confirmar el canal correcto **antes** del primer incidente; (b) hay que citar la instrucción vigente que fija los 15 días. Además, **el procedimiento nunca se ha ejercitado con un simulacro** |
-| 13 | **Retención de datos por 10 años con reproducción exacta** | **documentado + parcialmente implementado; la prueba falta** | `docs/politica-retencion-datos.md`, art. 28 de la Ley 962/2005. Lo implementado que la sustenta: ledger inmutable, parámetros versionados por vigencia, `audit_log` inalterable, XML original con su hash. **Pendiente real:** no hay rutina automática de supresión al vencimiento (hoy es manual y con autorización), no hay archivo histórico de bajo costo, y **no se ha hecho un ejercicio de restauración que verifique la reproducción exacta** |
+| 2 | **Cifrado en tránsito (TLS)** | **configuración de despliegue — NO ejecutada** | No hay dominio productivo todavía. Exigencias escritas en `docs/cifrado-y-proteccion-de-datos.md` §1: TLS 1.2+, HSTS, cookies `Secure/HttpOnly/SameSite`, y **`sslmode=verify-full`** en `DATABASE_URL` (no `require`, que cifra pero no verifica identidad). **A15 debe ejecutarlo y archivar la constancia.** Hoy no hay constancia archivada de ninguna de las cuatro cosas |
+| 3 | **Cifrado en reposo** | **configuración de despliegue** (volumen y respaldos, **sin constancia**) + **implementado** (sobre de aplicación) | El cifrado del volumen y de los respaldos lo da el proveedor gestionado; **hay que confirmarlo en el plan contratado y archivar la constancia, y eso no se ha hecho**. Lo que **sí** es código y sí tiene prueba: el secreto TOTP va envuelto en AES-256-GCM con clave fuera de la base (D-028), las contraseñas se derivan con scrypt (irreversible) y del token de sesión solo se guarda su `sha256`. `docs/cifrado-y-proteccion-de-datos.md` §2 |
+| 4 | **Autenticación con MFA disponible** | **implementado a medias — y la mitad que falta es la que el usuario ve** | El motor está: TOTP RFC 6238 (`src/auth/totp.ts`) verificado contra los vectores de RFC 4226 y RFC 6238, secreto cifrado, el formulario de `/entrar` pide el segundo factor **siempre visible** para no delatar quién tiene MFA, sesiones con vencimiento (8 h; tope duro de 24 h en la BD), revocación individual y masiva, bloqueo tras 5 intentos fallidos y respuesta de tiempo constante ante correo inexistente. **Lo que NO hay (medido en D-092, no supuesto): ninguna pantalla de ALTA de MFA.** Ni el usuario desde `/cambiar-password` ni el administrador desde `/admin/usuarios` pueden encenderlo: hoy `mfa_habilitado` / `mfa_secret_cifrado` solo se escriben por SQL directo o por el fixture de pruebas. «Disponible» describe el motor, no el producto. **MFA *obligatorio* por rol: pendiente** |
+| 5 | **Roles y permisos granulares (5 roles mínimos)** | **implementado** | Los cinco roles y los permisos ya existían como datos (`014`). A12 los volvió **restricción del motor** (`016`, D-025): trigger `BEFORE` en 31 tablas que rechaza con `SE002`. Probado: el auxiliar de causación no edita parámetros ni aprueba ni publica; el contador no crea vigencias de tarifas; el rol de solo lectura **no escribe en ninguna** de las tablas protegidas (barrido por catálogo). Roles propios de firma desde D-067; rol todopoderoso blindado en el motor desde D-066 (`RL001`) |
+| 5b | *(D-092)* **Granularidad POR USUARIO, no solo por rol, con motivo y trazabilidad** | **implementado** | Hasta D-092 esto **no existía** y la tabla decía lo contrario: `v_user_permission` (011) y `v_user_permission_efectivo` (170) eran **las dos** derivadas 100% del rol, y «granular por usuario» describía en realidad «hacerse un rol a medida». `user_permission_override` (**183**) concede o revoca un permiso a **un** usuario sobre **una** empresa por encima de su rol, con `motivo` NOT NULL, vencimiento opcional y **append-only** (`PO003`: revocar es una fila nueva, ni el superusuario edita). `app.tiene_permiso` v3 lo resuelve en el motor. 25 pruebas |
+| 5c | *(D-092)* **Nadie confiere un permiso que no ejerce (anti-escalada)** | **implementado** | Agujero real cerrado, no teórico: `usuario.administrar` era **transitivamente equivalente a todos los permisos** (crear un rol con el catálogo entero y auto-asignárselo). `PO002` sobre las tres vías (`role_permission` INSERT, `user_company_access` INSERT/reactivación, `user_permission_override` otorgado) y `PO001` (nadie se asciende a sí mismo). Quitar nunca se restringe. El rol todopoderoso pasa las tres puertas sin perder capacidades: hay prueba. **Corregido por A14 en la compuerta (V-57, migración 184): las vías eran tres TABLAS pero CUATRO SENTENCIAS.** El guardia de 183 solo miraba el `UPDATE` de `user_company_access` cuando era una *reactivación*, así que `UPDATE ... SET role_id = <admin_firma>` sobre el propio acceso ya vigente escalaba con una sentencia — medido, no supuesto. Desde 184 se comprueba todo `UPDATE` que deje la fila vigente cambiando `role_id`, `user_id`, `company_id` o `tenant_id`. **La 184 aún no está aplicada a la Neon** |
+| 6 | **`audit_log` de toda acción sensible** | **implementado** | Append-only impuesto por la BD (`AU001`), ni el superusuario lo altera. Cubre aprobaciones, ediciones de parámetros, cambios de mapeo PUC y de plan de cuentas, **accesos denegados a datos de otra empresa**, **inicios de sesión fallidos**, cierres de sesión, creación/publicación/reversa de asientos, cierre de período, cargas masivas (D-063), exportaciones (`EXPORT`, D-091) y **todo cambio de usuarios, roles, permisos de rol, accesos y excepciones individuales**. Registra usuario, `ocurrido_en`, IP, agente y petición. **Las credenciales se redactan antes de escribir** (D-029). **D-092**: por primera vez hay pantallas que lo LEEN — `/admin/historial` (permisos, cinco entidades), `/carga-masiva/historial` y `/reportes/historial`, las tres con `auditoria.leer` y aisladas por `audit_log_rls`, sin un solo filtro de aplicación |
+| 7 | **Política de tratamiento de datos personales y aviso de privacidad** | **documentado** | `docs/politica-tratamiento-datos-personales.md` (260 líneas) y `docs/aviso-privacidad.md` (114). Ley 1581/2012, Decreto 1377/2013, Decreto 1074/2015. **Falta:** revisión jurídica, datos de la sociedad y publicación |
+| 8 | **Contrato de transmisión con el cliente (encargado del tratamiento)** | **documentado** | `docs/contrato-encargado-tratamiento.md` (239 líneas), con el contenido del art. 2.2.2.25.5.2 del Decreto 1074/2015: sujeción a instrucciones, seguridad y confidencialidad, y devolución o supresión al terminar. **Falta:** revisión jurídica y firma |
+| 9 | **Cláusulas de transferencia internacional** | **documentado** | `docs/clausulas-transferencia-internacional.md` (201 líneas). Se dice con todas las letras que **EE. UU. no está en el listado de países adecuados de la SIC** y se sustenta el flujo en la cadena de **contratos de transmisión** (art. 2.2.2.25.5.1) más autorización expresa. **Falta:** verificar vigencia y numeración exacta de la circular de la SIC y firmar el clausulado con cada proveedor |
+| 10 | **Términos y condiciones con limitación de responsabilidad por cálculo tributario** | **documentado** | `docs/terminos-y-condiciones.md` §7 (222 líneas), apoyado en los arts. 571, 572 y 581 del Estatuto Tributario y en que **la aprobación humana es un control técnico real**, no una formalidad. **Falta:** revisión jurídica; advertencia expresa sobre el art. 43 de la Ley 1480/2011 si alguna vez hay consumidores |
+| 11 | **Procedimiento de consultas y reclamos de titulares** | **documentado** | `docs/procedimiento-consultas-y-reclamos.md` (190 líneas). Plazos de los arts. 14 y 15 de la Ley 1581/2012 (10 y 15 días hábiles, con sus prórrogas), leyenda "reclamo en trámite" en 2 días hábiles y traslado por incompetencia. **Falta:** designar formalmente el área responsable y abrir el buzón |
+| 12 | **Procedimiento de reporte de incidentes a la SIC (15 días hábiles)** | **documentado, con dos puntos abiertos** | `docs/procedimiento-incidentes-sic.md` (144 líneas). **Abierto y escrito como tal:** (a) el canal de reporte está asociado al RNBD y **no estamos inscritos** por no superar el umbral del Decreto 090/2018, aunque el deber sustancial subsiste — hay que confirmar el canal correcto **antes** del primer incidente; (b) hay que citar la instrucción vigente que fija los 15 días. Además, **el procedimiento nunca se ha ejercitado con un simulacro** |
+| 13 | **Retención de datos por 10 años con reproducción exacta** | **documentado + parcialmente implementado; la prueba sigue faltando** | `docs/politica-retencion-datos.md` (165 líneas), art. 28 de la Ley 962/2005. Lo implementado que la sustenta: ledger inmutable, parámetros versionados por vigencia, `audit_log` inalterable, XML original con su hash, y —desde D-092— también las decisiones de permisos, que son append-only y sirven para reconstruir quién pudo hacer qué en una fecha pasada. **Pendiente real, sin cambio desde la última revisión:** no hay rutina automática de supresión al vencimiento (hoy es manual y con autorización), no hay archivo histórico de bajo costo, y **no se ha hecho un ejercicio de restauración que verifique la reproducción exacta** |
 | 14 | **Respaldos automáticos con prueba de restauración** | **configuración de despliegue + PENDIENTE la prueba** | Los respaldos los provee el Postgres gestionado; falta contratar y dejar constancia de la ventana de recuperación. **La prueba de restauración NO se ha ejecutado.** Sin ella, la reproducción exacta está afirmada, no verificada. Corresponde a **A15** |
+
+**Resumen honesto del "día uno" al 2026-09-04:** de los catorce puntos, **seis están implementados y
+probados** (1, 1b, 5, 5b, 5c, 6), **uno lo está a medias y la mitad que falta es la visible** (4:
+MFA sin pantalla de alta), **tres son configuración de despliegue que NADIE ha ejecutado ni
+archivado** (2, 3 en su parte de volumen y respaldos, 14), y **seis están documentados pero sin
+revisión jurídica ni datos de la sociedad** (7 a 13). Nada de esto es aspiracional: cada casilla dice
+lo que hay medido hoy.
 
 **Lo que la 14.2 dice que puede esperar, y que efectivamente NO se hizo:** RNBD (no aplica hasta
 100.000 UVT en activos, ~$5.237.400.000 para 2026, Decreto 090 de 2018 art. 1), certificaciones
@@ -5376,7 +5455,7 @@ Para que quede dicho, porque es fácil suponer lo contrario: el ledger inmutable
 ítem de la categoría 1 puede quedar abierto en ese momento.**
 
 Sección única y permanente, consolidada el 2026-09-04 (dispatch de cierre de V-54) revisando todas
-las fichas D-001 a D-090. Reúne cada `V-XX` y cada decisión pendiente que sigue **sin cerrar** hoy —
+las fichas D-001 a D-090, y actualizada el 2026-09-04 con D-092. Reúne cada `V-XX` y cada decisión pendiente que sigue **sin cerrar** hoy —
 no repite lo que ya está `CORREGIDA`/`CERRADA` en su ficha de origen; para el detalle completo y la
 verificación de cada corrección, ver la ficha citada en la columna «Origen». Tres categorías:
 
@@ -5413,7 +5492,8 @@ verificación de cada corrección, ver la ficha citada en la columna «Origen».
 | Anclaje de la ventana de acumulación de ICA por periodo | El motor la ancla al año calendario (desde el 1-ene del año del hecho); ningún acuerdo municipal consultado dice desde cuándo cuenta la ventana | D-088/A3 | **Decisión normativa pendiente de confirmación del cliente final.** Alternativa no elegida: anclar a `vigente_desde` de la regla municipal |
 | Cruce del umbral de ICA a mitad de periodo | El motor retiene solo hacia adelante: lo ya causado antes del cruce no se ajusta retroactivamente; la nota crédito tampoco descuenta del acumulador | D-088/A3 | **Decisión normativa pendiente de confirmación del cliente final.** Es la lectura conservadora y reversible; la contraria exige reescribir asientos publicados (Regla de Oro 1) |
 | `CargaMasiva.tsx` sin consumidores reales | El modal compartido sigue sin un solo consumidor de producción; `/parametros/puc`, `/terceros` y `/parametros` enlazan a `/carga-masiva/:catalogo` en vez de engancharlo como acción secundaria in situ | D-090 | **Decisión de diseño pendiente**, sin dueño asignado, para cualquier agente que reabra esas tres pantallas |
-| `contador`/`auxiliar_causacion` sin `auditoria.leer` por defecto | La plantilla base de roles no les da acceso al historial de carga masiva | D-090 | **ACLARADA (2026-09-04): no requiere fix.** El modelo de permisos es granular por usuario (D-066/D-067); una firma lo otorga sin tocar código. Ver «Pendiente inmediato de D-090», punto 4 |
+| `contador`/`auxiliar_causacion` sin `auditoria.leer` por defecto | La plantilla base de roles no les da acceso al historial de carga masiva | D-090 | **CERRADA de verdad el 2026-09-04 (D-092).** La aclaración anterior se apoyaba en una premisa **falsa**: hasta D-092 el permiso no era granular por usuario, sino por rol, así que la salida real era fabricarle un rol a medida. Con `user_permission_override` (183) sí se le otorga `auditoria.leer` a una persona concreta, con motivo y sin tocar código |
+| Sin pantalla de ALTA de MFA | El login verifica TOTP y el secreto va cifrado, pero **ningún usuario puede encender su propio MFA desde la interfaz**: hoy `mfa_habilitado`/`mfa_secret_cifrado` solo se escriben por SQL directo o por el fixture de pruebas | Medido en D-092; punto 4 de la 14.1 | **ABIERTA, sin dueño.** «MFA disponible» describe el motor, no el producto. Decisión de producto: si la 14.1 se quiere poder marcar sin asterisco, hace falta la pantalla de enrolamiento (QR + confirmación del primer código) y, aparte, el MFA obligatorio por rol |
 | Pantallas de administración que faltan (B-4) | PUC/mapeo NIIF, alta de municipios y CIIU, matriz de agentes ReteIVA, calendario tributario, formatos de exógena y conceptos de causación no son editables desde la interfaz (el modelo de datos sí los soporta) | «Qué le falta al sistema…», A0 | **Pendiente de priorización de producto.** A8 |
 | Causación de ventas fuera de alcance | El producto solo procesa facturas de compra por diseño; los formatos 1003/1006 de exógena quedan incompletos sin causar ventas por otra vía | «Qué le falta al sistema…», A0 | **Decisión de alcance del mega-prompt**, no deuda a saldar dentro de este proyecto |
 
@@ -5425,14 +5505,29 @@ verificación de cada corrección, ver la ficha citada en la columna «Origen».
 | V-30, residual acotado | El filtro de las consultas de retenciones deja pasar filas con `journal_entry_id IS NULL` para no romper fixtures de A9/A11 que insertan `retention_applied` sin asiento. Con V-29 corregido el motor ya no produce esas filas: el residuo es solo de pruebas | Lote posterior a la Ola 3 (A14) | **ABIERTO, sin riesgo real.** Correcto a futuro: exigir `EXISTS(... posted)` a secas y realistar los fixtures. **A9/A11** |
 | Etiqueta del commit `40fc658` | El commit está rotulado «D-087: Fase 4…» pero también contiene la base de D-088 (migración `177`, modelo de datos de A2) — el historial de git no refleja el corte real entre fichas | Observación del usuario, 2026-09-04 | **ABIERTO, cosmético.** No afecta el árbol ni el contenido, solo la trazabilidad del historial de commits |
 | Dependencia de una Neon real para `npm run dev` local | PGlite es en memoria y por proceso: `migrar`/`sembrar`/`dev` corridos como procesos Node separados sin `DATABASE_URL` no comparten datos entre sí (documentado en el README como comportamiento esperado). Para navegar la app localmente sin apuntar a una Neon real haría falta persistir/compartir una única instancia de PGlite entre procesos | Decisión D-003, señalado por el usuario 2026-09-04 | **ABIERTO, sin dueño.** No es un defecto: es la consecuencia conocida de D-003 (PGlite solo para pruebas). Cambiarlo es infraestructura no trivial (PGlite a archivo + servidor único), no una corrección puntual |
+| `trg_espejo_acceso` / `trg_espejo_usuario` con `EXECUTE` para `app_user` | Son funciones de trigger `SECURITY DEFINER` de la Ola 0 y aparecen en el inventario de `evasion.test.ts`. Por el mismo argumento con el que D-092 revocó las suyas (PostgreSQL comprueba `EXECUTE` al CREAR el trigger, no al dispararlo), deberían estar revocadas | D-092 | **ABIERTA, riesgo bajo.** No se tocaron en D-092: cambiar grants de la Ola 0 sin una prueba dedicada es como se rompen los espejos de D-026 en silencio. **A12** |
+| `PO002` se evalúa por permiso y en la empresa en contexto | Sin empresa activa (`current_company_id() IS NULL`) `app.tiene_permiso` cuenta cualquier acceso del usuario en la firma, así que un administrador con acceso a A y a B podría conceder sobre B algo que solo ejerce en A. `PO004` acota el caso y con empresa activa la RLS lo cierra | D-092 | **ABIERTA, declarada.** Es el borde real del guardia, no un caso imposible. **A12** |
+| `/admin/permisos` no filtra ni pagina | La tabla de excepciones vigentes crece sin tope; el historial sí pagina | D-092 | **ABIERTA, cosmética.** Molesta con volumen (60 empresas), inofensiva hoy. **A8/A12** |
+| Los demás módulos, sin auditar con un rol acotado | D-092-bis corrigió el patrón «lectura sin red que asume un permiso» donde reventaba (shell, `/`, `/bandeja`, `/admin/usuarios`, `/admin/permisos`), pero `/reportes`, `/terceros`, `/parametros`, `/parametros/puc` y `/carga-masiva` **no se abrieron uno por uno** con un rol de un solo permiso. Con roles propios de firma creables desde la interfaz, cualquiera de ellos puede reventar igual | D-092-bis | **CERRADA por A14 en la pasada de cierre de D-092 (2026-09-04).** `/terceros` y `/parametros` se midieron **contra la base** con dos roles acotados (`listarTerceros` + `puedeEditarTerceros` + `detectarAlertasParametrizacion`: no lanzan, y `puedeEditar` da `false`, que es lo correcto), y `/reportes` y `/carga-masiva` se verificaron por código: los dos ya **preguntan** con `tienePermiso` y degradan con `if (!puedeVer) return`, no exigen. Ningún módulo conserva el patrón. Lo que sí apareció en ese barrido fueron **V-59 y V-60**, corregidas en la misma pasada. Queda por confirmar en **navegador real**, que A14 no tiene |
+| Comentario erróneo en la migración 170 | Dice «`role_permission` NO se audita y a propósito»; es falso desde `009_control.sql`, que le instala el trigger de auditoría | D-092 | **ABIERTA por diseño.** Una migración aplicada no se edita (checksum). Queda desmentido en la ficha D-092 y en el encabezado de la 183 |
 | V-11 — la aprobación revienta con error crudo si el despliegue no reenvía la IP del cliente | `approval.ip` es `inet NOT NULL`; sin `x-forwarded-for`/`x-real-ip` el `INSERT` falla con el error crudo de Postgres | Ola 2, reconfirmada en cada compuerta posterior | **ABIERTA, declarada y medida.** No hay fuga ni corrupción (el ledger no queda a medias); es configuración de despliegue. **A7** (mensaje accionable si falta la cabecera) + **A15** (garantizarla en el proxy) |
 | ~~D-091 sin re-check independiente de A14~~ | Se implementó y se auto-verificó en la misma sesión (sin acceso a despacho de subagentes); ninguna compuerta anterior se cerró así | D-091 | **CERRADA (2026-09-04).** A14 corrió la compuerta AMPLIADA de forma independiente en dos pasadas (`tests/adversarial/a14-d091-compuerta-independiente.test.ts`, 24 pruebas): **PASA CON CORRECCIONES**. Ver «Compuerta AMPLIADA de D-091 — veredicto de A14» |
 | ~~D-091 sin verificación en navegador real~~ | Ni la sesión que implementó D-091 ni la de A14 tuvieron herramienta de navegador; toda la verificación previa fue por HTTP simulado contra PGlite | D-091 | **CERRADA (2026-09-04).** La sesión orquestadora corrió la verificación contra `npm run dev` real (Neon): login, dos reportes de punta a punta (`libro-diario`, `ica-municipio`), historial confirmado, y ataque directo por URL con `companyId`/`empresaId` falsos ignorado. Ver «Verificación en navegador real» en la ficha D-091 |
 
-**Confirmación de cobertura:** los `V-XX` que no aparecen en esta lista (V-1 a V-4, V-6 a V-10,
-V-12 a V-16, V-19 a V-49, V-51 a V-56) están **cerrados** — `CORREGIDA`/`CERRADA` en su ficha de
-origen, verificados por A14 de forma adversarial, sin reabrir. V-54 se cerró en esta misma pasada
-(ver «V-54 — CIERRE» en la compuerta de D-090).
+**V-57 y V-58 — abiertas y CERRADAS por A14 en la compuerta de D-092 (2026-09-04).** Se dejan aquí
+anotadas para que quede el rastro, no como pendientes:
+
+| ID | Qué es | Origen | Estado |
+|---|---|---|---|
+| V-57 | **La CUARTA puerta de la anti-escalada.** Una sesión con solo `usuario.administrar` se ascendía a `admin_firma` con `UPDATE user_company_access SET role_id = ...` sobre su propio acceso **ya vigente** (y con `SET user_id = ...` movía a su nombre el acceso `contador` de otra persona). El guardia de 183 solo miraba el `UPDATE` cuando era una *reactivación*. No es teórico: se ejecutó y funcionó | D-092, compuerta de A14 | **CORREGIDA por A14 en la misma pasada.** `db/migrations/184_a14_d092_cierre_escalada_por_update_de_acceso.sql`: el guardia comprueba todo `UPDATE` que deje la fila **vigente** cambiando `role_id`, `user_id`, `company_id` o `tenant_id`. Revocar sigue libre. Tres pruebas de regresión que fallan sin el parche. **PENDIENTE DE APLICAR A LA NEON — hasta entonces, la base real tiene el agujero abierto** |
+| V-58 | `PO001`..`PO004` sin traducir en `app/admin/_errores.ts`: el rechazo del motor llegaba al operador como «La operación falló por un problema técnico». Es el mismo defecto que D-092 corrigió para el `42501` de `asignarRol`, repetido en los guardias que la ficha estrenaba. El caso más probable no es raro: `asignarRol` **no** pre-comprueba la escalada en el servicio, así que `PO002` llega crudo desde `/admin/usuarios` | D-092, compuerta de A14 | **CORREGIDA por A14 en la misma pasada**, con prueba que provoca `PO002`, `PO003` y `PO004` de verdad contra la base y exige que el texto no diga «problema técnico» |
+
+**Confirmación de cobertura:** los `V-XX` que no aparecen en las listas de arriba (V-1 a V-4, V-6 a
+V-10, V-12 a V-16, V-19 a V-49, V-51 a V-58) están **cerrados** — `CORREGIDA`/`CERRADA` en su ficha
+de origen, verificados por A14 de forma adversarial, sin reabrir. V-54 se cerró en la pasada de
+D-090 (ver «V-54 — CIERRE» en su compuerta). Los tres defectos que **A12** encontró y corrigió dentro
+de D-092 quedan descritos en su ficha y no se numeraron; los dos que encontró **A14** al verificarla
+sí (V-57, V-58), porque uno de ellos exige una migración que todavía no está en producción.
 
 ## D-089 — DATOS PARAMÉTRICOS (A1, 2026-09-04) — PUC completo Decreto 2650 cargado
 
@@ -5970,7 +6065,813 @@ No quedan pendientes de verificación para D-091.
 
 ---
 
+## D-092 — Administración, Fase 8: permiso individual con motivo, anti-escalada y migración visual (A12, 2026-09-04)
+
+**Alcance: `db/migrations/183_a12_d092_permiso_individual_y_antiescalada.sql` (nueva),
+`src/services/administracion.ts` (+~380 líneas), `src/db/types.ts` (cuatro SQLSTATE nuevos),
+`app/admin/**` (las tres pantallas reescritas + dos nuevas + `_navegacion.tsx`),
+`app/_ui/AppShell.tsx` (`/admin` sale de `PREFIJOS_SIN_MIGRAR`, que queda VACÍO),
+`tests/helpers/db.ts` (espejo de cuatro REVOKE, D-034),
+`tests/adversarial/a12-d092-permiso-individual.test.ts` (nueva, 25 pruebas) y una aserción de
+`tests/adversarial/compuerta-ola4.test.ts` reforzada.** **Sin comitear.**
+
+### TAREA 0 — investigación: qué había de verdad, y el alcance real que faltaba
+
+Se leyó el código, no el resumen. Lo que ya existía y **no se reconstruyó**:
+
+- **`/admin/usuarios`, `/admin/roles`, `/admin/correcciones` y `/cambiar-password` existen desde la
+  Ola 4** (D-066..D-069) y funcionan sobre datos reales. La gestión de usuarios está **completa**:
+  listar, crear (con contraseña generada que se enseña una vez, en el CUERPO y nunca en la URL),
+  inactivar/reactivar (revocando sesiones en la misma transacción), otorgar y revocar rol por
+  empresa, fijar contraseña y forzar restablecimiento. **No faltaba nada de eso.**
+- **El CRUD de roles propios de firma existe** (`crearRol` con `role.tenant_id` de la sesión,
+  matriz módulo × ver/editar/aprobar/administrar, `role.activo`, borrar-que-inactiva-si-está-en-uso).
+  El punto «crear un rol nuevo desde cero» del encargo **ya estaba cubierto por D-067**.
+- **El `audit_log` ya cubría los cambios de permisos**: `009_control.sql` instala
+  `app.instalar_trigger_auditoria` sobre `role`, `role_permission` y `user_company_access`, y `016`
+  añade el de `"user"` con las credenciales redactadas. *(De paso: el comentario de la migración 170
+  que dice «`role_permission` NO se audita y a propósito» es **falso desde 009**; se deja constancia
+  aquí porque induce a error a quien lo lea, no se toca la migración ya aplicada.)* Lo que **no**
+  existía era una pantalla que lo leyera.
+- **El acceso a `/admin/**` sí está protegido**, y de forma real: `usuario.administrar`, exigido por
+  el trigger `user_permiso` (016) sobre `"user"`, `role`, `role_permission` y `user_company_access`,
+  **y** por `exigirPermiso` en cada función de `src/services/administracion.ts`, **y** comprobado por
+  la página antes de consultar nada. Un POST directo a la acción de servidor sin el permiso muere en
+  el motor con `SE002`, no en un `if` de la interfaz. **Salvo una excepción, que resultó ser un
+  defecto real — ver abajo.**
+
+Lo que de verdad **faltaba**, y es el contenido de esta ficha:
+
+1. **No existía el permiso individual por usuario.** `v_user_permission` (011) y
+   `v_user_permission_efectivo` (170) son **las dos** derivadas al 100% del ROL. Lo que
+   ESTADO_PROYECTO venía llamando «permisos granulares por usuario (D-066/D-067)» era en realidad
+   «la firma puede fabricarse un rol a medida y dárselo a una sola persona»: granularidad **a nivel
+   de rol**, sin motivo, sin vencimiento y sin forma de distinguir después un rol legítimo de una
+   excepción disfrazada. Esa frase queda corregida en esta ficha.
+2. **La anti-escalada no existía, y el agujero era real.** `usuario.administrar` era
+   **transitivamente equivalente a todos los permisos del producto**: bastaba con `crearRol` +
+   `fijarPermisosDeRol` con el catálogo entero y `asignarRol` sobre uno mismo. Con los cinco roles de
+   014 no se notaba (solo `admin_firma` lo tiene, y es todopoderoso por definición), pero desde
+   D-067 una firma puede crear un rol propio con `usuario.administrar` y creer que está dando «solo
+   la pantalla de usuarios».
+3. **`/admin/**` era el ÚNICO módulo que quedaba en `PREFIJOS_SIN_MIGRAR`**, con `style` inline y
+   hexadecimales pensados solo para fondo claro.
+4. **No había ninguna pantalla del historial de permisos**, aunque el rastro llevara en el
+   `audit_log` desde la Ola 0.
+
+**El alcance que faltaba era, entonces, mediano y muy concreto**: una tabla, tres guardias del motor,
+dos pantallas nuevas y la migración visual de tres viejas. Nada de reconstruir la gestión de usuarios
+ni el CRUD de roles: eso ya estaba y se dejó como estaba.
+
+### La decisión de fondo — `user_permission_override` es APPEND-ONLY porque guarda una DECISIÓN
+
+Lo que la tabla guarda no es un estado («este usuario tiene este permiso») sino una **decisión**
+(«el 3 de diciembre, Fulana le concedió a Mengano `reporte.exportar` porque el contador estaba
+incapacitado»). Retirar la excepción **no borra** la fila que la otorgó: inserta otra encima, con su
+propio motivo, su propio autor y su propia fecha. Si revocar hiciera `DELETE`, la pregunta «¿quién
+tuvo `asiento.publicar` en marzo y por qué?» quedaría sin respuesta — que es exactamente la pregunta
+que la tabla existe para contestar (Regla de Oro 6). Lo impone el motor con `PO003`, y **tampoco el
+superusuario** puede editarla ni borrarla: el trigger no mira quién es, igual que `AU001` en
+`audit_log`.
+
+- **`motivo` es `NOT NULL` con longitud mínima** (`upo_motivo_ck`). No garantiza calidad —nada la
+  garantiza— pero corta la «x» que se escribe para pasar de pantalla. Un permiso especial sin razón
+  documentada es un hueco de trazabilidad.
+- **`vence_en` solo aplica a `otorgado`.** Una excepción temporal se apaga sola, que es la forma sana
+  de conceder un permiso puntual. Una **revocación** que se apagara sola sería una trampa: el permiso
+  volvería sin que nadie lo decidiera; lo prohíbe `upo_vence_solo_otorgado_ck`.
+- **Una excepción vencida es invisible**: no concede ni niega, y la decisión anterior —si la hubo—
+  vuelve a mandar. Es la lectura coherente con «la excepción duraba lo que duraba el cierre».
+- **El efecto vigente** de un (usuario, empresa, permiso) es su fila más reciente no vencida. La
+  misma regla está escrita dos veces, en `app.tiene_permiso` y en `v_user_permission_efectivo`,
+  porque una vista no puede llamar a la función sin perder el conjunto; hay una prueba que compara
+  las dos lecturas contra el mismo hecho.
+
+### Precedencia en `app.tiene_permiso` v3, y por qué el todopoderoso gana siempre
+
+1. **Rol todopoderoso** → concede. Gana incluso sobre una revocación individual, **a propósito**: si
+   una excepción pudiera quitarle `usuario.administrar` al administrador de firma, un clic dejaría a
+   la firma sin nadie que pueda otorgar permisos — que es exactamente el agujero que D-066 cerró con
+   `RL001`, reabierto por otra puerta. Hay una prueba que lo intenta y comprueba que el motor la
+   ignora.
+2. **Excepción individual vigente** → `revocado` niega aunque el rol conceda; `otorgado` concede
+   aunque el rol no conceda.
+3. **El rol**, como hasta hoy (170).
+
+### Anti-escalada: «nadie confiere un permiso que no ejerce», en las TRES vías
+
+Es la única regla comprobable en el motor, y se impone en los tres únicos sitios por los que un
+permiso llega a una persona. **Quitar nunca se restringe** —bajarle permisos a alguien no es
+escalada, y un guardia que lo impidiera dejaría a la firma sin poder contener un incidente—, así que
+la puerta 1 es solo sobre `INSERT` y la 3 solo sobre `otorgado`:
+
+| # | Vía | Guardia | Código |
+|---|---|---|---|
+| 1 | Meter un permiso en un rol | `role_permission_zz_no_escalar` (solo INSERT) | `PO002` |
+| 2 | Dar un rol entero, o reactivar un acceso revocado | `user_company_access_zz_no_escalar` | `PO002` |
+| 3 | Conceder una excepción individual | `user_permission_override_zz_blindaje` | `PO002` |
+
+Más dos guardias propios de la excepción: **`PO001` — nadie se asciende a sí mismo** (ni siquiera con
+algo que ya tiene: la firma la pone otro, o no hay firma), y **`PO004` — nadie reparte permisos sobre
+una empresa a la que no tiene acceso vigente**. Y `otorgado_por` **lo fija el trigger desde la
+sesión**, no la aplicación: quien concede una excepción no puede firmarla con el nombre de otro.
+
+**Un rol todopoderoso pasa las tres puertas sin esfuerzo** (para él `app.tiene_permiso` es `true`
+para cualquier código), así que el administrador de firma no pierde ni una capacidad: hay prueba.
+**Sin sesión** (migraciones, seeds, `src/bootstrap`) los guardias se saltan a propósito, igual que
+`app.exigir_permiso`: ese camino corre con privilegio y la garantía la da el privilegio.
+
+### Los tres defectos que esta ficha encontró y corrigió
+
+1. **`/admin/correcciones` no exigía NINGÚN permiso para listar.** La RLS impedía ver las de otra
+   firma o de otra empresa —no era fuga entre tenants—, pero dentro de la empresa **cualquier**
+   sesión, incluida `solo_lectura`, veía número de factura, NIT del emisor, valor corregido y el
+   nombre de quien lo corrigió. Ahora exige `documento.leer` para ver (el mismo permiso que ya exige
+   la bandeja para esos mismos datos); `documento.aprobar_correccion` sigue siendo el que decide, y
+   lo sigue imponiendo el trigger de 170, no la pantalla.
+2. **`asignarRol` sobre una empresa distinta de la activa moría con un `42501` crudo.** El
+   desplegable ofrecía todas las empresas accesibles, pero la RLS de `user_company_access` (patrón
+   tenant+company de 012) solo deja escribir la empresa **en contexto**, y `mensajeDeError` traducía
+   ese 42501 a «falló por un problema técnico». El comportamiento **no cambia** (la empresa sigue
+   siendo la unidad del aislamiento); lo que cambia es que ahora se dice por qué y qué hacer.
+3. **`usuario.administrar` = todos los permisos.** Ver el bloque de anti-escalada. Es el hallazgo de
+   seguridad de esta ficha y no era teórico.
+
+### Auditoría de los cambios de permisos — TAREA 2, con la decisión justificada
+
+**Se reutilizó `audit_log`; no se creó ninguna tabla ni ningún permiso nuevo.** La excepción
+individual queda auditada por el trigger genérico `app.trg_audit` (009) instalado sobre la tabla
+nueva, con el **motivo dentro de `valor_nuevo`** — el rastro no depende de que la aplicación se
+acuerde de escribirlo.
+
+**Sí se creó un historial PROPIO** (`/admin/historial`), y esta es la justificación, que el encargo
+pedía no dar por hecha: los historiales de D-090 y D-091 leen **una** acción sobre **una** entidad
+(`CARGA_MASIVA`, `EXPORT`) y su consulta cabe en una línea. La pregunta de este —«¿quién tocó los
+permisos de quién, cuándo y por qué?»— vive repartida en **cinco** entidades del mismo `audit_log`
+(`user_permission_override`, `user_company_access`, `role`, `role_permission`, `"user"`). Meterla en
+cualquiera de los otros dos obligaría a cruzar cinco pantallas para reconstruir un solo episodio
+(«le creé el usuario, le di el rol, le añadí la excepción, le quité el acceso»). Permiso:
+**`auditoria.leer`**, el mismo de los otros dos historiales — es literalmente «consultar el registro
+de acciones sensibles», que es la descripción con la que nació en 014. El aislamiento lo pone
+`audit_log_rls`: el servicio no lleva **ni un** filtro de aplicación por tenant o empresa, y hay una
+prueba que lo comprueba leyendo el propio archivo fuente.
+
+### RLS de la tabla nueva: la variante de `audit_log`, y por qué no la genérica
+
+`instalar_rls_tenant_company` habría escrito `company_id = app.current_company_id()`, que devuelve
+**cero filas** cuando no hay empresa en contexto (`NULL = NULL` no es verdadero) — y ese es
+precisamente el caso en que `app.tiene_permiso` resuelve el permiso contra *cualquier* acceso vigente
+del usuario en la firma (parámetros compartidos, D-015). La excepción habría desaparecido en silencio
+justo cuando más importa. Es la misma trampa que D-026 documentó para `user_company_access` y que
+allí se resolvió con un espejo en el esquema `app`; aquí se resuelve **sin espejo**, con la política
+escrita a mano: `tenant_id = current_tenant_id() AND (current_company_id() IS NULL OR company_id =
+current_company_id())`. **Consecuencia declarada, no descubierta después:** con una empresa activa,
+un administrador solo ve y solo escribe las excepciones **de esa empresa**; para otra hay que
+cambiarse a ella en el selector. Es el comportamiento estricto y el mismo que ya tenía
+`user_company_access` desde 012.
+
+### Migración visual — TAREA 1/3: `PREFIJOS_SIN_MIGRAR` queda VACÍO
+
+`/admin/usuarios`, `/admin/roles` y `/admin/correcciones` reescritas con el kit
+(`Panel`/`Tabla`/`Th`/`Td`/`Campo`/`Entrada`/`Selector`/`Badge`/`MensajeEstado`/`EstadoVacio`/
+`Boton`/`Encabezado`), más `_formularios.tsx` (cliente). **Cero `style={{}}` y cero `#hex` en todo
+`app/admin/**`**, verificado por una prueba que recorre el árbol, no por inspección. `/admin` sale de
+`PREFIJOS_SIN_MIGRAR`, **que queda vacío**: ya no hay ningún módulo con el cuerpo sin migrar. La
+escotilla de tema por subárbol se conserva a propósito — es el mecanismo, no el caso; volver a
+necesitarla es añadir un prefijo, no reescribir el shell.
+
+Se añadió `app/admin/_navegacion.tsx`: hasta ahora cada pantalla repetía su propia línea de enlaces
+entre hermanas, y con dos pantallas más habrían sido cinco variantes distintas.
+
+### Dos detalles de la interfaz que no son cosméticos
+
+- **La pantalla de permisos efectivos ahora dice el ORIGEN de cada permiso** (`rol` /
+  `rol_todopoderoso` / `excepcion_individual` / `rol_y_excepcion`) y, cuando viene de una excepción,
+  **su motivo y su vencimiento**. La pregunta útil de esa pantalla nunca fue «¿qué puede hacer?»
+  —eso ya se veía— sino «¿por qué puede hacerlo?», y lo que no se deduce mirando el rol es
+  exactamente la excepción. Esto obligó a cambiar el tipo de retorno de `permisosEfectivosDe`, y la
+  aserción de `compuerta-ola4.test.ts` que lo tocaba **se reforzó, no se relajó**: además de exigir
+  los tres códigos exactos, ahora exige que los tres vengan **del rol**, es decir que la maquinaria
+  nueva no le esté regalando nada a nadie.
+- **`/admin/roles` dice para qué NO sirve un rol.** Un rol es la herramienta de un reparto estable;
+  para la excepción de una persona, fabricar un rol acaba en dieciocho roles llamados «contador_2».
+  La pantalla enlaza al sitio correcto en vez de dejar que el usuario invente.
+
+### Verificación
+
+- `npx tsc --noEmit`: **limpio**.
+- `npx next build`: **OK**. `/admin/correcciones`, `/admin/historial`, `/admin/permisos`,
+  `/admin/roles` y `/admin/usuarios` aparecen como rutas dinámicas. Único aviso: el **preexistente**
+  de `src/db/dns-fix.ts` (`node:dns` en Edge Runtime), ya declarado desde D-080.
+- `npx vitest run`: **1449 pruebas, 1449 en verde, 77 archivos** (base antes de esta ficha:
+  1424/1424/76 tras la compuerta de D-091; **+25**, todas en
+  `tests/adversarial/a12-d092-permiso-individual.test.ts`). **0 regresiones.**
+- Barrido de Regla de Oro 2 (`tests/adversarial/valores-tributarios.test.ts`): **verde**. Durante el
+  trabajo se disparó tres veces con `py-0.5`/`mt-0.5` de Tailwind (mismo falso positivo de forma que
+  V-56). **No se tocó el detector**: se escribieron las clases como `py-[2px]`/`mt-[2px]`, que es
+  además lo que ya usaba el resto del kit. Un canario que se ensancha cada vez que estorba deja de
+  ser un canario.
+- **El inventario cerrado de funciones `SECURITY DEFINER` de `evasion.test.ts` NO se amplió**, por lo
+  mismo. Las cuatro funciones de trigger nuevas de 183 —dos de ellas `SECURITY DEFINER`, porque leen
+  `app.acceso_usuario_empresa`, el espejo de D-026 sobre el que ningún rol de aplicación tiene
+  privilegio— quedan con `REVOKE ALL ... FROM PUBLIC, app_user`. PostgreSQL comprueba `EXECUTE` de
+  una función de trigger **al crear el trigger, no al dispararlo**, así que revocarlo no desarma nada
+  y sí las saca de la superficie invocable. Los cuatro `REVOKE` se **espejaron en
+  `tests/helpers/db.ts`** (D-034: todo `REVOKE` de una migración se espeja en el harness, o el banco
+  de pruebas queda más permisivo que producción — y aquí se comprobó que era literal: sin el espejo,
+  el `GRANT ... ON ALL FUNCTIONS` del harness devolvía el `EXECUTE` y el inventario medía una
+  superficie que no era la real).
+
+**Las 25 pruebas nuevas atacan la BASE, no el servicio** (`asTenant`, RLS activa, sesión emitida,
+`esperarErrorPg` con el SQLSTATE del motor): el permiso individual concede y quita por encima del
+rol medido con `app.tiene_permiso` desde una sesión del usuario afectado; revocar deja la fila
+anterior en pie; una excepción vencida no cuenta; el motivo lo exige el motor; `PO003` aguanta
+también contra el superusuario; un administrador acotado no mete un permiso ajeno en un rol, no se
+auto-asigna `contador`, no reparte `admin_firma`, no se concede nada a sí mismo y no concede a otro
+lo que no ejerce — **pero sí puede QUITAR**; el todopoderoso sigue repartiéndolo todo; una excepción
+no le quita nada al todopoderoso; la firma B no ve ni una excepción ni un movimiento de la firma A
+(medido comparando el conteo con `asAdmin` sin RLS contra el conteo con RLS de B); una excepción no
+puede apuntar al usuario de otra firma (FK compuesta, `23503`); páginas absurdas (`NaN`, `Infinity`,
+`-1`, `10000`) no rompen ni devuelven de más (patrón V-52); y `/admin` está fuera de
+`PREFIJOS_SIN_MIGRAR` sin un solo `style` inline ni `#hex`.
+
+### Lo que esta ficha NO hizo, declarado
+
+1. **Verificación en NAVEGADOR REAL: NO HECHA.** Esta sesión de A12 **no tuvo herramienta de
+   navegador** (el servidor de desarrollo en marcha pertenece a otra sesión y no es alcanzable desde
+   aquí). Queda como el pendiente principal, con el guion exacto abajo. Es la misma situación que
+   D-089 y D-090 dejaron abierta y que en D-091 cerró la sesión orquestadora.
+2. **La migración 183 NO se aplicó a la Neon.** Se suma a las pendientes (179, 180, 181, 182).
+   **Ojo con el orden**: si el código se despliega antes que la 183, `/admin/permisos` y
+   `/admin/historial` fallan al consultar una tabla y una vista que no existen. Migración primero.
+3. **No se tocó `v_user_permission` (011)**, a propósito: describe las filas *otorgadas por rol*, que
+   es una pregunta distinta y legítima. Cambiarla haría que dos vistas contaran lo mismo y ninguna
+   contara lo otro.
+4. **No se creó pantalla de alta de MFA.** Sigue sin haberla (ver la tabla de la 14.1): el login
+   verifica TOTP y el secreto va cifrado, pero **ningún usuario puede activarse el MFA desde la
+   interfaz** — hoy `mfa_habilitado` solo se enciende por SQL directo o por el fixture de pruebas.
+   No entra en el encargo de esta ficha; se declara porque la tabla de la 14.1 decía «MFA
+   disponible» y conviene saber exactamente cuánto de disponible.
+
+### Deuda técnica que esta ficha deja declarada, no oculta
+
+1. **`app.trg_espejo_acceso` y `app.trg_espejo_usuario` (Ola 0, A12) siguen con `EXECUTE` para
+   `app_user`** y por eso están en el inventario de `evasion.test.ts`. Son funciones de trigger
+   `SECURITY DEFINER`: por el mismo argumento de arriba, deberían estar revocadas. **No se tocaron en
+   esta ficha** porque cambiar grants de la Ola 0 sin una prueba dedicada es cómo se rompen los
+   espejos de D-026 en silencio. Bajo, pero es superficie que no hace falta.
+2. **La comprobación de `PO002` es por permiso, no por conjunto, y se evalúa en la empresa en
+   contexto.** Sin empresa activa (`current_company_id() IS NULL`), `app.tiene_permiso` cuenta
+   cualquier acceso del usuario en la firma, así que un administrador con acceso a A y a B podría
+   conceder sobre B algo que solo ejerce en A. `PO004` acota el caso (hay que tener acceso vigente a
+   esa empresa), y con empresa activa la RLS lo cierra del todo. Queda escrito porque es el borde
+   real del guardia, no un caso imposible.
+3. **El motivo tiene longitud mínima, no calidad mínima.** «aaaaaaaaaa» pasa. No hay forma de
+   imponer calidad en el motor; lo que sí hay es que el motivo queda con nombre, fecha y empresa en
+   un `audit_log` que nadie puede corregir.
+4. **`/admin/permisos` no filtra ni pagina.** Con una firma de 60 empresas y muchas excepciones
+   vigentes la tabla crece sin tope; el historial sí pagina. Cosmético hoy, molesto con volumen.
+5. **El comentario erróneo de la migración 170** («`role_permission` NO se audita») sigue ahí: una
+   migración aplicada no se edita. Queda desmentido aquí y en el encabezado de 183.
+
+### Guion de verificación en navegador real (pendiente, para quien lo retome)
+
+1. Aplicar `179`, `180`, `181`, `182` y **`183`** a la Neon, en ese orden, y los seeds pendientes.
+2. Entrar como administrador de firma y elegir una empresa en el selector.
+3. `/admin/usuarios`: crear un usuario de prueba y otorgarle el rol `auxiliar_causacion` sobre la
+   empresa activa. Comprobar que la contraseña generada se ve **una vez** y no viaja en la URL.
+4. `/admin/permisos`: otorgarle `reporte.exportar` con motivo y con fecha de vencimiento. Comprobar
+   que aparece en «excepciones vigentes» y en «permisos efectivos» del usuario, marcado como
+   `excepción individual` y con su motivo.
+5. `/admin/historial`: comprobar que la decisión aparece con su motivo, su autor y su fecha, junto al
+   alta del usuario y al otorgamiento del rol.
+6. Entrar como ese usuario y comprobar que **descarga un reporte** que antes le estaba vedado.
+7. Volver a administrador, **revocar** la excepción con motivo; comprobar que la fila que otorgó
+   **sigue** en la cadena de decisiones y que el usuario deja de poder exportar.
+8. **Ataque**: con la sesión de un usuario **sin** `usuario.administrar`, abrir `/admin/permisos` por
+   URL directa (debe salir el aviso, no la pantalla) y hacer un **POST directo** a la acción de
+   servidor con `userId`/`permisoCodigo` a mano (debe morir con el rechazo del motor, no guardar
+   nada). Repetir el POST cambiando `companyId` por el de otra empresa de la misma firma.
+9. Consola del navegador **sin errores ni warnings** en las cinco pantallas de `/admin`, en `dev` y
+   en `build && start`, y con el toggle de tema en claro y en oscuro (es la primera vez que `/admin`
+   se pinta con el tema real y no con `data-tema="claro"` fijo).
+
+---
+
+## D-092-bis — el «administrador acotado» quedaba fuera del producto (A12, 2026-09-04, tarde)
+
+**Hallazgo de la verificación en navegador real, corregido por A12 en su propia ficha.** No estaba en
+los archivos que D-092 tocó, pero es consecuencia directa y previsible de lo que D-092 habilita.
+
+### El defecto, tal como se reprodujo
+
+Se crea por la interfaz un rol propio de firma con **un único permiso**, `usuario.administrar` —el
+caso que `/admin/roles` describe como legítimo («un admin acotado que solo administra usuarios») y
+que antes de D-092 no tenía sentido crear, porque `usuario.administrar` solo lo tenía el
+todopoderoso `admin_firma`—. Se le asigna a un usuario con acceso a la empresa. Al entrar, **la
+portada revienta**: `PostgresError: PERMISO_INSUFICIENTE ... "documento.leer"`, «A server error
+occurred». Y no es «una sección menos»: el usuario queda **totalmente bloqueado**, sin poder llegar
+ni a `/admin/usuarios`, que es la única pantalla a la que su rol da derecho.
+
+### Causa raíz — MÁS PROFUNDA que la reportada, medida contra la base
+
+El informe apuntaba a `app/page.tsx` línea 101. Lo es, pero no solo: la llamada está **también en el
+layout raíz** (`app/layout.tsx`, línea 72), así que reventaba **toda ruta**, no solo `/`. Todo cuelga
+de un mismo punto: `app.empresas_accesibles()` (migración 070) hace
+`PERFORM app.exigir_permiso('documento.leer')`, y era la **única** forma de listar empresas en el
+producto. Sus cuatro llamadores eran el layout raíz, `obtenerBandejaConsolidada`, `/admin/usuarios` y
+`/admin/permisos` — o sea, el administrador acotado tampoco podía abrir sus dos pantallas ni con el
+layout arreglado.
+
+Lo demás se **comprobó en vez de suponerlo** (punto 2 del encargo), con un rol de un solo permiso
+contra la base:
+
+| Llamada de la portada | ¿Revienta sin `documento.leer`? |
+|---|---|
+| `app.empresas_accesibles()` / `listarEmpresasAccesibles` | **Sí**, `SE002` del motor |
+| `listarPendientesDeAprobacion` / `listarPendientesRevision` / `listarRechazadas` | **Sí**, `PermisoInsuficienteError` de `exigirPermiso` |
+| `detectarAlertasParametrizacion` | **No.** No exige ningún permiso: cuenta filas de catálogos compartidos de la firma. **No se envolvió: habría sido un adorno** |
+| `listarMunicipiosParaCorreccion`, `listarTerceros`, `listarUsuarios`, `listarRoles` | **No** |
+
+### La corrección, y por qué esta y no otra
+
+De las tres candidatas del encargo se aplicaron **la 1 y la 2, y se decidió expresamente la 3**, pero
+ninguna sirve sin resolver antes el listado de empresas, que es lo que de verdad rompía.
+
+1. **`app/lib/empresas.ts` (nuevo) — preguntar antes de pedir.** `empresasVisiblesParaLaSesion`
+   consulta `app.tiene_permiso` y elige la vía: con `documento.leer`, la de siempre
+   (`origen: 'accesibles'`, **camino normal intacto**, con el rol real por empresa); sin él pero con
+   `usuario.administrar`, `listarEmpresasDeLaFirma` (`origen: 'firma'`); sin ninguno, lista vacía
+   (`origen: 'sin_permiso'`). **Se pregunta, no se captura**: un error de Postgres aborta la
+   transacción entera, y el layout todavía tiene que leer la credencial del usuario en esa misma
+   transacción — capturar el `SE002` habría dejado el `tx` inservible (`25P02`). Coste: una fila.
+2. **`listarEmpresasDeLaFirma` en `src/services/administracion.ts` — puerta nueva, candado propio.**
+   No relaja nada: exige `usuario.administrar` con `exigirPermiso` y se apoya en la **RLS por tenant
+   de `company`**, que es la que impide ver la empresa de otra firma (Regla de Oro 7, con prueba).
+   Tampoco revela nada nuevo: `listarUsuarios`, con ese mismo permiso, ya devolvía la razón social de
+   cada empresa. Devuelve las empresas de la **firma**, no «las mías», y se declara por qué:
+   `user_company_access` tiene RLS estricta por empresa y en sesión de firma devuelve cero filas
+   —por eso la 070 tuvo que ser `SECURITY DEFINER`—, así que «las mías» no se puede resolver desde
+   TypeScript sin tocar el motor, y **el motor no se toca**. Por eso `rolCodigo` va vacío, y la
+   interfaz omite el «rol …» en vez de enseñarlo a medias.
+3. **Degradar diciendo la verdad, no callando.** El selector del shell decía «Su usuario no tiene
+   acceso vigente a ninguna empresa-cliente»: **mentira**, y encima mandaba al usuario a pedir un
+   acceso que ya tenía. Ahora el layout pasa un aviso (`avisoEmpresas` → `Chrome` →
+   `EmpresaProvider`) que explica el hueco. En la portada, el panel de facturas se degrada a «Su rol
+   no permite ver facturas pendientes» **en vez de a «Todo al día»** — un «todo al día» falso es peor
+   que un error, porque nadie va a buscar el trabajo que no ve.
+4. **`obtenerBandejaConsolidada` tolera el hueco POR EMPRESA.** Dentro de la transacción de cada
+   empresa (ni una sesión más de las que ya había, el coste declarado en la cabecera no cambia) se
+   pregunta `documento.leer` y, si falta, se salta esa empresa y se anota en `empresasSinPermiso`.
+   Esto no es hipotético desde D-092: una excepción individual es **por empresa**, así que un mismo
+   usuario puede leer documentos en unas sí y en otras no. `empresasTruncadas` (D-079) y la sesión
+   real por empresa (D-021/D-022) quedan intactas; el aviso de empresas saltadas se pinta en `/` y en
+   `/bandeja`.
+5. **Decisión explícita sobre el punto 3 del encargo:** la portada **no** se salta el panel. Lo pinta
+   degradado y **oculta el botón «Ir a la bandeja»**, y los accesos rápidos —incluido
+   `/admin/usuarios`— siguen todos. Esconder el panel dejaría al usuario sin saber por qué le falta
+   media pantalla; enseñarlo con su motivo le dice qué pedirle a su administrador. `/bandeja`, si se
+   entra por URL, responde con el mismo aviso en vez de una bandeja vacía.
+
+### Prueba de regresión
+
+`tests/adversarial/a12-d092bis-portada-sin-documento-leer.test.ts` — **12 pruebas**, sesión real
+(`asTenant`, RLS activa, sesión emitida), nunca un mock. Incluye lo que casi nunca se prueba: que el
+**motor sigue igual de estricto** (`app.empresas_accesibles()` sigue devolviendo `SE002` y leer
+documentos sigue prohibido) — si alguien «arregla» esto quitándole el permiso a la función de la 070,
+esas dos pruebas se ponen rojas. También: aislamiento entre firmas de la puerta nueva, el camino
+normal del contador con su `rolCodigo` real, el rol sin ninguno de los dos permisos, y una excepción
+individual que **quita** `documento.leer` a un contador (degrada, no revienta).
+**Discriminación comprobada**: desactivando el parche (forzar la vía antigua), **5 de las 12 fallan**.
+
+### Árbol y verificación en servidor real
+
+`npx tsc --noEmit` limpio · `npx next build` OK (solo la advertencia **preexistente** de
+`src/db/dns-fix.ts`, `node:dns` en Edge Runtime) · `npm test` **1499/1499 en 79 archivos** (la base
+de A14 era 1487/78: +12, todas nuevas).
+
+Con `npm run dev` contra la **Neon real** y la sesión del repro (`qa-acotado@contable.co`, rol
+`admin_acotado_qa`, la que había creado la verificación anterior): `/` **200** con la portada
+completa —selector con «Mi Empresa Cliente SAS», panel degradado con su motivo, alertas de parámetros
+y los seis módulos—, y desde ahí `/admin/usuarios` **200 con el desplegable de empresas poblado**
+(sin él, el «administrador acotado» sería un cargo decorativo: no podría asignar acceso a nadie),
+`/admin/permisos` **200**, `/admin/roles` **200**, `/bandeja` **200** con el aviso de permiso.
+Regresión del camino normal: la sesión de un `contador` (`qa-fase8@contable.co`) ve otra vez «0
+lista(s) para aprobar … Ir a la bandeja» y «rol contador» en el selector, exactamente como antes.
+*(Nota de operación: para poder entrar se fijó por script una contraseña conocida a esos dos usuarios
+**de QA** de la Neon; no se tocó ningún rol, permiso ni acceso.)*
+
+**No se comiteó. No se tocó la migración 184 de A14 ni se añadió ninguna migración: la corrección es
+100% de aplicación.**
+
+Archivos: `app/lib/empresas.ts` (nuevo), `src/services/administracion.ts`
+(`listarEmpresasDeLaFirma`), `app/layout.tsx`, `app/page.tsx`, `app/lib/bandeja.ts`,
+`app/bandeja/page.tsx`, `app/admin/usuarios/page.tsx`, `app/admin/permisos/page.tsx`,
+`app/_ui/Chrome.tsx`, `app/_ui/contextos.tsx`, `app/_ui/AppShell.tsx`,
+`tests/adversarial/a12-d092bis-portada-sin-documento-leer.test.ts` (nuevo).
+
+### Lo que este defecto deja como aviso para el resto del producto
+
+`documento.leer` se había vuelto, sin que nadie lo decidiera, **el permiso para respirar**: hacía
+falta para pintar el shell. Se corrigió donde rompía (shell, portada, bandeja, las dos pantallas de
+`/admin`), pero **el resto de módulos no se auditó uno por uno** con un rol acotado: `/reportes`,
+`/terceros`, `/parametros`, `/carga-masiva` pueden tener el mismo patrón —una lectura sin red que
+asume un permiso— y hoy nadie lo ha medido. Queda anotado en la deuda técnica.
+
+---
+
+## Compuerta AMPLIADA de D-092 — veredicto de A14 (independiente, 2026-09-04): **PASA CON CORRECCIONES, hechas por A14 en la misma pasada**
+
+**No se dio por bueno nada de la ficha de A12.** Toda afirmación de seguridad se volvió a medir con
+ataque real por SQL directo contra PGlite, desde sesiones de negocio de verdad (`asTenant`, RLS
+activa, sesión emitida por `app.abrir_sesion`) y exigiendo el SQLSTATE del motor. Archivo propio de
+la compuerta, que no reusa una línea del de A12:
+`tests/adversarial/a14-d092-compuerta.test.ts` (**38 pruebas**).
+
+El atacante modelo de casi todo el archivo es un rol **propio de la firma** llamado `admin_acotado`
+con **un solo permiso**, `usuario.administrar` — exactamente la figura que D-092 dice haber
+desactivado.
+
+### V-57 — LA CUARTA PUERTA. Auto-escalada a `admin_firma` con UNA sentencia. **CORREGIDA por A14 (migración 184)**
+
+**Es el hallazgo de esta compuerta y no es teórico: se ejecutó y funcionó.** La migración 183 puso
+tres puertas y dejó abierta la de al lado. `app.trg_acceso_no_escalar` (puerta 2) empieza así:
+
+```sql
+IF TG_OP = 'UPDATE' AND NOT (OLD.revocado_en IS NOT NULL AND NEW.revocado_en IS NULL)
+THEN RETURN NEW; END IF;
+```
+
+Es decir: del `UPDATE` solo mira la **reactivación**. El comentario de 183 lo justifica con «un
+acceso que pasa de revocado a vigente vuelve a conferir; revocarlo, **o tocar cualquier otra
+columna**, no». La primera mitad es cierta; la segunda es falsa, y la falsedad es la escalada entera:
+
+```sql
+UPDATE user_company_access SET role_id = <admin_firma> WHERE id = <el mío>;
+```
+
+El acceso nunca estuvo revocado, así que no es una reactivación; no es un `INSERT`, así que la
+puerta 2 no lo mira; no toca `role_permission`, así que la puerta 1 no lo mira; no toca
+`user_permission_override`, así que la puerta 3 no lo mira. `role.es_todopoderoso` no se modifica
+—`RL001` sigue intacto—: se **apunta** a un rol que ya lo era. `usuario.administrar` basta para
+escribir en la tabla (016) y la RLS deja escribir la empresa en contexto, que es la propia. **Medido,
+no deducido**: la sesión de `admin_acotado` se ascendió a `admin_firma` y a la petición siguiente
+`app.tiene_permiso` le devolvía `true` para todo el catálogo. La ficha D-092 dice «las tres únicas
+vías por las que un permiso llega a una persona»: son **tres tablas, pero cuatro sentencias**.
+
+Hay una **segunda variante del mismo agujero, sin tocar `role_id`**: mover a nombre propio el acceso
+`contador` de otra persona (`UPDATE ... SET user_id = <el mío>`). El rol es el que ya era; lo que
+cambia es a quién se lo confiere. También pasaba.
+
+**Corrección (`db/migrations/184_a14_d092_cierre_escalada_por_update_de_acceso.sql`).** La 183 **no se
+edita**: está aplicada y una migración aplicada tiene checksum. El guardia deja de preguntar «¿es una
+reactivación?» y pasa a preguntar lo único que importa: «¿esta fila, después del `UPDATE`, confiere
+algo que antes no confería?». Se comprueba cuando la fila queda **vigente** y cambia cualquiera de
+las cuatro columnas que deciden qué confiere y a quién (`role_id`, `user_id`, `company_id`,
+`tenant_id`). Mismo SQLSTATE (`PO002`), mismo nombre de trigger, misma firma: es un `CREATE OR
+REPLACE` del cuerpo, no un modelo nuevo. **Lo que NO cambia, a propósito**: revocar sigue siendo
+libre; un `UPDATE` que no toca ninguna de las cuatro columnas sigue pasando sin coste; el rol
+todopoderoso sigue pasando sin esfuerzo; sin sesión el guardia se salta, igual que en 183. **Ningún
+código de producción hace `UPDATE` de `role_id` ni de `user_id`** (verificado por `grep`: las dos
+únicas escrituras son revocar y reactivar), así que la corrección no rompe ningún camino real — y la
+suite completa lo confirma con 0 regresiones.
+
+**Pruebas de regresión (fallan sin el parche, comprobado):** «puerta 2 — tampoco CAMBIÁNDOLE el rol a
+un acceso ya vigente», «puerta 2 — ni MOVIENDO a su nombre el acceso ajeno», y la contrapartida
+«puerta 2 — un `UPDATE` que no confiere nada sigue pasando», que es la que impide que el arreglo se
+convierta en un candado que deje a la firma sin poder revocar.
+
+### V-58 — el rechazo del motor llegaba a la pantalla como «problema técnico». **CORREGIDA por A14**
+
+`app/admin/_errores.ts` traduce `SE002`, `RL001`, la violación de unicidad y `FK_ALCANCE_AJENO`, y
+**no traducía ninguno de los cuatro SQLSTATE nuevos** (`PO001`..`PO004`): caían al genérico final,
+«La operación falló por un problema técnico y no se guardó nada». Es literalmente el defecto que esta
+misma ficha corrigió para el `42501` de `asignarRol` —el guardia funciona y el operador no se entera
+de por qué—, repetido en los guardias que la ficha estrenaba. Y el caso más probable **ni siquiera es
+raro**: `asignarRol` **no** comprueba la escalada en el servicio, así que un `usuario.administrar`
+que intente otorgar `contador` desde `/admin/usuarios` recibe `PO002` crudo. (`decidirPermisoIndividual`
+sí pre-comprueba el auto-otorgamiento y el «no lo ejerzo», así que esos dos caminos ya daban buen
+mensaje; `PO004` y el vencimiento pasado, no.) Corregido con los cuatro mensajes y una prueba que
+provoca `PO002`, `PO003` y `PO004` de verdad contra la base y exige que el texto **no** contenga
+«problema técnico».
+
+### Lo que se atacó y quedó en verde (medido, no leído)
+
+| # | Ataque | Resultado |
+|---|---|---|
+| 1 | **Las tres puertas desde `admin_acotado`**: meter `asiento.publicar` en su propio rol; auto-asignarse `contador`, `admin_firma` y `admin_tributario`; reactivar un acceso revocado con rol `contador`; otorgarse una excepción y otorgársela a otro | **PASA.** `PO002` en las tres vías, `PO001` en el auto-otorgamiento (incluso de algo que ya tiene). Y **quitar nunca se restringe**: sí puede borrar un permiso de un rol, sí puede revocar un acceso, sí puede revocarle a otro un permiso que él no ejerce |
+| 2 | **El rol todopoderoso pasa las tres puertas sin esfuerzo** — con un rol **propio de la firma** con `es_todopoderoso`, no solo con `admin_firma` de sistema | **PASA.** Mete cualquier permiso en un rol, otorga el rol y concede la excepción. Y una excepción `revocado` sobre `usuario.administrar` **no le quita nada**: el clic que dejaría a la firma sin quien otorgue permisos no existe |
+| 3 | **Precedencia**: `revocado` gana al rol, `otorgado` concede sin rol, la decisión más reciente manda y la anterior sigue en pie | **PASA**, medido con `app.tiene_permiso` desde la sesión del **usuario afectado**, no desde la del administrador |
+| 3b | **La vista cuenta lo mismo que la función** — la regla está escrita dos veces (183 lo admite) | **PASA**, y no de muestra: se comparan **los dos lados para TODO el catálogo de `permission`**, permiso por permiso, sobre un usuario con una excepción `otorgado` y otra `revocado` a la vez. Cero desacuerdos. `origen` dice `excepcion_individual` donde debe |
+| 4 | **Vencimiento**: crear una ya vencida; una revocación con caducidad; una que **vence con el tiempo** durante la prueba; una vencida hace un día insertada por el camino administrativo | **PASA.** `PO001` al crearla vencida; `23514` (`upo_vence_solo_otorgado_ck`) a la revocación con caducidad; y la que vence sola deja de contar **sin que nadie la apague** —comprobado esperando a que pase la fecha, no simulándolo—, tanto en la función como en la vista. Una vencida no concede **ni niega**: el rol vuelve a mandar |
+| 5 | **Append-only real**: `UPDATE` del motivo, del efecto y del vencimiento; `DELETE` con `WHERE`; `DELETE` **sin** `WHERE`; los tres **también como superusuario** | **PASA.** `PO003` siempre, y la fila sigue ahí después de todos los intentos. El trigger no mira quién es |
+| 5b | **El motivo lo exige el MOTOR**: `'x'`, solo espacios, `'  corto  '` | **PASA.** `23514` en los tres (`length(btrim(...)) >= 10`), no un `if` de la pantalla |
+| 6 | **Aislamiento doble nivel**: la firma B leyendo excepciones de A (con y sin `WHERE tenant_id` escrito a mano); B escribiendo sobre A; una empresa hermana de la misma firma con empresa activa; **sin empresa en contexto**, que es el caso que 183 dice cubrir con `PO004`; y con el acceso a esa empresa **revocado** | **PASA.** Lectura: **cero filas** siempre (comparado contra el conteo real `asAdmin`, que es > 0). Escritura: `PO004` cuando el administrador no tiene acceso vigente a la empresa objetivo —el trigger dispara antes que la política, así que el diagnóstico es el más estricto de los dos— y **`42501` de la política** en el caso limpio en que `PO004` no aplica (fila con `tenant_id` de A pero empresa y usuario de B). La FK compuesta se probó **aparte y sin sesión**, como superusuario, para demostrar que existe de verdad y no depende del trigger: `23503` |
+| 7 | **Las pantallas**: `/admin/correcciones` sin `documento.leer`, `/admin/historial` sin `auditoria.leer`, `/admin/permisos` sin `usuario.administrar`, **y POST directo a la acción de servidor saltándose la interfaz** | **PASA.** El guardia de `correcciones` está **antes** de la consulta y corta en seco (`if (!puedeVer) return`), verificado sobre el archivo fuente, no de vista. El POST directo a `decidirPermisoIndividual` desde una sesión `solo_lectura` muere en el motor. `/admin/historial` no expone ninguna acción de servidor: solo se entra por URL, y ahí exige `auditoria.leer`. El servicio del historial **no lleva ni un filtro de aplicación** por tenant o empresa (verificado leyendo el bloque de código): el aislamiento es de `audit_log_rls` |
+| 8 | **Compatibilidad**: `v_user_permission` (011) intacta; nada roto por el cambio de columnas de `v_user_permission_efectivo` | **PASA.** `v_user_permission` sigue existiendo y sigue siendo **100 % del rol**: una excepción individual otorgada **no** aparece en ella, que es justo lo que 183 dice haber preservado. `v_user_permission_efectivo` conserva las nueve columnas de 170 y añade las tres de 183. **Consumidor de producción de la vista efectiva: uno solo** (`permisosEfectivosDe`), migrado; los cuatro consumidores de `v_user_permission` (`src/auth/permisos.ts`, `tests/gates/arranque`, `tests/integraciones/token-sistema`, `a12-d087-permisos`) siguen verdes |
+| 9 | **Trazabilidad**: mentir el `otorgado_por` desde la sesión; el motivo dentro del `audit_log` | **PASA.** El `INSERT` declara explícitamente `otorgado_por = <la víctima>` y **el trigger lo pisa** con `app.current_user_id()`: quien concede no puede firmar con el nombre de otro. Cada decisión deja **exactamente una** fila `INSERT` en `audit_log` con el **motivo literal** dentro de `valor_nuevo` y el autor en `user_id` |
+| 10 | **Reglas de Oro 2, 6 y 7 sobre el diff COMPLETO de la ficha**, no solo sobre la migración | **PASA.** Barrido propio de las líneas **añadidas** del diff (`app`, `src`, `tests`) buscando literales con pinta de tarifa, porcentaje, UVT o monto con separador de miles: **un único hallazgo, el texto `42501` en un comentario**, que es un SQLSTATE. Mismo barrido sobre los cinco archivos nuevos sin rastrear (migración 183, `_navegacion.tsx`, `/admin/historial`, `/admin/permisos`, la prueba de A12): **cero**. `tests/adversarial/valores-tributarios.test.ts` verde |
+| 11 | **`PREFIJOS_SIN_MIGRAR` vacío y `/admin` sin `style` inline ni `#hex`** | **PASA**, verificado con `grep` sobre el árbol y sobre `AppShell.tsx` (`const PREFIJOS_SIN_MIGRAR = [] as readonly string[]`), no por lectura de la ficha |
+| 12 | **La vía que A12 dijo cerrar en 170 y que había que reconfirmar**: crear un rol `es_todopoderoso` desde la aplicación, o ascender el propio a todopoderoso | **PASA (preexistente, `RL001` de 170).** Se leyó el trigger `role_blindaje` y cubre `INSERT` con `es_todopoderoso`, `UPDATE` que lo enciende, `UPDATE` que lo apaga, inactivación y borrado. Por eso V-57 tuvo que ir por `role_id`, no por `es_todopoderoso` |
+
+### Los 20 casos dorados de la sección 12, uno por uno (reejecutados por A14 tras D-092 y tras sus propias correcciones)
+
+183 y 184 tocan `app.tiene_permiso`, que dispara en decenas de tablas: los casos dorados **no se
+dedujeron, se volvieron a correr**. `tests/golden/` + `tests/adversarial/casos-dorados.test.ts`:
+**4 archivos, 102 pruebas**, y dentro de ellos los **59 casos y sub-casos** dorados, **todos verdes**.
+
+| # | Caso | Estado tras D-092 + 184 |
+|---|---|---|
+| 1 | Servicio $1.000.000 + IVA 19 %, PJ declarante, Bogotá → retefuente $40.000, ReteIVA $28.500 | **VERDE** (+ sub-caso 1b: el ReteICA de Bogotá **no se inventa**, la tarifa por actividad que A1 no cargó sigue sin inventarse — V-5) |
+| 2 | Mismo servicio, PN **no declarante** → $60.000 | **VERDE**. El eje «tercero» opera |
+| 3 | Servicio de $80.000 (bajo 2 UVT = $104.748) → no retiene | **VERDE**, con el motivo registrado |
+| 4 | Compra de $500.000 (bajo 10 UVT = $523.740) → no retiene | **VERDE**, con el motivo registrado |
+| 5 | Compra de $600.000 a declarante → $15.000 (2,5 %) | **VERDE** |
+| 6 | Honorarios PJ $200.000 → $22.000 (11 % desde el primer peso) | **VERDE** |
+| 7 | Arrendamiento de inmueble $400.000 no retiene; de mueble por igual valor sí ($16.000) | **VERDE** |
+| 8 | Servicio en Medellín → ReteICA 2‰, base 15 UVT = $785.610 | **VERDE** |
+| 9 | Mismo servicio en Cali → base de servicios 3 UVT = $157.122 | **VERDE**, y distinta de la de Medellín |
+| 10 | Principal en Bogotá, secundaria en Cali, operación en Cali → manda la actividad **de Cali** | **VERDE** (+ 10b: desempate configurable entre varias actividades del mismo municipio) |
+| 11 | Vigilancia $5.000.000 con AIU $500.000 → 2 % sobre el **AIU** = $10.000 | **VERDE** |
+| 12 | Proveedor del exterior → ReteIVA al **100 %** = $190.000 | **VERDE** (+ 12b: sin regla de exterior parametrizada, revisión manual — no se supone) |
+| 13 | Régimen SIMPLE → tratamiento diferenciado **según parametrización** | **VERDE**, nunca por omisión |
+| 14 | Factura con 3 líneas de conceptos distintos → retención por concepto, agregada | **VERDE** (+ 14b/variante hostil: trocear un concepto en dos líneas **no** esquiva la base mínima) |
+| 15 | Nota crédito sobre factura ya causada → reversa proporcional por asiento nuevo | **VERDE**, sin mutar el original (+ 15b: nota crédito por el total reversa exactamente lo retenido) |
+| 16 | Factura de junio procesada en julio → manda la vigencia de **junio** | **VERDE**. La fecha del hecho económico, no la de proceso |
+| 17 | Cambio de tarifa con vigencia futura | **VERDE**. Lo publicado no cambia; los hechos posteriores usan la nueva |
+| 18 | Reprocesar 10 veces la misma factura | **VERDE**. Asiento idéntico las 10 |
+| 19 | Segunda factura del mismo proveedor con la misma descripción | **VERDE**. **Cero llamadas al LLM** y cero costo, medido; no se crea memoria nueva, se reutiliza la que había; el ahorro no depende de que las dos facturas se escriban igual; con **otro** proveedor la memoria no se contagia. Y el motor sigue sin tener con qué llamar a un LLM |
+| 20 | Usuario del tenant A consulta datos del tenant B | **VERDE**. Cero filas, a nivel de base de datos |
+
+**Pruebas adicionales de integridad de la sección 12, reejecutadas por A14:** `UPDATE`/`DELETE` sobre
+asiento publicado → falla en la BD; asiento desbalanceado → falla en la BD; grep de literales de
+tarifa/UVT en todo el código fuente → **cero hallazgos**; aislamiento entre tenants impuesto por RLS
+→ cero filas. Todo dentro de la corrida completa en verde.
+
+### Estado real del árbol tras la compuerta (medido por A14, no heredado)
+
+- `npx tsc --noEmit`: **limpio** (exit 0, sin salida).
+- `npx next build`: **OK**. Las **cinco** rutas de `/admin` compilan y son dinámicas —comprobado en
+  `.next/server/app-paths-manifest.json`, no en el resumen de la consola—: `/admin/correcciones`,
+  `/admin/historial`, `/admin/permisos`, `/admin/roles`, `/admin/usuarios`. Único aviso: el
+  **preexistente** de `src/db/dns-fix.ts` (`node:dns` en Edge Runtime), ajeno a D-092.
+- `npx vitest run`: **1487 pruebas, 1487 en verde, 78 archivos.** Base medida por A14 **antes** de sus
+  correcciones: **1449/1449/77**, que confirma exactamente el número que reportó A12. **+38** son el
+  archivo de esta compuerta. **0 regresiones** tras la migración 184 y tras tocar `_errores.ts`.
+
+### Lo que esta compuerta NO hizo, declarado
+
+1. **Verificación en NAVEGADOR REAL: sigue sin hacerse.** A14 tampoco tuvo esa herramienta en esta
+   pasada. El guion de nueve pasos de la ficha D-092 sigue vigente **y ahora tiene un paso más**:
+   comprobar que el rechazo de una escalada se lee como una frase y no como «problema técnico»
+   (V-58), y que `/admin/usuarios` con un rol acotado no ofrece un desplegable que el motor va a
+   rechazar sin explicar.
+2. **La migración 184 NO se ha aplicado a la Neon.** Se suma a las pendientes (179, 180, 181, 182,
+   183 — la 183 ya la aplicó la sesión orquestadora). **Y es la más urgente de todas**: mientras 184
+   no esté aplicada, la base real tiene la escalada de V-57 abierta.
+3. **No se tocó la deuda técnica declarada por A12** (`trg_espejo_acceso`/`trg_espejo_usuario` con
+   `EXECUTE`, `PO002` por permiso y no por conjunto, `/admin/permisos` sin filtro ni paginación, el
+   comentario erróneo de 170). Sigue siendo de **A12** y sigue abierta. En particular, el borde
+   declarado de `PO002` sin empresa activa **se confirmó real** en esta compuerta: `PO004` lo acota,
+   pero no lo cierra.
+
+---
+
+## Compuerta de CIERRE de D-092 (tercera pasada de A12, D-092-bis) — veredicto FINAL de A14 (2026-09-04): **PASA CON CORRECCIONES, hechas por A14 en la misma pasada. ESTA ES LA PASADA DE CIERRE: D-092 queda CERRADA salvo por la aplicación de la migración 185 y por la verificación en navegador**
+
+**No se dio por buena ni una línea de la ficha D-092-bis.** Todo se volvió a medir con arsenal propio
+—archivo nuevo que no reusa nada del de A12— desde sesiones de negocio reales (`asTenant`, RLS
+activa, sesión emitida) y, para lo que vive en la interfaz, **por el agregador real de la portada**
+(`obtenerBandejaConsolidada`) con la cookie de sesión puesta, simulando solo el transporte de Next:
+`tests/adversarial/a14-d092bis-compuerta.test.ts` (**21 pruebas**).
+
+Se encontraron **dos defectos reales más, los dos graves, los dos corregidos aquí**. El primero
+reabre por completo el defecto que D-092-bis declara cerrado; el segundo lo introdujo la migración
+183 y es el mismo bloqueo total por la puerta de al lado.
+
+### V-59 — el parche de D-092-bis solo funciona en una firma de UNA empresa. **CORREGIDA por A14**
+
+La ficha declara, correctamente, que `listarEmpresasDeLaFirma` devuelve las empresas de la **firma**,
+no «las mías». Lo que no se siguió hasta el final es qué hace el bucle de `obtenerBandejaConsolidada`
+con esa lista: abre `conSesionEmpresa(empresa.companyId)` por cada una, y `withSessionContext`
+**rechaza** la empresa sobre la que la sesión no tiene acceso vigente —`EmpresaNoAutorizadaError`, y
+además escribe un `ACCESO_DENEGADO` en `audit_log` por cada empresa ajena—. El escenario de la prueba
+de A12 monta **una** empresa por firma, que es justo el único caso en que el parche funciona. El
+producto se vende a firmas de **30-60 empresas-cliente**.
+
+Medido, no deducido: con dos empresas en la firma y acceso a una, el administrador acotado recibe
+otra vez el **mismo error 500 en toda ruta** de antes del parche, y la portada deja un
+`ACCESO_DENEGADO` falso por empresa. Una alarma de seguridad que dispara el flujo feliz deja de
+significar algo.
+
+**Corrección** (`app/lib/bandeja.ts`): el bucle por empresa solo corre con `origen === 'accesibles'`,
+el **único** origen en que cada empresa de la lista está garantizada como accesible
+(`app.empresas_accesibles()` resuelve por `user_company_access`) **y** legible (exige
+`documento.leer`). En cualquier otro origen no hay nada que leer: bandeja vacía con
+`puedeLeerDocumentos: false`, que es exactamente lo que la pantalla ya sabe decir. Nada del motor se
+relaja y `empresasSinPermiso` / `empresasTruncadas` siguen intactos. **Tres pruebas fallan sin el
+parche**, una de ellas comparando el conteo de `ACCESO_DENEGADO` antes y después de pintar la
+portada.
+
+### V-60 — la excepción individual de UNA empresa vetaba la firma entera. **CORREGIDA por A14 (migración 185)**
+
+`app.tiene_permiso` de la 183 resuelve la excepción con
+`(current_company_id() IS NULL OR o.company_id = current_company_id()) ... ORDER BY otorgado_en DESC
+LIMIT 1`. Con empresa en contexto es correcto. **Sin** empresa —la sesión de firma, la del **layout
+raíz**, o sea TODA ruta— el filtro por empresa desaparece y la excepción más reciente de **cualquier**
+empresa decide por toda la firma; mientras tanto el bloque `accesos` de la misma función hace lo
+contrario y **une** todas las empresas. Las dos mitades de la misma función tienen semánticas
+opuestas. Medido en los dos sentidos, con un contador con acceso a dos empresas de la misma firma:
+
+| Excepción | En empresa A | En empresa B | En SESIÓN DE FIRMA |
+|---|---|---|---|
+| `documento.leer` **revocado solo en B** | `true` (lo da el rol) | `false` | **`false`** ← veta la firma |
+| `usuario.administrar` **otorgado solo en B** | `false` | `true` | **`true`** ← se une |
+
+La consecuencia del primer caso no es «una sección menos»: `app.empresas_accesibles()` exige
+`documento.leer`, así que en la sesión de firma revienta con `SE002`, la aplicación degrada a
+`origen: 'sin_permiso'`, **el selector del shell se queda vacío y el contador no puede ni volver a la
+empresa A**, donde su permiso está intacto. Es el bloqueo total que D-092-bis vino a cerrar, por la
+puerta de al lado — y esta vez le pasa a un **contador normal**, no a un rol raro. Y cuál de las dos
+semánticas gana depende de `otorgado_en DESC`: del **orden en que se escribieron** las excepciones de
+empresas distintas. Eso no es una regla de permisos.
+
+**Corrección** (`db/migrations/185_a14_d092_excepcion_individual_por_empresa_en_sesion_de_firma.sql`;
+la 183 no se edita, está aplicada y tiene checksum): la excepción se resuelve **por empresa**
+—`DISTINCT ON (company_id)`, que es literalmente la regla que ya usa la vista
+`v_user_permission_efectivo` de 183—, se combina con el rol **de esa misma empresa** y se agrega con
+`EXISTS`: la sesión de firma concede si **al menos una** empresa concede. Esa es la semántica que la
+función ya tenía para los roles desde la 070; ahora la excepción individual la comparte en vez de
+contradecirla. **Con empresa en contexto el resultado es idéntico al de 183**, caso por caso, y ahí
+vive toda la seguridad de D-092 (los guardias `PO001`..`PO004` corren con empresa en contexto).
+
+**Por qué no se arregló en la aplicación:** no se puede. Quien rechaza es el motor
+(`app.empresas_accesibles()` → `exigir_permiso`), y rodearlo desde TypeScript sería un filtro de
+aplicación sobre una decisión de permisos — lo contrario de la Regla de Oro 7.
+
+**Pruebas (fallan sin la 185, comprobado: 3 de 21):** «no veta la sesión de firma», «la portada del
+contador con la revocación acotada sigue viva y dice la verdad», y —para que el arreglo no sea un
+aflojamiento— «revocado en TODAS las empresas **sí** veta la sesión de firma», «un otorgado acotado a
+una empresa NO concede en la otra», y la de compatibilidad dura: **con empresa en contexto, función y
+vista cuentan lo mismo para TODO el catálogo de `permission`, permiso por permiso, en las dos
+empresas** — cero desacuerdos.
+
+### Lo que se atacó de la tercera pasada de A12 y quedó en verde (medido, no leído)
+
+| # | Ataque | Resultado |
+|---|---|---|
+| 1 | **El motor NO se relajó.** `app.empresas_accesibles()` desde el rol acotado, exigiendo el SQLSTATE | **PASA.** `SE002` con `documento.leer` en el mensaje, con y sin empresa en contexto. Si esto se pusiera verde, sería que alguien «arregló» la portada quitándole el permiso a la función de la 070 |
+| 2 | **`preguntar antes de pedir` no abre una vía de fuga.** `empresasVisiblesParaLaSesion` con origen `firma` contra la empresa de OTRA firma; y el origen `sin_permiso` contra el catálogo entero de `company` | **PASA.** Ni el id, ni el NIT, ni la razón social de la firma ajena aparecen. El texto de `explicacionDeOrigen('sin_permiso')` se comparó contra **todos** los NIT y razones sociales de la base: cero coincidencias. `explicacionDeOrigen('accesibles')` es `null` (no hay nada que explicar en el camino normal) |
+| 3 | **`listarEmpresasDeLaFirma`: `usuario.administrar` NECESARIO y SUFICIENTE.** Sin el permiso, con y sin empresa en contexto, saltándose la interfaz; y con ESE ÚNICO permiso, con y sin empresa | **PASA.** Rechaza nombrando el permiso que falta en los dos casos; y con el permiso solo, lista **las dos** empresas de la firma tanto en sesión de firma como con empresa elegida. El aislamiento lo impone la **RLS por tenant de `company`**, no un `WHERE` |
+| 4 | **La bandeja POR EMPRESA, con dos empresas de verdad.** Excepción individual que quita `documento.leer` en UNA sola, por el agregador real de la portada | **PASA (después de la 185).** La empresa sin permiso sale en `empresasSinPermiso` con su razón social, la otra sale completa, `puedeLeerDocumentos` sigue `true`, y `empresasTruncadas` (D-079) sigue vacío sin pisarse con el aviso nuevo. Devuelto el permiso, el aviso desaparece y vuelven las dos empresas |
+| 5 | **La deuda declarada por A12 y no medida: `/terceros` y `/parametros` con el rol acotado** (y con un rol que no tiene ni `documento.leer` ni `usuario.administrar`) | **PASA, y la deuda se CIERRA.** `detectarAlertasParametrizacion` no exige permiso (confirmado contra la base, no asumido) y responde a los tres roles; `listarTerceros` + `puedeEditarTerceros` no lanzan y `puedeEditar` da `false`, que es lo correcto. Revisados además **por código** `/reportes` y `/carga-masiva`: los dos ya **preguntan** (`tienePermiso`) y degradan con un mensaje —`if (!puedeVer) return`—, no exigen. **Ningún módulo más tiene el patrón de «permiso que se volvió respirar»** |
+| 6 | **Reglas de Oro 2, 6 y 7 sobre el diff COMPLETO de la tercera pasada**, más los archivos nuevos sin rastrear y los míos | **PASA.** Barrido propio de las líneas **añadidas** buscando literales con pinta de tarifa, porcentaje, UVT o monto con separador de miles: los dos únicos hallazgos son el propio texto «REGLA DE ORO 2: aquí no hay ni una tarifa…» de la migración 185 y una IP de documentación (`203.0.113.77`, RFC 5737) en una prueba. `tests/adversarial/valores-tributarios.test.ts` verde (43 pruebas) |
+| 7 | **Que `empresasTruncadas` (D-079) y la secuencia por empresa de D-021/D-022 sigan intactas** | **PASA.** Sigue habiendo **una sesión real por empresa**, en secuencia, y la pregunta del permiso va **dentro** de esa misma transacción: ni una sesión más que antes. El nuevo cortocircuito de V-59 **quita** sesiones (las que iban a ser rechazadas), no las añade |
+
+### Los 20 casos dorados de la sección 12, uno por uno (reejecutados tras la 185 y tras el cambio de `app/lib/bandeja.ts`)
+
+La 185 toca `app.tiene_permiso`, que dispara en decenas de tablas, y `app/lib/bandeja.ts` es código
+compartido: los casos **no se dedujeron, se volvieron a correr**. `tests/golden/` +
+`tests/adversarial/casos-dorados.test.ts`: **4 archivos, 102 pruebas**, y dentro de ellos los **59
+casos y sub-casos** dorados, **todos verdes**. Sin variación respecto de la compuerta anterior.
+
+| # | Caso | Estado en la pasada de cierre |
+|---|---|---|
+| 1 | Servicio $1.000.000 + IVA 19 %, PJ declarante, Bogotá → retefuente $40.000, ReteIVA $28.500 | **VERDE** (+ 1b: el ReteICA de Bogotá **sigue sin inventarse** — V-5 abierta) |
+| 2 | Mismo servicio, PN **no declarante** → $60.000 | **VERDE**. El eje «tercero» opera |
+| 3 | Servicio de $80.000 (bajo 2 UVT = $104.748) → no retiene | **VERDE**, con el motivo registrado |
+| 4 | Compra de $500.000 (bajo 10 UVT = $523.740) → no retiene | **VERDE**, con el motivo registrado |
+| 5 | Compra de $600.000 a declarante → $15.000 (2,5 %) | **VERDE** |
+| 6 | Honorarios PJ $200.000 → $22.000 (11 % desde el primer peso) | **VERDE** |
+| 7 | Arrendamiento de inmueble $400.000 no retiene; de mueble por igual valor sí ($16.000) | **VERDE** |
+| 8 | Servicio en Medellín → ReteICA 2‰, base 15 UVT = $785.610 | **VERDE** |
+| 9 | Mismo servicio en Cali → base de servicios 3 UVT = $157.122 | **VERDE**, y distinta de la de Medellín |
+| 10 | Principal en Bogotá, secundaria en Cali, operación en Cali → manda la actividad **de Cali** | **VERDE** (+ 10b: desempate configurable) |
+| 11 | Vigilancia $5.000.000 con AIU $500.000 → 2 % sobre el **AIU** = $10.000 | **VERDE** |
+| 12 | Proveedor del exterior → ReteIVA al **100 %** = $190.000 | **VERDE** (+ 12b: sin regla de exterior parametrizada, revisión manual) |
+| 13 | Régimen SIMPLE → tratamiento diferenciado **según parametrización** | **VERDE**, nunca por omisión |
+| 14 | Factura con 3 líneas de conceptos distintos → retención por concepto, agregada | **VERDE** (+ 14b: trocear un concepto en dos líneas **no** esquiva la base mínima) |
+| 15 | Nota crédito sobre factura ya causada → reversa proporcional por asiento nuevo | **VERDE**, sin mutar el original (+ 15b) |
+| 16 | Factura de junio procesada en julio → manda la vigencia de **junio** | **VERDE**. Fecha del hecho económico, no de proceso |
+| 17 | Cambio de tarifa con vigencia futura | **VERDE**. Lo publicado no cambia; los hechos posteriores usan la nueva |
+| 18 | Reprocesar 10 veces la misma factura | **VERDE**. Asiento idéntico las 10 |
+| 19 | Segunda factura del mismo proveedor con la misma descripción | **VERDE**. **Cero llamadas al LLM**, medido |
+| 20 | Usuario del tenant A consulta datos del tenant B | **VERDE**. Cero filas, a nivel de base de datos |
+
+**Pruebas adicionales de integridad de la sección 12, reejecutadas:** `UPDATE`/`DELETE` sobre asiento
+publicado → falla en la BD; asiento desbalanceado → falla en la BD; grep de literales de tarifa/UVT
+en todo el código fuente → **cero hallazgos**; aislamiento entre tenants impuesto por RLS → cero
+filas. Todo dentro de la corrida completa en verde.
+
+### Estado real del árbol tras la pasada de cierre (medido por A14)
+
+- `npx tsc --noEmit`: **limpio** (exit 0, sin salida).
+- `npx next build`: **OK**. Único aviso, el **preexistente** de `src/db/dns-fix.ts` (`node:dns` en
+  Edge Runtime). Las **cinco** rutas de `/admin` siguen compilando y siendo dinámicas, comprobado en
+  `.next/server/app-paths-manifest.json`.
+- `npx vitest run`: **1520 pruebas, 1520 en verde, 80 archivos.** Base medida por A14 **antes** de sus
+  correcciones: **1499/1499/79**, que confirma exactamente el número que reportó A12. **+21** son
+  `tests/adversarial/a14-d092bis-compuerta.test.ts`. **0 regresiones** tras la migración 185 y tras
+  cortocircuitar el bucle de la bandeja.
+- **Estado REAL de la Neon, consultado y no asumido** (`npm run migrate -- --dry` contra
+  `DATABASE_URL`): **pendiente 1 sola migración, la `185` que crea esta compuerta**. Es decir, `179`,
+  `180`, `181`, `182`, `183` **y `184` ya están aplicadas** — la sesión orquestadora hizo lo que dijo,
+  y la nota anterior de «179, 180, 181, 182 pendientes» queda **obsoleta**. **V-57 está cerrada en la
+  base real.**
+
+### Lo que esta compuerta NO hizo, declarado
+
+1. **La migración 185 NO se aplicó a la Neon.** A14 no escribe en la base de producción por iniciativa
+   propia. Es el **único** pendiente de esquema y hay que aplicarlo **antes** de desplegar el código
+   de esta pasada: sin ella, V-60 sigue viva en la base real y un solo permiso individual revocado
+   deja a un contador encerrado.
+2. **Verificación en NAVEGADOR REAL: A14 sigue sin esa herramienta.** El guion de la ficha D-092 sigue
+   vigente y ahora tiene **dos pasos más**: (a) una firma con **dos o más** empresas y un
+   administrador acotado con acceso a una sola —el caso de V-59—; (b) un contador con acceso a dos
+   empresas y `documento.leer` revocado en una, comprobando que el selector de empresas **no** se
+   queda vacío (V-60).
+3. **No se tocó la deuda técnica que sigue siendo de A12** (`trg_espejo_acceso`/`trg_espejo_usuario`
+   con `EXECUTE`, `PO002` por permiso y no por conjunto, `/admin/permisos` sin filtro ni paginación,
+   el comentario erróneo de 170). Sigue abierta y sigue siendo suya. **Nota:** el borde de `PO002`
+   «sin empresa activa» cambia de forma con la 185 —ahora la sesión de firma agrega por `EXISTS` en
+   vez de dejar mandar la excepción más reciente—, pero **no se cierra**: sigue siendo cierto que un
+   administrador con acceso a A y a B puede conceder sobre B algo que solo ejerce en A.
+4. **No se comiteó.** A14 no comitea.
+
+---
+
 ## Próximo paso
+
+**2026-09-04 — D-092 (Administración, Fase 8): COMPUERTA DE A14 PASADA CON CORRECCIONES.** La
+compuerta AMPLIADA la corrió A14 de forma independiente, sin dar por buena ninguna afirmación de la
+ficha de A12: veredicto **PASA CON CORRECCIONES, hechas por A14 en la misma pasada**; nada se
+devolvió a otro agente. Se encontraron y cerraron **dos defectos reales**, uno de ellos grave:
+
+- **V-57 — la CUARTA puerta de la anti-escalada.** Una sesión con solo `usuario.administrar` se
+  ascendía a `admin_firma` con una sentencia: `UPDATE user_company_access SET role_id = ...` sobre su
+  propio acceso **ya vigente**. El guardia de 183 solo miraba el `UPDATE` cuando era una
+  *reactivación*. **Corregido en `db/migrations/184_a14_d092_cierre_escalada_por_update_de_acceso.sql`**
+  (la 183 no se edita: está aplicada y tiene checksum).
+- **V-58 — el rechazo del motor llegaba a la pantalla como «problema técnico».** `PO001`..`PO004` no
+  estaban traducidos en `app/admin/_errores.ts`. **Corregido**, con prueba que los provoca de verdad.
+
+Árbol **medido por A14**: `npx tsc --noEmit` limpio · `npx next build` OK (solo el aviso preexistente
+de `dns-fix.ts`; las cinco rutas de `/admin` compilan) · `npx vitest run` **1487 pruebas, 1487 en
+verde, 78 archivos** (base de A12 reconfirmada por A14 antes de corregir: 1449/1449/77; **+38** son
+`tests/adversarial/a14-d092-compuerta.test.ts`). Los **20 casos dorados**, uno por uno, verdes. Sin
+comitear (A14 no comitea). Ver «Compuerta AMPLIADA de D-092 — veredicto de A14».
+
+Pendiente inmediato de D-092, en este orden:
+
+0. **ACTUALIZACIÓN DE LA PASADA DE CIERRE (A14, 2026-09-04, noche) — leer esto antes que los puntos
+   1 y 1-bis, que quedan obsoletos en parte.** Se consultó la Neon (`npm run migrate -- --dry`) en
+   vez de suponerla: `179`..`184` **ya están todas aplicadas**, incluida la `184`, así que **V-57
+   está cerrada en la base real**. El **único** pendiente de esquema es la migración **`185`**, que
+   crea esta compuerta para cerrar **V-60**, y hay que aplicarla **antes** de desplegar el código de
+   esta pasada. Ver «Compuerta de CIERRE de D-092 … veredicto FINAL de A14».
+1. ~~**Aplicar a la Neon la migración `184`, con prioridad sobre todo lo demás.**~~ **HECHO** por la
+   sesión orquestadora y **verificado por A14 contra la base**, junto con `179`, `180`, `181`, `182`
+   y `183`. Se conserva el criterio: **migración antes que código**, porque `/admin/permisos` y
+   `/admin/historial` consultan una tabla y una vista que solo existen a partir de la 183.
+1-bis. **D-092-bis quedó corregido, pero NO con lo que entregó A12: le faltaban dos defectos, y los
+   dos los encontró y corrigió la compuerta de cierre.** El parche original solo funcionaba en una
+   firma de **una** empresa (**V-59**: con dos, la portada vuelve a reventar con
+   `EmpresaNoAutorizadaError` y ensucia el `audit_log` con `ACCESO_DENEGADO` falsos), y la migración
+   183 había introducido un bloqueo total propio (**V-60**: una revocación individual en UNA empresa
+   vetaba la sesión de firma y dejaba al contador sin poder volver a la empresa donde su permiso
+   estaba intacto). V-59 es corrección de aplicación; V-60 es la migración **185**. El barrido del
+   resto de módulos con un rol acotado —la deuda que A12 declaró sin medir— **está hecho y cerrado**:
+   `/terceros` y `/parametros` medidos contra la base, `/reportes` y `/carga-masiva` verificados por
+   código; ninguno tiene el patrón de «permiso que se volvió respirar».
+2. **Verificación en NAVEGADOR REAL de D-092** (guion completo de nueve pasos al final de la ficha,
+   más el paso que añade la compuerta: que una escalada rechazada se lea como una frase y no como
+   «problema técnico»):
+   crear un usuario, darle un rol, otorgarle un permiso individual con motivo, verlo en el rastro de
+   auditoría, revocarlo y comprobar que la decisión anterior sigue ahí, y el ataque por URL directa y
+   por POST directo con una sesión sin `usuario.administrar`. **Es la primera vez que `/admin` se
+   pinta con el tema real y no con `data-tema="claro"` fijo**: hay que mirarlo en claro y en oscuro.
+   **Dos pasos más que añade la pasada de cierre, y que hay que hacer contra una firma con DOS o más
+   empresas —el escenario de la Neon con una sola empresa es exactamente el que oculta V-59—:**
+   (a) administrador acotado con acceso a **una** de las dos empresas: `/` y `/admin/usuarios` en 200,
+   y **cero** `ACCESO_DENEGADO` nuevos en `audit_log` después de cargar la portada; (b) un contador
+   con acceso a las dos y `documento.leer` revocado en una: el **selector de empresas no se queda
+   vacío**, la empresa revocada sale en el aviso «hay empresas fuera de esta bandeja» y la otra se ve
+   completa.
+3. **Deuda que sigue siendo de A12 y que la compuerta confirmó real, no teórica:** `PO002` se evalúa
+   por permiso y en la empresa en contexto; **sin empresa activa**, `app.tiene_permiso` cuenta
+   cualquier acceso del usuario en la firma, así que un administrador con acceso a A y a B podría
+   conceder sobre B algo que solo ejerce en A. `PO004` acota el caso (hay que tener acceso vigente a
+   esa empresa) y con empresa activa la RLS lo cierra, pero el borde existe. **La migración 185 le
+   cambia la forma —la sesión de firma ahora agrega por `EXISTS` por empresa en vez de dejar mandar
+   la excepción más reciente de cualquiera— pero NO lo cierra: sigue siendo cierto.** También siguen abiertas
+   `trg_espejo_acceso`/`trg_espejo_usuario` con `EXECUTE` para `app_user`, y `/admin/permisos` sin
+   filtro ni paginación.
+4. **Decisión de producto que esta ficha destapó y no resolvió:** no existe pantalla de ALTA de MFA.
+   El login verifica TOTP y el secreto va cifrado, pero nadie puede encender su propio MFA desde la
+   interfaz — hoy solo por SQL directo. La tabla de la 14.1 decía «MFA disponible» y ahora dice
+   exactamente cuánto. Quien planifique la fase siguiente decide si entra.
+
+---
 
 **2026-09-04 — D-091 (Reportes, Fase 7) CERRADA por completo**: PASÓ la compuerta AMPLIADA de A14,
 corrida de forma independiente: «PASA CON CORRECCIONES, hechas por A14 en la misma pasada» (V-55 y

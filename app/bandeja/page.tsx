@@ -75,7 +75,26 @@ export default async function PaginaBandeja({ searchParams }: { searchParams: Pr
     proveedores,
     totalAprobacionSinFiltrar,
     empresasTruncadas,
+    puedeLeerDocumentos,
+    empresasSinPermiso,
   } = await obtenerBandejaConsolidada(filtros);
+
+  // D-092-bis. Sin `documento.leer` la bandeja no puede consultar nada. Antes
+  // de la corrección esta pantalla ni se llegaba a pintar (la excepción del
+  // motor reventaba el layout); ahora se dice, en vez de enseñar una bandeja
+  // vacía que se leería como "no hay nada que aprobar".
+  if (!puedeLeerDocumentos) {
+    return (
+      <div className="mx-auto max-w-6xl p-5">
+        <Encabezado titulo="Bandeja de causación" />
+        <MensajeEstado tipo="configuracion" titulo="Su rol no permite ver documentos">
+          La bandeja exige el permiso <code>documento.leer</code>. Su sesión no lo tiene, así que aquí
+          no se puede mostrar nada — ni afirmar que no haya trabajo pendiente. Pídale a un
+          administrador de la firma el permiso, o use los módulos a los que sí tiene acceso.
+        </MensajeEstado>
+      </div>
+    );
+  }
 
   // Cuentas imputables por empresa que tiene algún asiento en la bandeja — para
   // el selector del editor de líneas. Una consulta por empresa distinta, no por
@@ -106,6 +125,14 @@ export default async function PaginaBandeja({ searchParams }: { searchParams: Pr
       />
 
       <MensajeError error={cadena(sp, 'error') || undefined} />
+      {empresasSinPermiso.length > 0 && (
+        <div className="my-3">
+          <MensajeEstado tipo="configuracion" titulo="Hay empresas fuera de esta bandeja por falta de permiso">
+            Su sesión no tiene <code>documento.leer</code> en {empresasSinPermiso.join(', ')}. Lo
+            pendiente de esas empresas no aparece aquí ni se cuenta en los totales.
+          </MensajeEstado>
+        </div>
+      )}
       {cadena(sp, 'editado') && (
         <div className="my-3">
           <MensajeEstado tipo="sin-datos" titulo="Cambios del asiento guardados y registrados en auditoría." />

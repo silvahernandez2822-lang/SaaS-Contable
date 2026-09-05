@@ -1,5 +1,6 @@
 /**
- * A16 — Bandeja de correcciones por revisar (Ola 4, Tarea 7, D-068).
+ * A16 — Bandeja de correcciones por revisar (Ola 4, Tarea 7, D-068), migrada al
+ * sistema de interfaz por A12 en D-092.
  *
  * ESTE ES EL CIRCUITO «EL JUNIOR CORRIGE, EL REVISOR APRUEBA», Y NO ES UN
  * PERMISO ESPECIAL: es un ESTADO del recurso corregido.
@@ -18,12 +19,24 @@
  * Una corrección aprobada NO reescribe un asiento ya publicado: el ledger es
  * inmutable (Regla de Oro 1). Afecta a la próxima causación de ese documento,
  * y si ya estaba causado hay que reprocesarlo desde la bandeja.
+ *
+ * D-092 — DEFECTO CORREGIDO AQUÍ: esta pantalla listaba las correcciones
+ * pendientes SIN exigir ningún permiso. La RLS impedía ver las de otra firma o
+ * de otra empresa, así que no era una fuga entre tenants; pero dentro de la
+ * empresa cualquier sesión —incluida `solo_lectura`— veía número de documento,
+ * NIT del emisor, valores corregidos y el nombre de quien los corrigió. Ahora
+ * se exige `documento.leer` para VER (que es lo que ya exige la bandeja para
+ * los mismos datos) y `documento.aprobar_correccion` sigue siendo el que
+ * decide. El permiso de decidir lo impone el trigger de la base (170), no este
+ * archivo.
  */
 import Link from 'next/link';
 import { conSesion } from '../../lib/sesion';
 import { listarCorreccionesPendientes } from '../../../src/services/administracion';
 import { tienePermiso, PERMISOS } from '../../../src/auth/permisos';
 import { MensajeError } from '../../parametros/_componentes';
+import { Boton, Encabezado, Entrada, EstadoVacio, MensajeEstado, Panel, Tabla, Td, Th } from '../../_ui/componentes';
+import { NavegacionAdmin } from '../_navegacion';
 import { revisarAction } from './acciones';
 
 export const dynamic = 'force-dynamic';
@@ -45,105 +58,126 @@ function pesos(centavos: string | null): string {
 export default async function PaginaCorrecciones({ searchParams }: { searchParams: Promise<BusquedaParams> }) {
   const sp = await searchParams;
 
-  const { pendientes, puedeAprobar } = await conSesion(async (tx) => ({
-    pendientes: await listarCorreccionesPendientes(tx),
-    puedeAprobar: await tienePermiso(tx, PERMISOS.DOCUMENTO_APROBAR_CORRECCION),
-  }));
+  const { puedeVer, puedeAprobar, pendientes } = await conSesion(async (tx) => {
+    const puedeVer = await tienePermiso(tx, PERMISOS.DOCUMENTO_LEER);
+    if (!puedeVer) return { puedeVer, puedeAprobar: false, pendientes: [] };
+    return {
+      puedeVer,
+      puedeAprobar: await tienePermiso(tx, PERMISOS.DOCUMENTO_APROBAR_CORRECCION),
+      pendientes: await listarCorreccionesPendientes(tx),
+    };
+  });
+
+  const ok = cadena(sp, 'ok');
 
   return (
-    <main style={{ maxWidth: 1000, margin: '0 auto', padding: '24px' }}>
-      <h1>Correcciones por revisar</h1>
-      <p>
-        <Link href="/admin/usuarios">Usuarios</Link> · <Link href="/admin/roles">Roles y permisos</Link> ·{' '}
-        <Link href="/bandeja">Bandeja de causación</Link>
-      </p>
+    <main className="mx-auto max-w-5xl px-6 py-8">
+      <Encabezado
+        titulo="Correcciones por revisar"
+        descripcion="Correcciones de AIU y de municipio registradas por alguien sin permiso para aprobarlas. Mientras estén pendientes, el motor causa el documento como si no existieran."
+      />
+      <NavegacionAdmin activo="correcciones" />
 
-      <MensajeError error={cadena(sp, 'error') || undefined} />
-      {cadena(sp, 'ok') && (
-        <p role="status" style={{ border: '1px solid #15803d', color: '#15803d', padding: '8px 12px' }}>
-          {decodeURIComponent(cadena(sp, 'ok'))}
-        </p>
-      )}
-
-      <p>
-        Aquí llegan las correcciones de AIU y de municipio que registró alguien sin permiso para aprobarlas. El
-        motor de causación <strong>no las usa</strong> mientras estén pendientes: el documento se causa como si
-        la corrección no existiera. Aprobar una no reescribe ningún asiento ya publicado — el ledger es
-        inmutable; afecta a la próxima causación, y si el documento ya estaba causado hay que reprocesarlo
-        desde la bandeja.
-      </p>
-
-      {!puedeAprobar && (
-        <p role="alert" style={{ border: '1px solid #b45309', background: '#fffbeb', padding: '10px 14px' }}>
-          Su sesión no tiene <code>documento.aprobar_correccion</code>: puede ver la lista, no decidir. Es justo
-          el permiso que separa a quien corrige de quien revisa; se otorga en{' '}
-          <Link href="/admin/roles">Roles y permisos</Link>, columna «Aprobar / rechazar» del módulo Documentos.
-        </p>
-      )}
-
-      {pendientes.length === 0 ? (
-        <p>No hay ninguna corrección pendiente de revisión en esta empresa.</p>
+      {!puedeVer ? (
+        <div className="mt-4">
+          <MensajeEstado tipo="configuracion" titulo="Falta el permiso para ver estas correcciones">
+            Se necesita <code>{PERMISOS.DOCUMENTO_LEER}</code>: una corrección lleva el número de la factura, el
+            NIT del emisor y el valor corregido, que son datos del documento.
+          </MensajeEstado>
+        </div>
       ) : (
-        <table style={{ borderCollapse: 'collapse', fontSize: 14 }}>
-          <thead>
-            <tr style={{ textAlign: 'left', borderBottom: '1px solid #cbd5e1' }}>
-              <th style={{ padding: 4 }}>Documento</th>
-              <th style={{ padding: 4 }}>Corrección</th>
-              <th style={{ padding: 4 }}>La registró</th>
-              {puedeAprobar && <th style={{ padding: 4, width: 380 }}>Decisión</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {pendientes.map((c) => (
-              <tr key={c.id} style={{ borderBottom: '1px solid #e2e8f0', verticalAlign: 'top' }}>
-                <td style={{ padding: 6 }}>
-                  <strong>{c.numeroDocumento}</strong>
-                  <br />
-                  <span style={{ fontSize: 12, color: '#475569' }}>Emisor NIT {c.emisorNit}</span>
-                </td>
-                <td style={{ padding: 6 }}>
-                  {c.tipo === 'aiu_linea' ? (
-                    <>
-                      AIU de la línea {c.lineaNumero}: <strong>{pesos(c.valorAiuCentavos)}</strong>
-                    </>
-                  ) : (
-                    <>
-                      Municipio de la operación: <strong>{c.municipioNombre ?? '—'}</strong>
-                    </>
-                  )}
-                  <br />
-                  <span style={{ fontSize: 12, color: '#475569' }}>Motivo: {c.motivo}</span>
-                </td>
-                <td style={{ padding: 6 }}>
-                  {c.creadoPorNombre}
-                  <br />
-                  <span style={{ fontSize: 12, color: '#475569' }}>{c.creadoEn.slice(0, 16)}</span>
-                </td>
-                {puedeAprobar && (
-                  <td style={{ padding: 6 }}>
-                    <form action={revisarAction}>
-                      <input type="hidden" name="correccionId" value={c.id} />
-                      <input
-                        name="motivo"
-                        required
-                        size={40}
-                        placeholder="Motivo de la decisión (obligatorio)"
-                      />
-                      <div style={{ marginTop: 6 }}>
-                        <button type="submit" name="decision" value="aprobado">
-                          Aprobar
-                        </button>{' '}
-                        <button type="submit" name="decision" value="rechazado">
-                          Rechazar
-                        </button>
-                      </div>
-                    </form>
-                  </td>
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <>
+          <MensajeError error={cadena(sp, 'error') || undefined} />
+          {ok && (
+            <div className="my-3">
+              <MensajeEstado tipo="sin-datos" titulo={decodeURIComponent(ok)} />
+            </div>
+          )}
+
+          {!puedeAprobar && (
+            <div className="my-3">
+              <MensajeEstado tipo="configuracion" titulo="Puede ver la lista, no decidir">
+                Su sesión no tiene <code>documento.aprobar_correccion</code>. Es justo el permiso que separa a
+                quien corrige de quien revisa; se otorga en{' '}
+                <Link href="/admin/roles" className="font-semibold underline">
+                  Roles y permisos
+                </Link>
+                , columna «Aprobar / rechazar» del módulo Documentos, o como excepción puntual en{' '}
+                <Link href="/admin/permisos" className="font-semibold underline">
+                  Permisos individuales
+                </Link>
+                .
+              </MensajeEstado>
+            </div>
+          )}
+
+          <Panel className="mt-4" titulo={`${pendientes.length} corrección(es) pendiente(s)`}>
+            {pendientes.length === 0 ? (
+              <EstadoVacio
+                titulo="No hay ninguna corrección pendiente en esta empresa"
+                detalle="Aprobar una corrección no reescribe ningún asiento ya publicado: el ledger es inmutable. Afecta a la próxima causación."
+              />
+            ) : (
+              <Tabla alturaMaxima={null}>
+                <thead>
+                  <tr>
+                    <Th>Documento</Th>
+                    <Th>Corrección</Th>
+                    <Th>La registró</Th>
+                    {puedeAprobar && <Th>Decisión</Th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {pendientes.map((c) => (
+                    <tr key={c.id} className="border-t border-borde/60 align-top">
+                      <Td>
+                        <span className="font-semibold text-texto">{c.numeroDocumento}</span>
+                        <span className="block text-metadata text-texto-suave tabular-nums">
+                          Emisor NIT {c.emisorNit}
+                        </span>
+                      </Td>
+                      <Td>
+                        {c.tipo === 'aiu_linea' ? (
+                          <>
+                            AIU de la línea {c.lineaNumero}:{' '}
+                            <strong className="tabular-nums">{pesos(c.valorAiuCentavos)}</strong>
+                          </>
+                        ) : (
+                          <>
+                            Municipio de la operación: <strong>{c.municipioNombre ?? '—'}</strong>
+                          </>
+                        )}
+                        <span className="block text-metadata text-texto-suave">Motivo: {c.motivo}</span>
+                      </Td>
+                      <Td>
+                        {c.creadoPorNombre}
+                        <span className="block text-metadata text-texto-suave tabular-nums">
+                          {c.creadoEn.slice(0, 16)}
+                        </span>
+                      </Td>
+                      {puedeAprobar && (
+                        <Td>
+                          <form action={revisarAction} className="flex flex-col gap-2">
+                            <input type="hidden" name="correccionId" value={c.id} />
+                            <Entrada name="motivo" required placeholder="Motivo de la decisión (obligatorio)" />
+                            <div className="flex gap-2">
+                              <Boton tipo="submit" name="decision" value="aprobado">
+                                Aprobar
+                              </Boton>
+                              <Boton tipo="submit" variante="peligro" name="decision" value="rechazado">
+                                Rechazar
+                              </Boton>
+                            </div>
+                          </form>
+                        </Td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </Tabla>
+            )}
+          </Panel>
+        </>
       )}
     </main>
   );

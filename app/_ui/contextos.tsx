@@ -45,6 +45,9 @@ type EmpresaCtx = {
   empresas: readonly EmpresaAccesible[];
   /** La que está en contexto (cookie `company_id`), o `null` = sesión de firma. */
   activa: EmpresaAccesible | null;
+  /** D-092-bis: explicación de por qué la lista viene vacía o sin rol, cuando
+   *  la hay. La calcula el servidor (`app/lib/empresas.ts`). */
+  aviso: string | null;
 };
 
 const ContextoEmpresa = createContext<EmpresaCtx | null>(null);
@@ -52,16 +55,18 @@ const ContextoEmpresa = createContext<EmpresaCtx | null>(null);
 export function EmpresaProvider({
   empresas,
   activaId,
+  aviso = null,
   children,
 }: {
   empresas: readonly EmpresaAccesible[];
   activaId: string | null;
+  aviso?: string | null;
   children: ReactNode;
 }) {
   const valor = useMemo<EmpresaCtx>(() => {
     const activa = empresas.find((e) => e.companyId === activaId) ?? null;
-    return { empresas, activa };
-  }, [empresas, activaId]);
+    return { empresas, activa, aviso };
+  }, [empresas, activaId, aviso]);
   return <ContextoEmpresa.Provider value={valor}>{children}</ContextoEmpresa.Provider>;
 }
 

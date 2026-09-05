@@ -76,6 +76,7 @@ const ETIQUETAS: Record<string, string> = {
   admin: 'Administración',
   usuarios: 'Usuarios',
   roles: 'Roles y permisos',
+  permisos: 'Permisos individuales',
   correcciones: 'Correcciones por revisar',
   retefuente: 'Retefuente',
   retefuente_salarios: 'Retefuente de salarios',
@@ -94,8 +95,13 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * `globals.css`, sección "ESCOTILLA DE TEMA POR SUBÁRBOL"): mientras estén en
  * esta lista, su contenido se pinta con `data-tema="claro"` fijo, tema aparte
  * del resto de la interfaz. Cuando un módulo migre, se borra su prefijo de
- * aquí — un solo sitio, no un `style` por archivo. */
-const PREFIJOS_SIN_MIGRAR = ['/admin'];
+ * aquí — un solo sitio, no un `style` por archivo.
+ *
+ * D-092: `/admin` salió de la lista, y con él se vació. La escotilla de tema
+ * por subárbol se conserva a propósito (`esRutaSinMigrar` y el `data-tema` de
+ * abajo): es el mecanismo, no el caso. Volver a necesitarla es añadir un
+ * prefijo, no reescribir el shell. */
+const PREFIJOS_SIN_MIGRAR = [] as readonly string[];
 
 function esRutaSinMigrar(pathname: string): boolean {
   return PREFIJOS_SIN_MIGRAR.some((p) => pathname === p || pathname.startsWith(`${p}/`));
@@ -134,7 +140,7 @@ function iniciales(nombre: string): string {
 }
 
 function SelectorEmpresa({ destino }: { destino: string }) {
-  const { empresas, activa } = useEmpresa();
+  const { empresas, activa, aviso } = useEmpresa();
   const [abierto, setAbierto] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -206,12 +212,16 @@ function SelectorEmpresa({ destino }: { destino: string }) {
                     <span>{e.razonSocial}</span>
                     <span className="text-[11px] text-texto-suave tabular-nums">NIT {e.nit}</span>
                   </span>
-                  <span className="text-[11px] text-texto-suave">rol {e.rolCodigo}</span>
+                  {e.rolCodigo && <span className="text-[11px] text-texto-suave">rol {e.rolCodigo}</span>}
                 </button>
               </form>
             </li>
           ))}
-          {empresas.length === 0 && (
+          {/* D-092-bis: sin `documento.leer` la lista no se puede resolver. Decir
+              «no tiene acceso a ninguna empresa» era falso y mandaba al usuario
+              a pedir un acceso que ya tenía. */}
+          {aviso && <li className="px-3 py-2 text-[12px] text-texto-suave">{aviso}</li>}
+          {empresas.length === 0 && !aviso && (
             <li className="px-3 py-2 text-[12px] text-texto-suave">
               Su usuario no tiene acceso vigente a ninguna empresa-cliente.
             </li>

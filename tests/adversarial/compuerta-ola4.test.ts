@@ -223,7 +223,15 @@ describe('A16 · una firma se crea sus propios roles y le conceden exactamente l
     );
     expect(efectivos).toHaveLength(1);
     expect(efectivos[0]!.esTodopoderoso).toBe(false);
-    expect(efectivos[0]!.permisos.sort()).toEqual(['asiento.leer', 'documento.leer', 'documento.reprocesar']);
+    /* D-092: `permisosEfectivosDe` ya no devuelve una lista plana de códigos,
+     * sino cada permiso CON SU ORIGEN (rol / rol todopoderoso / excepción
+     * individual). La aserción no se relaja — se refuerza: además de los tres
+     * códigos exactos, se exige que los tres vengan DEL ROL, es decir que la
+     * maquinaria de excepciones de 183 no le esté regalando nada a nadie. */
+    expect(
+      efectivos[0]!.permisos.map((p) => p.codigo).sort(),
+    ).toEqual(['asiento.leer', 'documento.leer', 'documento.reprocesar']);
+    expect(efectivos[0]!.permisos.every((p) => p.origen === 'rol')).toBe(true);
 
     // Y lo que NO se marcó, el motor lo niega — no la interfaz.
     const puedeAprobar = await db.asTenant(

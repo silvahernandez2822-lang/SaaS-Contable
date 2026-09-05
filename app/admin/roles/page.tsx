@@ -1,5 +1,6 @@
 /**
- * A16 — Roles y permisos de la firma (Ola 4, Tarea 7).
+ * Roles y permisos de la firma — A16 (Ola 4, Tarea 7), migrada al sistema de
+ * interfaz por A12 en D-092.
  *
  * LA MATRIZ. Los permisos se presentan por MÓDULO y, dentro de cada módulo,
  * por acción: ver / editar / aprobar / administrar. Ese eje vertical lo da
@@ -18,6 +19,20 @@
  * esta pantalla: el motor rechaza con RL001 cualquier intento de quitarle un
  * permiso, inactivarlo o borrarlo, venga de donde venga. Aquí simplemente no
  * se dibujan botones que el motor va a rechazar.
+ *
+ * D-092 — LO QUE UN ROL NO SIRVE PARA HACER. Un rol es la herramienta para un
+ * REPARTO ESTABLE de responsabilidades. Para la excepción de una persona
+ * concreta («este mes, y solo este mes, el auxiliar Pérez exporta la exógena»)
+ * fabricar un rol nuevo es peor que no tener nada: acaba habiendo dieciocho
+ * roles llamados «contador_2» y nadie recuerda por qué existe cada uno. Esa
+ * excepción vive en /admin/permisos, con motivo obligatorio y fecha de
+ * vencimiento.
+ *
+ * D-092 — NADIE METE EN UN ROL UN PERMISO QUE NO EJERCE. La migración 183 lo
+ * impone con PO002 sobre el INSERT de `role_permission`: sin ese guardia,
+ * `usuario.administrar` era transitivamente equivalente a todos los permisos
+ * del producto (bastaba con crear un rol con todo y auto-asignárselo). Quitar
+ * un permiso de un rol nunca se restringe: bajar no es escalar.
  */
 import Link from 'next/link';
 import { conSesion } from '../../lib/sesion';
@@ -30,6 +45,8 @@ import {
   type AccionPermiso,
 } from '../../../src/services/administracion';
 import { MensajeError } from '../../parametros/_componentes';
+import { Badge, Boton, Campo, Encabezado, Entrada, MensajeEstado, Panel, Tabla, Td, Th } from '../../_ui/componentes';
+import { NavegacionAdmin } from '../_navegacion';
 import { crearRolAction, editarRolAction, eliminarRolAction } from './acciones';
 
 export const dynamic = 'force-dynamic';
@@ -54,54 +71,48 @@ const ACCIONES: Array<{ clave: AccionPermiso; titulo: string; explicacion: strin
 function MatrizPermisos({
   catalogo,
   seleccionados,
-  deshabilitado,
 }: {
   catalogo: ModuloPermisos[];
   seleccionados: ReadonlySet<string>;
-  deshabilitado?: boolean;
 }) {
   return (
-    <table style={{ borderCollapse: 'collapse', fontSize: 13, marginTop: 8 }}>
+    <Tabla alturaMaxima="55vh">
       <thead>
-        <tr style={{ textAlign: 'left', borderBottom: '1px solid #cbd5e1' }}>
-          <th style={{ padding: 4, width: 150 }}>Módulo</th>
+        <tr>
+          <Th>Módulo</Th>
           {ACCIONES.map((a) => (
-            <th key={a.clave} style={{ padding: 4 }} title={a.explicacion}>
-              {a.titulo}
-            </th>
+            <Th key={a.clave}>{a.titulo}</Th>
           ))}
         </tr>
       </thead>
       <tbody>
         {catalogo.map((m) => (
-          <tr key={m.modulo} style={{ borderBottom: '1px solid #e2e8f0', verticalAlign: 'top' }}>
-            <td style={{ padding: 4 }}>
-              <strong>{m.modulo}</strong>
-            </td>
+          <tr key={m.modulo} className="border-t border-borde/60 align-top">
+            <Td className="font-semibold text-texto">{m.modulo}</Td>
             {ACCIONES.map((a) => (
-              <td key={a.clave} style={{ padding: 4 }}>
+              <Td key={a.clave}>
                 {m.porAccion[a.clave].length === 0 ? (
-                  <span style={{ color: '#94a3b8' }}>—</span>
+                  <span className="text-texto-suave">—</span>
                 ) : (
                   m.porAccion[a.clave].map((p) => (
-                    <label key={p.codigo} style={{ display: 'block' }} title={p.descripcion}>
+                    <label key={p.codigo} className="flex items-start gap-1.5 py-[2px]" title={p.descripcion}>
                       <input
                         type="checkbox"
                         name="permisos"
                         value={p.codigo}
                         defaultChecked={seleccionados.has(p.codigo)}
-                        disabled={deshabilitado}
-                      />{' '}
-                      {p.nombre}
+                        className="mt-[2px] accent-[var(--color-primario)]"
+                      />
+                      <span>{p.nombre}</span>
                     </label>
                   ))
                 )}
-              </td>
+              </Td>
             ))}
           </tr>
         ))}
       </tbody>
-    </table>
+    </Tabla>
   );
 }
 
@@ -118,146 +129,181 @@ export default async function PaginaRoles({ searchParams }: { searchParams: Prom
 
   if (!puede) {
     return (
-      <main style={{ maxWidth: 900, margin: '0 auto', padding: '24px' }}>
-        <h1>Roles y permisos</h1>
-        <p role="alert" style={{ border: '1px solid #b91c1c', padding: '10px 14px' }}>
-          Su sesión no tiene el permiso <code>usuario.administrar</code>.
-        </p>
+      <main className="mx-auto max-w-5xl px-6 py-8">
+        <Encabezado titulo="Roles y permisos" />
+        <MensajeEstado tipo="configuracion" titulo="Falta el permiso de administración">
+          Su sesión no tiene <code>usuario.administrar</code>.
+        </MensajeEstado>
       </main>
     );
   }
 
   const enEdicion = roles.find((r) => r.id === rolEditando) ?? null;
+  const ok = cadena(sp, 'ok');
 
   return (
-    <main style={{ maxWidth: 1200, margin: '0 auto', padding: '24px' }}>
-      <h1>Roles y permisos</h1>
-      <p>
-        <Link href="/admin/usuarios">Usuarios</Link> ·{' '}
-        <Link href="/admin/correcciones">Correcciones por revisar</Link>
-      </p>
+    <main className="mx-auto max-w-6xl px-6 py-8">
+      <Encabezado
+        titulo="Roles y permisos"
+        descripcion="Cada casilla de la matriz es un permiso real de los que exige el motor, no una etiqueta de esta pantalla."
+      />
+      <NavegacionAdmin activo="roles" />
 
       <MensajeError error={cadena(sp, 'error') || undefined} />
-      {cadena(sp, 'ok') && (
-        <p role="status" style={{ border: '1px solid #15803d', color: '#15803d', padding: '8px 12px' }}>
-          {decodeURIComponent(cadena(sp, 'ok'))}
-        </p>
+      {ok && (
+        <div className="my-3">
+          <MensajeEstado tipo="sin-datos" titulo={decodeURIComponent(ok)} />
+        </div>
       )}
 
-      <p>
-        Cada casilla de la matriz es un permiso real de los que exige el motor, no una etiqueta de esta
-        pantalla. El circuito «el junior corrige y el revisor aprueba» se arma dándole a un rol las columnas{' '}
-        <strong>Ver</strong> y <strong>Editar</strong> de Documentos y Causación, y al otro además la columna{' '}
-        <strong>Aprobar</strong>.
-      </p>
+      <div className="my-4">
+        <MensajeEstado tipo="sin-datos" titulo="Un rol es para un reparto estable; una excepción, no">
+          El circuito «el junior corrige y el revisor aprueba» se arma dándole a un rol las columnas{' '}
+          <strong>Ver</strong> y <strong>Editar</strong> de Documentos y Causación, y al otro además la columna{' '}
+          <strong>Aprobar</strong>. Para la excepción de UNA persona («este mes exporta él porque el contador está
+          incapacitado») no cree un rol: use{' '}
+          <Link href="/admin/permisos" className="font-semibold underline">
+            Permisos individuales
+          </Link>
+          , que exige motivo escrito y admite fecha de vencimiento. Y tenga presente que{' '}
+          <strong>no se puede meter en un rol un permiso que usted mismo no ejerce</strong>: lo rechaza el motor.
+        </MensajeEstado>
+      </div>
 
-      <h2>Roles</h2>
-      <table style={{ borderCollapse: 'collapse', fontSize: 14 }}>
-        <thead>
-          <tr style={{ textAlign: 'left', borderBottom: '1px solid #cbd5e1' }}>
-            <th style={{ padding: 4 }}>Rol</th>
-            <th style={{ padding: 4 }}>Origen</th>
-            <th style={{ padding: 4 }}>Estado</th>
-            <th style={{ padding: 4 }}>Personas con este rol</th>
-            <th style={{ padding: 4 }}>Acción</th>
-          </tr>
-        </thead>
-        <tbody>
-          {roles.map((r) => (
-            <tr key={r.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-              <td style={{ padding: 6 }}>
-                <strong>{r.nombre}</strong> <code style={{ fontSize: 12 }}>{r.codigo}</code>
-                <br />
-                <span style={{ fontSize: 12, color: '#475569' }}>{r.descripcion}</span>
-              </td>
-              <td style={{ padding: 6 }}>
-                {r.esTodopoderoso
-                  ? 'Todopoderoso (blindado en el motor)'
-                  : r.esDeLaFirma
-                    ? 'Propio de su firma'
-                    : 'Del sistema'}
-              </td>
-              <td style={{ padding: 6 }}>{r.activo ? 'Activo' : 'Inactivo'}</td>
-              <td style={{ padding: 6 }}>{r.usos}</td>
-              <td style={{ padding: 6 }}>
-                {r.esDeLaFirma && !r.esTodopoderoso ? (
-                  <>
-                    <Link href={`/admin/roles?rol=${r.id}`}>Editar</Link>{' '}
-                    <form action={eliminarRolAction} style={{ display: 'inline' }}>
-                      <input type="hidden" name="roleId" value={r.id} />
-                      <button type="submit">Eliminar</button>
-                    </form>
-                  </>
-                ) : (
-                  <span style={{ color: '#64748b' }}>
-                    {r.esTodopoderoso ? 'No se edita ni se degrada' : 'Compartido por todas las firmas'}
-                  </span>
-                )}
-              </td>
+      <Panel titulo={`${roles.length} rol(es)`}>
+        <Tabla alturaMaxima={null}>
+          <thead>
+            <tr>
+              <Th>Rol</Th>
+              <Th>Origen</Th>
+              <Th>Estado</Th>
+              <Th alineado="right">Personas con este rol</Th>
+              <Th>Acción</Th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {roles.map((r) => (
+              <tr key={r.id} className="border-t border-borde/60 align-top">
+                <Td>
+                  <span className="font-semibold text-texto">{r.nombre}</span>{' '}
+                  <code className="text-metadata text-texto-suave">{r.codigo}</code>
+                  <span className="block text-menor text-texto-suave">{r.descripcion}</span>
+                </Td>
+                <Td>
+                  {r.esTodopoderoso ? (
+                    <Badge tono="primario">Todopoderoso (blindado en el motor)</Badge>
+                  ) : r.esDeLaFirma ? (
+                    <Badge tono="exito">Propio de su firma</Badge>
+                  ) : (
+                    <Badge tono="neutro">Del sistema</Badge>
+                  )}
+                </Td>
+                <Td>
+                  <Badge tono={r.activo ? 'exito' : 'error'}>{r.activo ? 'Activo' : 'Inactivo'}</Badge>
+                </Td>
+                <Td numerico alineado="right">
+                  {r.usos}
+                </Td>
+                <Td>
+                  {r.esDeLaFirma && !r.esTodopoderoso ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Link
+                        href={`/admin/roles?rol=${r.id}`}
+                        className="text-menor font-semibold text-primario underline dark:text-primario-tinta-oscura"
+                      >
+                        Editar
+                      </Link>
+                      <form action={eliminarRolAction}>
+                        <input type="hidden" name="roleId" value={r.id} />
+                        <Boton tipo="submit" variante="peligro" className="px-2.5 py-1 text-menor">
+                          Eliminar
+                        </Boton>
+                      </form>
+                    </div>
+                  ) : (
+                    <span className="text-texto-suave">
+                      {r.esTodopoderoso ? 'No se edita ni se degrada' : 'Compartido por todas las firmas'}
+                    </span>
+                  )}
+                </Td>
+              </tr>
+            ))}
+          </tbody>
+        </Tabla>
+      </Panel>
 
       {enEdicion && enEdicion.esDeLaFirma && !enEdicion.esTodopoderoso && (
-        <section style={{ border: '1px solid #334155', padding: 16, marginTop: 24 }}>
-          <h2 style={{ marginTop: 0 }}>Editar «{enEdicion.nombre}»</h2>
-          <form action={editarRolAction}>
+        <Panel className="mt-6" titulo={`Editar «${enEdicion.nombre}»`}>
+          <form action={editarRolAction} className="flex flex-col gap-4 p-5">
             <input type="hidden" name="roleId" value={enEdicion.id} />
-            <div>
-              <label>
-                Nombre * <input name="nombre" required defaultValue={enEdicion.nombre} size={30} />
-              </label>{' '}
-              <label>
-                Descripción * <input name="descripcion" required defaultValue={enEdicion.descripcion} size={60} />
-              </label>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Campo etiqueta="Nombre" requerido>
+                <Entrada name="nombre" required defaultValue={enEdicion.nombre} />
+              </Campo>
+              <Campo etiqueta="Descripción" requerido>
+                <Entrada name="descripcion" required defaultValue={enEdicion.descripcion} />
+              </Campo>
             </div>
-            <div style={{ marginTop: 8 }}>
-              <label>
-                <input type="radio" name="activo" value="si" defaultChecked={enEdicion.activo} /> Activo
-              </label>{' '}
-              <label>
-                <input type="radio" name="activo" value="no" defaultChecked={!enEdicion.activo} /> Inactivo (no
-                concede ningún permiso)
+            <fieldset className="flex flex-wrap gap-4 text-menor text-texto">
+              <legend className="text-[12px] font-medium text-texto">Estado</legend>
+              <label className="flex items-center gap-1.5">
+                <input
+                  type="radio"
+                  name="activo"
+                  value="si"
+                  defaultChecked={enEdicion.activo}
+                  className="accent-[var(--color-primario)]"
+                />
+                Activo
               </label>
-            </div>
+              <label className="flex items-center gap-1.5">
+                <input
+                  type="radio"
+                  name="activo"
+                  value="no"
+                  defaultChecked={!enEdicion.activo}
+                  className="accent-[var(--color-primario)]"
+                />
+                Inactivo (no concede ningún permiso)
+              </label>
+            </fieldset>
             <MatrizPermisos catalogo={catalogo} seleccionados={new Set(enEdicion.permisos)} />
-            <button type="submit" style={{ marginTop: 12 }}>
-              Guardar rol
-            </button>{' '}
-            <Link href="/admin/roles">Cancelar</Link>
+            <div className="flex items-center gap-3">
+              <Boton tipo="submit">Guardar rol</Boton>
+              <Link
+                href="/admin/roles"
+                className="text-menor font-semibold text-primario underline dark:text-primario-tinta-oscura"
+              >
+                Cancelar
+              </Link>
+            </div>
           </form>
-        </section>
+        </Panel>
       )}
 
-      <section style={{ border: '1px solid #334155', padding: 16, marginTop: 24 }}>
-        <h2 style={{ marginTop: 0 }}>Crear un rol propio de la firma</h2>
-        <form action={crearRolAction}>
-          <div>
-            <label>
-              Código * <input name="codigo" required size={20} placeholder="revisor" pattern="[a-z][a-z0-9_]{2,39}" />
-            </label>{' '}
-            <label>
-              Nombre * <input name="nombre" required size={28} placeholder="Revisor de causación" />
-            </label>
-          </div>
-          <div style={{ marginTop: 8 }}>
-            <label>
-              Descripción *{' '}
-              <input
+      <Panel className="mt-6" titulo="Crear un rol propio de la firma">
+        <form action={crearRolAction} className="flex flex-col gap-4 p-5">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Campo etiqueta="Código" requerido ayuda="Minúsculas, números y guion bajo.">
+              <Entrada name="codigo" required placeholder="revisor" pattern="[a-z][a-z0-9_]{2,39}" />
+            </Campo>
+            <Campo etiqueta="Nombre" requerido>
+              <Entrada name="nombre" required placeholder="Revisor de causación" />
+            </Campo>
+            <Campo etiqueta="Descripción" requerido ayuda="Dentro de un año, quien la lea tiene que saber para qué se creó.">
+              <Entrada
                 name="descripcion"
                 required
-                size={80}
                 placeholder="Revisa y aprueba lo que preparan los auxiliares. No edita parámetros."
               />
-            </label>
+            </Campo>
           </div>
           <MatrizPermisos catalogo={catalogo} seleccionados={new Set()} />
-          <button type="submit" style={{ marginTop: 12 }}>
-            Crear rol
-          </button>
+          <div>
+            <Boton tipo="submit">Crear rol</Boton>
+          </div>
         </form>
-      </section>
+      </Panel>
     </main>
   );
 }

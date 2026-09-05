@@ -91,6 +91,23 @@ export const SQLSTATE = {
   FK_ALCANCE_AJENO: 'AL001',
   /** Terceros (D-084, migración 174): un tercero con movimientos no se borra, se inactiva. */
   TERCERO_CON_MOVIMIENTOS: 'TP001',
+  /**
+   * Permiso individual por usuario (D-092, migración 183).
+   *
+   * `PO001` — auto-otorgamiento: nadie se concede a sí mismo una excepción (y
+   *   también, una excepción que vencería antes de empezar).
+   * `PO002` — escalada: nadie confiere un permiso que él mismo no ejerce. Se
+   *   impone en las tres vías por las que un permiso llega a una persona:
+   *   `role_permission`, `user_company_access` y `user_permission_override`.
+   * `PO003` — una decisión de permiso no se edita ni se borra: revocar es una
+   *   fila nueva, con su propio motivo y su propio autor.
+   * `PO004` — no se reparten permisos sobre una empresa a la que quien los
+   *   reparte no tiene acceso vigente.
+   */
+  AUTO_OTORGAMIENTO: 'PO001',
+  ESCALADA_DE_PRIVILEGIO: 'PO002',
+  OVERRIDE_INMUTABLE: 'PO003',
+  OVERRIDE_EMPRESA_AJENA: 'PO004',
   /** Integraciones (A13, migración 090): tokens de canal de correo/n8n. */
   INTEGRACION_TOKEN_INVALIDO: 'IG001',
   INTEGRACION_USUARIO_AJENO: 'IG003',

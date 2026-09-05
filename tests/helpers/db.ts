@@ -120,6 +120,17 @@ async function asegurarRolesAplicacion(db: DbHandle): Promise<void> {
     -- dispararlo, así que revocarlo no lo desactiva y sí lo saca de la
     -- superficie de funciones DEFINER invocables por la aplicación.
     REVOKE ALL ON FUNCTION app.trg_fk_alcance() FROM PUBLIC, ${ROL_APLICACION};
+
+    -- A12 (D-092, migración 183): mismo caso que \`trg_fk_alcance\`. Las cuatro
+    -- funciones de trigger de 183 —dos de ellas SECURITY DEFINER— se revocan en
+    -- la migración, y el GRANT masivo de arriba se las devolvería. D-034: todo
+    -- REVOKE de una migración se espeja aquí, o el banco de pruebas queda más
+    -- permisivo que producción y el inventario de \`evasion.test.ts\` mide una
+    -- superficie que no es la real.
+    REVOKE ALL ON FUNCTION app.trg_override_blindaje()            FROM PUBLIC, ${ROL_APLICACION};
+    REVOKE ALL ON FUNCTION app.trg_override_append_only()         FROM PUBLIC, ${ROL_APLICACION};
+    REVOKE ALL ON FUNCTION app.trg_role_permission_no_escalar()   FROM PUBLIC, ${ROL_APLICACION};
+    REVOKE ALL ON FUNCTION app.trg_acceso_no_escalar()            FROM PUBLIC, ${ROL_APLICACION};
     REVOKE ALL ON ALL TABLES IN SCHEMA app FROM ${ROL_APLICACION}, app_auth;
     REVOKE ALL ON FUNCTION app.abrir_sesion(uuid, text, inet, text, boolean, integer)
       FROM PUBLIC, ${ROL_APLICACION};

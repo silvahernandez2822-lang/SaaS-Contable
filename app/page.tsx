@@ -98,7 +98,17 @@ export default async function InicioPage({ searchParams }: { searchParams: Promi
   // Mismo agregador que `/bandeja` (D-021/D-022: una sesión real por empresa,
   // en secuencia — el cliente de base de datos no abre transacciones
   // concurrentes entre sí). Nada de esto se recalcula con lógica propia.
-  const { empresas, pendientesAprobacion, pendientesRevision } = await obtenerBandejaConsolidada();
+  //
+  // D-092-bis: hasta esta corrección, esta línea reventaba la portada —y con
+  // ella toda navegación— para cualquier usuario sin `documento.leer`. Ya no
+  // lanza: `obtenerBandejaConsolidada` pregunta el permiso antes de pedir nada
+  // y devuelve `puedeLeerDocumentos: false` con la bandeja vacía, que esta
+  // pantalla ENSEÑA como tal en vez de cantar un "todo al día" que sería falso.
+  const { empresas, pendientesAprobacion, pendientesRevision, puedeLeerDocumentos, empresasSinPermiso } =
+    await obtenerBandejaConsolidada();
+  // `detectarAlertasParametrizacion` NO exige permiso alguno (verificado contra
+  // la base, no supuesto: solo cuenta filas de catálogos compartidos de la
+  // firma). Se deja tal cual — envolverlo sería un adorno.
   const alertas = await conSesion((tx) => detectarAlertasParametrizacion(tx));
 
   const jarra = await cookies();
@@ -120,9 +130,19 @@ export default async function InicioPage({ searchParams }: { searchParams: Promi
       {ok && <MensajeEstado tipo="sin-datos" titulo={decodeURIComponent(ok)} />}
 
       {empresas.length === 0 ? (
-        <MensajeEstado tipo="configuracion" titulo="Su usuario no tiene acceso vigente a ninguna empresa-cliente.">
-          Pídale al administrador de la firma que se lo otorgue.
-        </MensajeEstado>
+        puedeLeerDocumentos ? (
+          <MensajeEstado tipo="configuracion" titulo="Su usuario no tiene acceso vigente a ninguna empresa-cliente.">
+            Pídale al administrador de la firma que se lo otorgue.
+          </MensajeEstado>
+        ) : (
+          // D-092-bis: sin `documento.leer` no se puede ni resolver la lista.
+          // Decir «no tiene acceso a ninguna empresa» sería falso.
+          <MensajeEstado tipo="configuracion" titulo="No se puede resolver a qué empresas tiene acceso.">
+            La lista de empresas se consulta con el permiso <code>documento.leer</code>, que su rol no
+            incluye. Esto no significa que no tenga acceso: significa que esta sesión no puede
+            consultarlo. Pídale a un administrador de la firma que revise su rol.
+          </MensajeEstado>
+        )
       ) : !actual ? (
         <Panel
           titulo="Elija una empresa para empezar"
@@ -143,7 +163,9 @@ export default async function InicioPage({ searchParams }: { searchParams: Promi
                       <span className="font-semibold text-texto">{e.razonSocial}</span>{' '}
                       <span className="text-texto-suave tabular-nums">NIT {e.nit}</span>
                     </span>
-                    <span className="text-[11px] text-texto-suave">rol {e.rolCodigo}</span>
+                    {/* D-092-bis: sin `documento.leer` no se pudo resolver el rol
+                        en la empresa; enseñar «rol » a secas era ruido. */}
+                    {e.rolCodigo && <span className="text-[11px] text-texto-suave">rol {e.rolCodigo}</span>}
                   </button>
                 </form>
               </li>
@@ -155,14 +177,34 @@ export default async function InicioPage({ searchParams }: { searchParams: Promi
       <div className="mb-5 grid grid-cols-1 gap-4 md:grid-cols-2">
         <Panel
           titulo="Facturas pendientes de aprobación"
-          descripcion={`${pendientesAprobacion.length} lista(s) para aprobar · ${pendientesRevision.length} en revisión manual, en sus ${empresas.length} empresa(s)`}
+          descripcion={
+            puedeLeerDocumentos
+              ? `${pendientesAprobacion.length} lista(s) para aprobar · ${pendientesRevision.length} en revisión manual, en sus ${empresas.length} empresa(s)`
+              : 'No disponible con su rol'
+          }
           acciones={
-            <EnlaceBoton href="/bandeja" variante="secundario">
-              Ir a la bandeja
-            </EnlaceBoton>
+            puedeLeerDocumentos ? (
+              <EnlaceBoton href="/bandeja" variante="secundario">
+                Ir a la bandeja
+              </EnlaceBoton>
+            ) : undefined
           }
         >
-          {pendientesAprobacion.length === 0 ? (
+          {!puedeLeerDocumentos ? (
+            // D-092-bis. El panel se degrada, no revienta, y dice la verdad: un
+            // "todo al día" aquí sería mentirle a quien no puede mirar. El resto
+            // de la portada —incluido el acceso a `/admin/usuarios`— sigue vivo.
+            <MensajeEstado tipo="configuracion" titulo="Su rol no permite ver facturas pendientes">
+              Ver documentos exige el permiso <code>documento.leer</code>, que su rol no tiene. Lo que
+              aparece aquí vacío no quiere decir que no haya trabajo pendiente: quiere decir que esta
+              sesión no puede consultarlo.
+            </MensajeEstado>
+          ) : empresasSinPermiso.length > 0 && pendientesAprobacion.length === 0 ? (
+            <MensajeEstado tipo="configuracion" titulo="Hay empresas que su rol no puede consultar">
+              Sin <code>documento.leer</code> en {empresasSinPermiso.join(', ')}: lo pendiente de esas
+              empresas no se cuenta aquí.
+            </MensajeEstado>
+          ) : pendientesAprobacion.length === 0 ? (
             <EstadoVacio titulo="Todo al día — no hay facturas pendientes" detalle="Cuando el motor cause nuevas facturas, las verá aquí y en la bandeja." />
           ) : (
             <ul className="divide-y divide-borde">
@@ -178,6 +220,12 @@ export default async function InicioPage({ searchParams }: { searchParams: Promi
               {pendientesAprobacion.length > 5 && (
                 <li className="px-4 py-2 text-[12px] text-texto-suave">
                   y {pendientesAprobacion.length - 5} más en la bandeja
+                </li>
+              )}
+              {empresasSinPermiso.length > 0 && (
+                <li className="px-4 py-2 text-[12px] text-texto-suave">
+                  Sin permiso para ver documentos en {empresasSinPermiso.join(', ')}: lo pendiente de esas
+                  empresas no está en esta cuenta.
                 </li>
               )}
             </ul>
